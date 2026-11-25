@@ -7,6 +7,8 @@
  *  - generic validation for interactions (exists, in range, rate limit)
  *  - emotes, reactions, appearance/name updates
  *  - routing every other message to the service seams (chat, moderation, …)
+ *  - profile lifecycle: resume at last position, first-visit / return memory,
+ *    periodic autosave, save on leave and on dispose (graceful shutdown)
  */
 import { Room, type Client } from '@colyseus/core';
 import {
@@ -32,15 +34,18 @@ import {
   type C2SType,
   type ErrorCode,
   type JoinOptions,
+  type LocationId,
   type RateLimitAction,
   type S2CPayloads,
   type S2CType,
+  worldTimeAt,
+  isWalkable,
 } from '@elsewhere/shared';
 import { newGuestProfile, toProfileSummary } from '../auth/index.js';
 import { ENV } from '../env.js';
 import type { StoredProfile } from '../persistence/index.js';
 import { services, type ServerServices } from '../services.js';
-import type { RoomContext, TimerHandle } from './RoomContext.js';
+import { roomRegistry, type RoomContext, type TimerHandle } from './RoomContext.js';
 import { ObjectState, PlayerState, WorldState } from './schema.js';
 
 interface ClientAuth {
@@ -55,6 +60,13 @@ interface MoveTrack {
 }
 
 const MOVE_BUDGET_CAP = CONFIG.movement.runSpeed * 0.6 + CONFIG.movement.distanceSlack;
+const AUTOSAVE_MS = 60_000;
+/** Join-time bookkeeping (memory, collective) waits this long so the first state sync is not delayed. */
+export const JOIN_SETTLE_MS = 1500;
+/** A join after this much absence is remembered as a return. */
+const RETURN_AFTER_MS = 60 * 60_000;
+/** Close code sent on admin kick / ban (4000-4999 are application codes). */
+export const KICK_CLOSE_CODE = 4003;
 
 export class WorldRoom extends Room<{ state: WorldState }> {
   override maxClients = CONFIG.network.maxClientsPerRoom;
@@ -65,6 +77,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   private moves = new Map<string, MoveTrack>();
   private profiles = new Map<string, StoredProfile>();
   private joinCounter = 0;
+  private joinedAt = new Map<string, number>();
   private animTimers = new Map<string, TimerHandle>();
 
   override async onCreate(): Promise<void> {
@@ -81,10 +94,18 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
     this.registerMessages();
     this.setSimulationInterval((dt) => {
-      for (const h of this.svc.hooks) h.tick?.(this.ctx, dt);
+      for (const h of this.svc.hooks) {
+        try {
+          h.tick?.(this.ctx, dt);
+        } catch (err) {
+          console.error('[WorldRoom] tick hook failed', err);
+        }
+      }
     }, 1000 / CONFIG.network.tickRateHz);
+    this.clock.setInterval(() => void this.saveAllProfiles(), AUTOSAVE_MS);
 
     for (const h of this.svc.hooks) await h.onRoomCreate?.(this.ctx);
+    roomRegistry.add(this.ctx);
   }
 
   override async onAuth(_client: Client, options: Partial<JoinOptions> | undefined): Promise<ClientAuth> {
@@ -94,6 +115,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     }
     const identity = await this.svc.auth.verify(typeof opts.token === 'string' ? opts.token : undefined);
     let profile = identity ? await this.svc.persistence.profiles.get(identity.profileId) : null;
+    if (profile && (await this.svc.moderation.isBanned(profile.id))) throw new Error('forbidden: this account is suspended');
     if (!profile) {
       // No/invalid token: ephemeral guest (not persisted beyond this process).
       profile = newGuestProfile(opts.name, opts.appearance);
@@ -110,13 +132,21 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   override async onJoin(client: Client, _options: unknown, auth?: ClientAuth): Promise<void> {
     const profile = (client.auth as ClientAuth | undefined)?.profile ?? auth?.profile;
     if (!profile) throw new Error('unauthorized');
+    const firstVisit = profile.visits === 0;
+    const returning = !firstVisit && Date.now() - profile.lastSeenAt > RETURN_AFTER_MS;
     profile.visits += 1;
     profile.lastSeenAt = Date.now();
+    profile.inventory ??= [];
+    profile.stats ??= {};
     await this.svc.persistence.profiles.save(profile);
     this.profiles.set(client.sessionId, profile);
+    this.joinedAt.set(client.sessionId, Date.now());
 
     const spawn = pickSpawnPoint(this.joinCounter++);
-    const pos = findNearestWalkable(spawn.position) ?? spawn.position;
+    // Returning players resume where they left (if that spot is still walkable).
+    const last = profile.lastPosition;
+    const resumed = last && isFiniteNumber(last.x) && isFiniteNumber(last.z) ? (isWalkable(last) ? last : findNearestWalkable(last, CONFIG.movement.playerRadius, 4)) : null;
+    const pos = resumed ?? findNearestWalkable(spawn.position) ?? spawn.position;
     const player = new PlayerState({
       id: client.sessionId,
       profileId: profile.id,
@@ -132,7 +162,9 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.state.players.set(client.sessionId, player);
     this.moves.set(client.sessionId, { lastAt: Date.now(), budget: MOVE_BUDGET_CAP, seq: 0 });
 
+    for (const h of this.svc.hooks) await h.onPlayerPreJoin?.(this.ctx, client.sessionId);
     const facts = this.svc.collective.facts();
+    const portal = this.state.objects.get('portal_arch');
     this.sendTo(client.sessionId, S2C.welcome, {
       sessionId: client.sessionId,
       serverTime: Date.now(),
@@ -141,21 +173,39 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       profile: toProfileSummary(profile),
       blocked: [...profile.blocked],
       muted: [...profile.muted],
-      recentChat: this.svc.chat.recent(),
+      recentChat: this.svc.chat.recent(profile.id),
       world: {
         fountainStage: facts.fountainStage,
         fountainContributors: facts.fountainContributors,
-        portalAwake: this.state.objects.get('portal_arch')?.active ?? false,
+        portalAwake: portal?.active ?? false,
+        portalAwakenings: facts.portalAwakenings,
+        portalAwakeUntil: portal?.active ? (facts.portalAwakeUntil ?? 0) : 0,
       },
     });
     for (const h of this.svc.hooks) await h.onPlayerJoin?.(this.ctx, client.sessionId);
+
+    // Memory/collective bookkeeping must not delay the join (state sync starts after the JOIN_ROOM round trip).
+    const actor = { profileId: profile.id, name: profile.displayName };
+    const sid = client.sessionId;
+    const location = player.location;
+    // Deferred: a client only receives its first full state after acking JOIN_ROOM; keep that window quiet.
+    this.ctx.setTimeout(() => void bookkeeping().catch((err) => console.error("[WorldRoom] join bookkeeping failed", err)), JOIN_SETTLE_MS);
+    const bookkeeping = async () => {
+      if (firstVisit) {
+        await this.svc.memory.record({ kind: 'player_first_visit', actors: [actor], ...(location ? { locationId: location as LocationId } : {}), significance: 1 });
+        await this.svc.collective.signal(this.ctx, { type: 'first_visit', sessionId: sid, profileId: profile.id });
+      } else if (returning) {
+        await this.svc.memory.record({ kind: 'player_returned', actors: [actor], significance: 0, data: { visits: profile.visits } });
+      }
+    };
   }
 
   override async onDrop(client: Client): Promise<void> {
     // Keep the player's body in the world briefly so a flaky connection can resume.
     const player = this.state.players.get(client.sessionId);
     if (player) player.anim = 'idle';
-    this.allowReconnection(client, CONFIG.network.reconnectGraceSeconds);
+    // Rejects (e.g. "not joined" when the socket drops mid-join, or on timeout) — never let it go unhandled.
+    this.allowReconnection(client, CONFIG.network.reconnectGraceSeconds).catch(() => undefined);
   }
 
   override async onReconnect(client: Client): Promise<void> {
@@ -166,11 +216,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   override async onLeave(client: Client, code?: number): Promise<void> {
     const sid = client.sessionId;
     for (const h of this.svc.hooks) await h.onPlayerLeave?.(this.ctx, sid);
-    const profile = this.profiles.get(sid);
-    if (profile) {
-      profile.lastSeenAt = Date.now();
-      await this.svc.persistence.profiles.save(profile);
-    }
+    await this.saveProfile(sid);
+    this.joinedAt.delete(sid);
     this.animTimers.get(sid)?.clear();
     this.animTimers.delete(sid);
     this.state.players.delete(sid);
@@ -180,7 +227,33 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   }
 
   override async onDispose(): Promise<void> {
+    roomRegistry.delete(this.ctx);
+    await this.saveAllProfiles();
     for (const h of this.svc.hooks) await h.onRoomDispose?.(this.ctx);
+  }
+
+  /** Copy live state (position, time online) into the stored profile and persist it. */
+  private async saveProfile(sid: string): Promise<void> {
+    const profile = this.profiles.get(sid);
+    if (!profile) return;
+    const p = this.state.players.get(sid);
+    const t = Date.now();
+    if (p) profile.lastPosition = { x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 };
+    const since = this.joinedAt.get(sid);
+    if (since) {
+      profile.stats.timeOnlineMs = (profile.stats.timeOnlineMs ?? 0) + (t - since);
+      this.joinedAt.set(sid, t);
+    }
+    profile.lastSeenAt = t;
+    try {
+      await this.svc.persistence.profiles.save(profile);
+    } catch (err) {
+      console.error('[WorldRoom] profile save failed', profile.id, err);
+    }
+  }
+
+  private async saveAllProfiles(): Promise<void> {
+    await Promise.all([...this.profiles.keys()].map((sid) => this.saveProfile(sid)));
   }
 
   // -------------------------------------------------------------------------
@@ -194,11 +267,15 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       if (limit) {
         const wait = this.svc.moderation.rateLimiter.take(sid, limit);
         if (wait > 0) {
-          if (limit !== 'move') this.sendTo(sid, S2C.rateLimited, { action: type, retryInMs: wait });
+          if (limit !== 'move') {
+            this.sendTo(sid, S2C.rateLimited, { action: type, retryInMs: wait });
+            this.svc.moderation.noteRateLimited(this.ctx, sid, type);
+          }
           return;
         }
       }
-      const payload = (raw && typeof raw === 'object' ? raw : {}) as C2SPayloads[T];
+      // Payloads are plain JSON objects; anything else is coerced to {} and fails per-field validation.
+      const payload = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as C2SPayloads[T];
       Promise.resolve()
         .then(() => handler(sid, payload))
         .catch((err: unknown) => {
@@ -215,23 +292,30 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.on(C2S.emote, 'emote', (sid, m) => this.handleEmote(sid, m.emote));
     this.on(C2S.reaction, 'reaction', (sid, m) => {
       if (!isReaction(m.emoji)) return this.ctx.error(sid, 'bad_request', 'Unknown reaction', C2S.reaction);
-      const target = typeof m.target === 'string' && this.state.players.has(m.target) ? m.target : undefined;
+      const me = this.state.players.get(sid)!;
+      const targetPlayer = typeof m.target === 'string' ? this.state.players.get(m.target) : undefined;
+      if (targetPlayer && s.moderation.isBlockedBetween(me.profileId, targetPlayer.profileId)) return this.ctx.error(sid, 'blocked', 'You cannot react to that player', C2S.reaction);
       const payload: S2CPayloads['reaction'] = { sessionId: sid, emoji: m.emoji, ts: Date.now() };
-      if (target) payload.target = target;
-      this.ctx.broadcast(S2C.reaction, payload);
+      if (targetPlayer) payload.target = targetPlayer.id;
+      this.ctx.broadcast(S2C.reaction, payload, {
+        filter: (to) => {
+          const l = this.state.players.get(to);
+          return !!l && (to === sid || (!s.moderation.isBlockedBetween(l.profileId, me.profileId) && !s.moderation.isMutedBy(l.profileId, me.profileId)));
+        },
+      });
     });
     this.on(C2S.chat, null, (sid, m) => s.chat.handleChat(this.ctx, sid, m));
     this.on(C2S.whisper, null, (sid, m) => s.chat.handleWhisper(this.ctx, sid, m));
     this.on(C2S.typing, null, (sid, m) => s.chat.handleTyping(this.ctx, sid, m));
     this.on(C2S.interact, 'interact', (sid, m) => this.handleInteract(sid, m));
-    this.on(C2S.dropItem, null, (sid) => s.interactions.dropItem(this.ctx, sid));
+    this.on(C2S.dropItem, 'interact', (sid) => s.interactions.dropItem(this.ctx, sid));
     this.on(C2S.mailSend, 'mail', (sid, m) => s.interactions.mailSend(this.ctx, sid, m));
     this.on(C2S.mailRead, null, (sid, m) => s.interactions.mailRead(this.ctx, sid, m));
     this.on(C2S.updateProfile, 'appearance', (sid, m) => this.handleUpdateProfile(sid, m));
-    this.on(C2S.block, null, (sid, m) => s.moderation.block(this.ctx, sid, m));
-    this.on(C2S.unblock, null, (sid, m) => s.moderation.unblock(this.ctx, sid, m));
-    this.on(C2S.mute, null, (sid, m) => s.moderation.mute(this.ctx, sid, m));
-    this.on(C2S.unmute, null, (sid, m) => s.moderation.unmute(this.ctx, sid, m));
+    this.on(C2S.block, 'social', (sid, m) => s.moderation.block(this.ctx, sid, m));
+    this.on(C2S.unblock, 'social', (sid, m) => s.moderation.unblock(this.ctx, sid, m));
+    this.on(C2S.mute, 'social', (sid, m) => s.moderation.mute(this.ctx, sid, m));
+    this.on(C2S.unmute, 'social', (sid, m) => s.moderation.unmute(this.ctx, sid, m));
     this.on(C2S.report, 'report', (sid, m) => s.moderation.report(this.ctx, sid, m));
   }
 
@@ -354,8 +438,29 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       },
       state: room.state,
       now: () => Date.now(),
+      worldTime: () => worldTimeAt(Date.now(), { epochMs: room.state.clockEpoch, dayLengthMs: room.state.dayLengthMs }),
       getPlayer: (id) => room.state.players.get(id),
       getObject: (id) => room.state.objects.get(id),
+      getProfile: (id) => room.profiles.get(id),
+      saveProfile: async (id) => {
+        const p = room.profiles.get(id);
+        if (!p) return;
+        try {
+          await room.svc.persistence.profiles.save(p);
+        } catch (err) {
+          console.error('[WorldRoom] profile save failed', p.id, err);
+        }
+      },
+      sessionForProfile: (profileId) => {
+        for (const [sid, p] of room.profiles) if (p.id === profileId) return sid;
+        return undefined;
+      },
+      kick: (sid, reason) => {
+        const c = room.clients.getById(sid);
+        if (!c) return;
+        c.send(S2C.notice, { level: 'error', code: 'kicked', text: reason === 'banned' ? 'You have been removed from the island.' : 'You have been disconnected by a moderator.' });
+        c.leave(KICK_CLOSE_CODE, reason);
+      },
       sessionIds: () => [...room.state.players.keys()],
       send: (sid, type, payload) => room.sendTo(sid, type, payload),
       broadcast: (type, payload, options) => {

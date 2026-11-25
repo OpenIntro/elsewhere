@@ -9,6 +9,7 @@ export type WorldEventKind =
   | 'player_first_visit'
   | 'player_returned'
   | 'bell_rung'
+  | 'bell_chorus'
   | 'fountain_touched'
   | 'fountain_transformed'
   | 'portal_rune_touched'

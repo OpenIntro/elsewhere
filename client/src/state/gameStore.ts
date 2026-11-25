@@ -40,6 +40,8 @@ export interface GameState {
   world: { fountainStage: number; fountainContributors: number; portalAwake: boolean };
   blocked: string[];
   muted: string[];
+  /** Fresh-rejoin attempts since the session was lost (0 while connected / during same-session reconnection). Written by net/. */
+  reconnectAttempt: number;
 
   setConnection(status: ConnectionStatus, error?: string | null): void;
   setSession(sessionId: string | null, profile?: ProfileSummary | null): void;
@@ -65,6 +67,7 @@ const initial = {
   world: { fountainStage: 0, fountainContributors: 0, portalAwake: false },
   blocked: [],
   muted: [],
+  reconnectAttempt: 0,
 };
 
 export const useGameStore = create<GameState>()((set) => ({

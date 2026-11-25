@@ -1,37 +1,118 @@
-/** Placeholder day/night lighting driven by the shared world clock. */
-import { useFrame } from '@react-three/fiber';
-import { useRef } from 'react';
-import { Color, type AmbientLight, type DirectionalLight } from 'three';
-import { daylight, sunAngles, timeOfDayAt } from '@elsewhere/shared';
-import { serverNow, useGameStore } from '../state/gameStore.js';
-import { runtime } from '../state/runtime.js';
+/**
+ * Day/night lighting from the synchronized clock: a single key light (sun by
+ * day, moon by night) with a shadow frustum fitted and texel-snapped to the
+ * camera's view, plus a hemisphere fill. Fog follows the camera distance.
+ */
+import { useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useRef } from 'react';
+import { Color, Fog, Matrix4, Vector3, type DirectionalLight, type HemisphereLight, type OrthographicCamera } from 'three';
+import { env } from './env.js';
 
-const DAY = new Color('#fff1dc');
-const NIGHT = new Color('#7d8bb5');
+const _fwd = new Vector3();
+const _focus = new Vector3();
+const _lm = new Matrix4();
+const _li = new Matrix4();
+const _p = new Vector3();
+const _up = new Vector3(0, 1, 0);
+const MOON = new Color('#a9b8e8');
 
-export function Lighting() {
+export function Lighting({ shadows, mapSize }: { shadows: boolean; mapSize: number }) {
   const sun = useRef<DirectionalLight>(null);
-  const amb = useRef<AmbientLight>(null);
+  const hemi = useRef<HemisphereLight>(null);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera) as OrthographicCamera;
+  const size = useThree((s) => s.size);
+
+  useEffect(() => {
+    scene.fog = new Fog(env.fogColor.getHex(), 80, 260);
+    return () => {
+      scene.fog = null;
+    };
+  }, [scene]);
+
+  useEffect(() => {
+    const s = sun.current;
+    if (!s) return;
+    s.shadow.mapSize.set(mapSize, mapSize);
+    s.shadow.map?.dispose();
+    s.shadow.map = null as never;
+  }, [mapSize]);
+
   useFrame(() => {
-    const { epochMs, dayLengthMs } = useGameStore.getState().clock;
-    const t = timeOfDayAt(serverNow(), { epochMs, dayLengthMs });
-    const light = daylight(t);
-    const { elevation, azimuth } = sunAngles(t);
-    const lp = runtime.localPlayer;
-    if (sun.current) {
-      const el = Math.max(0.15, elevation);
-      sun.current.position.set(lp.x + Math.cos(azimuth) * 40 * Math.cos(el), 40 * Math.sin(el) + 5, lp.z + Math.sin(azimuth) * 40 * Math.cos(el));
-      sun.current.target.position.set(lp.x, 0, lp.z);
-      sun.current.target.updateMatrixWorld();
-      sun.current.intensity = 0.3 + 1.9 * light;
-      sun.current.color.copy(NIGHT).lerp(DAY, light);
+    // Ground focus = where the view ray through the screen centre meets y≈1.
+    camera.getWorldDirection(_fwd);
+    const t = (1 - camera.position.y) / (_fwd.y || -1);
+    _focus.copy(camera.position).addScaledVector(_fwd, t);
+    env.focus.copy(_focus);
+    const zoom = camera.zoom || 1;
+    const halfW = (camera.right - camera.left) / (2 * zoom);
+    const halfH = (camera.top - camera.bottom) / (2 * zoom);
+    const radius = Math.min(110, Math.hypot(halfW, halfH * 1.75) + 3);
+    env.viewRadius = radius;
+    env.cameraZoom = zoom;
+    void size;
+
+    const s = sun.current;
+    if (s) {
+      const fade = Math.min(1, Math.max(0, (env.sunElevation + 0.02) / 0.12));
+      if (env.sunIntensity > 0.05 || env.sunElevation > 0) {
+        s.intensity = env.sunIntensity * fade;
+        s.color.copy(env.sunColor);
+      } else {
+        s.intensity = env.moonIntensity;
+        s.color.copy(MOON);
+      }
+      // Texel-snapped shadow box around the focus.
+      const dist = 90;
+      const texel = (radius * 2) / Math.max(256, s.shadow.mapSize.x);
+      _lm.lookAt(env.keyDir, new Vector3(0, 0, 0), _up);
+      _li.copy(_lm).invert();
+      _p.copy(_focus).applyMatrix4(_li);
+      _p.x = Math.round(_p.x / texel) * texel;
+      _p.y = Math.round(_p.y / texel) * texel;
+      _p.applyMatrix4(_lm);
+      s.target.position.copy(_p);
+      s.position.copy(_p).addScaledVector(env.keyDir, dist);
+      s.target.updateMatrixWorld();
+      const sc = s.shadow.camera;
+      if (sc.right !== radius) {
+        sc.left = -radius;
+        sc.right = radius;
+        sc.top = radius;
+        sc.bottom = -radius;
+        sc.near = 1;
+        sc.far = dist + 70;
+        sc.updateProjectionMatrix();
+      }
+      s.castShadow = shadows;
     }
-    if (amb.current) amb.current.intensity = 0.35 + 0.45 * light;
+    const h = hemi.current;
+    if (h) {
+      h.color.copy(env.hemiSky);
+      h.groundColor.copy(env.hemiGround);
+      h.intensity = env.hemiIntensity;
+    }
+    const fog = scene.fog as Fog | null;
+    if (fog) {
+      fog.color.copy(env.fogColor);
+      const camDist = camera.position.distanceTo(_focus);
+      fog.near = camDist + 18 / env.fogDensity;
+      fog.far = camDist + (zoom < 12 ? 260 : 150) / env.fogDensity;
+    }
   });
+
   return (
     <>
-      <ambientLight ref={amb} intensity={0.6} />
-      <directionalLight ref={sun} castShadow intensity={1.8} shadow-mapSize={[1024, 1024]} />
+      <hemisphereLight ref={hemi} intensity={1} />
+      <directionalLight
+        ref={sun}
+        castShadow={shadows}
+        intensity={2.5}
+        shadow-mapSize={[mapSize, mapSize]}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.035}
+        shadow-radius={3}
+      />
     </>
   );
 }

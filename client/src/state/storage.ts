@@ -33,4 +33,6 @@ export const zustandSafeStorage = {
 export const STORAGE_KEYS = {
   settings: 'elsewhere.settings.v1',
   session: 'elsewhere.session.v1',
+  /** UI-only preferences (hint seen, clock style, camera buttons…) — ui worker. */
+  uiPrefs: 'elsewhere.ui.v1',
 } as const;

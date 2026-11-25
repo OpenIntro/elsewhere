@@ -18,7 +18,9 @@ import {
 import { sanitizeAppearance, validateDisplayName } from '@elsewhere/shared';
 import { toProfileSummary } from '../auth/index.js';
 import { ENV } from '../env.js';
+import { RateLimiter } from '../moderation/rateLimit.js';
 import { services } from '../services.js';
+import { createAdminRouter } from './admin.js';
 import { ApiFailure } from './errors.js';
 
 const startedAt = Date.now();
@@ -44,6 +46,27 @@ async function requireProfile(req: Request) {
   return profile;
 }
 
+/** Client IP for per-IP rate limits (X-Forwarded-For only when TRUST_PROXY is set). */
+export function clientIp(req: Request): string {
+  if (ENV.trustProxy) {
+    const xf = req.headers['x-forwarded-for'];
+    const first = (Array.isArray(xf) ? xf[0] : xf)?.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return req.socket.remoteAddress ?? 'unknown';
+}
+
+const ipLimiter = new RateLimiter();
+const limit = (action: 'rest' | 'auth') => (req: Request, res: Response, next: NextFunction) => {
+  const wait = ipLimiter.take(clientIp(req), action);
+  if (wait > 0) {
+    res.setHeader('Retry-After', String(Math.ceil(wait / 1000)));
+    res.status(429).json(new ApiFailure('rate_limited', 'Too many requests').toBody());
+    return;
+  }
+  next();
+};
+
 function intParam(v: unknown, fallback: number): number {
   const n = typeof v === 'string' ? Number.parseInt(v, 10) : NaN;
   return Number.isFinite(n) ? n : fallback;
@@ -52,6 +75,9 @@ function intParam(v: unknown, fallback: number): number {
 export function createApiRouter(): Router {
   const r = express.Router();
   r.use(express.json({ limit: '16kb' }));
+  r.use('/api', limit('rest'));
+  r.use([API.guestSession, API.register, API.login], limit('auth'));
+  r.use(createAdminRouter());
 
   r.get(
     API.health,
@@ -101,7 +127,7 @@ export function createApiRouter(): Router {
     API.gazette,
     route(async (req): Promise<GazetteListResponse> => {
       const limit = Math.min(50, Math.max(1, intParam(req.query.limit, 10)));
-      const before = typeof req.query.before === 'string' ? req.query.before : undefined;
+      const before = typeof req.query.before === 'string' && req.query.before.length <= 80 ? req.query.before : undefined;
       const issues = await services().gazette.list(limit, before);
       return { issues, nextCursor: issues.length === limit ? (issues[issues.length - 1]?.id ?? null) : null };
     }),
@@ -116,6 +142,23 @@ export function createApiRouter(): Router {
   );
 
   r.get(
+    API.world,
+    route(async () => {
+      const s = services();
+      const f = s.collective.facts();
+      return {
+        clockEpoch: f.clockEpochMs,
+        dayLengthMs: ENV.dayLengthMs,
+        serverTime: Date.now(),
+        fountainStage: f.fountainStage,
+        fountainContributors: f.fountainContributors,
+        portalAwakenings: f.portalAwakenings,
+        ...s.collective.describe(),
+      };
+    }),
+  );
+
+  r.get(
     API.memory,
     route(async (req): Promise<MemoryListResponse> => {
       const limit = Math.min(200, Math.max(1, intParam(req.query.limit, 50)));
@@ -123,9 +166,9 @@ export function createApiRouter(): Router {
       const events = await services().memory.list({
         limit,
         ...(typeof q.before === 'string' ? { before: q.before } : {}),
-        ...(typeof q.kind === 'string' ? { kind: q.kind as WorldEventKind } : {}),
-        ...(typeof q.locationId === 'string' ? { locationId: q.locationId as LocationId } : {}),
-        ...(typeof q.profileId === 'string' ? { profileId: q.profileId } : {}),
+        ...(typeof q.kind === 'string' && /^[a-z_]{1,40}$/.test(q.kind) ? { kind: q.kind as WorldEventKind } : {}),
+        ...(typeof q.locationId === 'string' && /^[a-z_]{1,40}$/.test(q.locationId) ? { locationId: q.locationId as LocationId } : {}),
+        ...(typeof q.profileId === 'string' && q.profileId.length <= 80 ? { profileId: q.profileId } : {}),
       });
       return { events, nextCursor: events.length === limit ? (events[events.length - 1]?.id ?? null) : null };
     }),

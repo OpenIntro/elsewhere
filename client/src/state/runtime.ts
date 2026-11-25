@@ -21,6 +21,11 @@ export interface LocalPlayerRuntime {
   seq: number;
   /** performance.now() of the last correction applied. */
   lastCorrectionAt: number;
+  /** Current ground velocity (m/s), written by player/LocalPlayer. */
+  vx?: number;
+  vz?: number;
+  /** |velocity| (m/s). */
+  speed?: number;
 }
 
 export interface PoseSnapshot {
@@ -35,6 +40,10 @@ export interface PoseSnapshot {
 export interface RemoteRuntime {
   buffer: PoseSnapshot[];
   anim: AnimState;
+  /** Incremented by net/ when a snapshot jumps too far to interpolate (teleport/respawn): renderers snap instead of blending. */
+  teleportSeq?: number;
+  /** What the remote renderer drew this frame (game/RemotePlayers). Read by overlays, targeting, audio. */
+  render?: RemoteRenderState;
 }
 
 export interface Pose {
@@ -44,9 +53,39 @@ export interface Pose {
   rot: number;
 }
 
+/** Rendered pose of a remote this frame (written by game/RemotePlayers). */
+export interface RemoteRenderState extends Pose {
+  /** Smoothed ground speed (m/s) of the interpolated motion. */
+  speed: number;
+  /** False until the first sample / while fully faded out. */
+  visible: boolean;
+}
+
+/**
+ * Camera view this frame (written by player/CameraRig). Use it to centre
+ * view-dependent work (shadow camera, culling, LOD) on what is actually on
+ * screen — in free-camera mode that is NOT the player.
+ */
+export interface ViewRuntime {
+  /** Ground point the camera looks at. */
+  focusX: number;
+  focusY: number;
+  focusZ: number;
+  /** Camera orbit yaw (radians, three.js convention; default π/4 = camera at +X+Z). */
+  yaw: number;
+  /** Effective orthographic zoom (pixels per world unit). */
+  zoom: number;
+  /** Half the visible ground extent in world units (≈ horizontal, vertical). */
+  halfWidth: number;
+  halfHeight: number;
+  /** True while the free camera is detached from the player. */
+  free: boolean;
+}
+
 export const runtime = {
   localPlayer: { ready: false, x: 0, y: 0, z: 0, rot: 0, anim: 'idle', seq: 0, lastCorrectionAt: 0 } as LocalPlayerRuntime,
   remotes: new Map<string, RemoteRuntime>(),
+  view: { focusX: 0, focusY: 0, focusZ: 0, yaw: Math.PI / 4, zoom: 38, halfWidth: 12, halfHeight: 8, free: false } as ViewRuntime,
 };
 
 export function resetRuntime(): void {

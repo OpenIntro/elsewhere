@@ -4,7 +4,8 @@
  *
  *   node scripts/smoke-two-clients.mjs [url]        (default: $SMOKE_URL or http://localhost:2567)
  *
- * Opens two isolated browser contexts (separate guest identities), waits until
+ * Opens two isolated browser contexts (separate guest identities; `?autojoin=1`
+ * bypasses onboarding), waits until
  * each sees exactly 2 players in the synced room state, then holds a movement
  * key in client A and asserts that client B observes A's position change.
  * Reads state through the read-only window.__ELSEWHERE__.snapshot() hook.
@@ -22,7 +23,13 @@ async function loadPlaywright() {
 }
 const { chromium } = await loadPlaywright();
 
-const url = process.argv[2] ?? process.env.SMOKE_URL ?? 'http://localhost:2567';
+const baseUrl = process.argv[2] ?? process.env.SMOKE_URL ?? 'http://localhost:2567';
+// `?autojoin=1` skips the onboarding flow (intro / character creation) and joins as a random guest.
+const url = (() => {
+  const u = new URL(baseUrl);
+  u.searchParams.set('autojoin', '1');
+  return u.toString();
+})();
 const TIMEOUT = 20_000;
 
 const log = (...a) => console.log('[smoke]', ...a);

@@ -14,12 +14,38 @@ export type Panel =
   | { kind: 'customize' }
   | { kind: 'settings' }
   | { kind: 'profile'; sessionId: string }
-  | { kind: 'report'; sessionId: string };
+  | { kind: 'report'; sessionId: string }
+  // Bottom-navigation panels (ui worker).
+  | { kind: 'map' }
+  | { kind: 'inventory' }
+  | { kind: 'home' };
 
 export interface InteractionPrompt {
   interactableId: string;
   label: string;
   name: string;
+}
+
+/**
+ * Another player close enough to interact with (player/interaction.ts sets it
+ * when the nearest eligible target is a player rather than an object; the
+ * two prompts are never both set). UI renders "E · Say hi to <name>".
+ */
+export interface PlayerPrompt {
+  sessionId: string;
+  name: string;
+  label: string;
+}
+
+/**
+ * Player context menu request (wave / view profile / whisper / mute / block /
+ * report). Opened by E/Space/tap on a targeted player or by clicking a player
+ * in the world; the UI worker renders it and calls closePlayerMenu().
+ */
+export interface PlayerMenu {
+  sessionId: string;
+  source: 'keyboard' | 'pointer' | 'touch';
+  openedAt: number;
 }
 
 export interface UiNotification {
@@ -52,6 +78,15 @@ export interface UiState {
   setTextInputFocused(v: boolean): void;
   setChatOpen(v: boolean): void;
   pushChat(msg: ChatMessage, max?: number): void;
+
+  // --- player worker (additive) ---
+  /** Nearby player targeted for interaction (see PlayerPrompt). */
+  playerPrompt: PlayerPrompt | null;
+  setPlayerPrompt(p: PlayerPrompt | null): void;
+  /** Open player context menu (see PlayerMenu). */
+  playerMenu: PlayerMenu | null;
+  openPlayerMenu(sessionId: string, source?: PlayerMenu['source']): void;
+  closePlayerMenu(): void;
 }
 
 let nextId = 1;
@@ -78,4 +113,11 @@ export const useUiStore = create<UiState>()((set) => ({
   setTextInputFocused: (textInputFocused) => set({ textInputFocused }),
   setChatOpen: (chatOpen) => set({ chatOpen }),
   pushChat: (msg, max = 100) => set((s) => ({ chatLog: [...s.chatLog.slice(-(max - 1)), msg] })),
+
+  playerPrompt: null,
+  setPlayerPrompt: (playerPrompt) =>
+    set((s) => (s.playerPrompt?.sessionId === playerPrompt?.sessionId && s.playerPrompt?.name === playerPrompt?.name ? s : { playerPrompt })),
+  playerMenu: null,
+  openPlayerMenu: (sessionId, source = 'keyboard') => set({ playerMenu: { sessionId, source, openedAt: Date.now() } }),
+  closePlayerMenu: () => set((s) => (s.playerMenu ? { playerMenu: null } : s)),
 }));

@@ -81,6 +81,14 @@ export const CONFIG = {
     report: { capacity: 3, refillPerSecond: 1 / 60 },
     mail: { capacity: 2, refillPerSecond: 1 / 30 },
     rest: { capacity: 30, refillPerSecond: 5 },
+    /** Auth endpoints (register/login/guest session), per IP. */
+    auth: { capacity: 10, refillPerSecond: 0.2 },
+    /** Reading a mailbox / misc cheap requests. */
+    mailRead: { capacity: 6, refillPerSecond: 1 },
+    /** Block/mute/unblock/unmute. */
+    social: { capacity: 10, refillPerSecond: 0.5 },
+    typing: { capacity: 10, refillPerSecond: 2 },
+    stand: { capacity: 6, refillPerSecond: 2 },
   } satisfies Record<string, RateLimitRule>,
 
   clock: {
@@ -91,8 +99,14 @@ export const CONFIG = {
   },
 
   collective: {
-    /** Unique players who must examine/touch the fountain for each transformation stage. */
+    /**
+     * Fountain contributions needed for each transformation stage. A contribution is one
+     * touch by one profile per in-world day (repeat touches the same world-day never count).
+     * Server override: FOUNTAIN_STAGES="5,15,40".
+     */
     fountainStages: [5, 15, 40] as readonly number[],
+    /** Minimum DISTINCT profiles that must have contributed for each stage (same length as fountainStages). Server override: FOUNTAIN_STAGE_DISTINCT. */
+    fountainStageDistinct: [3, 8, 20] as readonly number[],
     /** Number of distinct players who must each hold a rune stone at the same time. */
     portalRunesRequired: 3,
     /** All runes must be activated within this window. */
@@ -101,12 +115,51 @@ export const CONFIG = {
     portalAwakeMs: 10 * 60 * 1000,
     /** Players simultaneously in one location that counts as a "gathering" event. */
     gatheringThreshold: 6,
+    /** A location records at most one gathering per this window. */
+    gatheringCooldownMs: 30 * 60 * 1000,
+    /** Players dancing together in one location that count as a dance party. */
+    danceThreshold: 3,
+    /** Distinct players ringing the bell within bellChorusWindowMs → the bell answers differently. Server override: BELL_CHORUS_PLAYERS. */
+    bellChorusPlayers: 3,
+    bellChorusWindowMs: 8_000,
+    bellChorusCooldownMs: 2 * 60 * 1000,
+    /** Half-width (fraction of a day) of the world-midnight window for time-based secrets (0.015 ≈ ±22 world minutes). */
+    midnightWindow: 0.015,
+    /** Distinct residents (profiles that ever joined) at which a milestone is recorded. */
+    residentMilestones: [1, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000] as readonly number[],
+    /** Daily-unique visits to one location at which a "popular place" milestone is recorded. */
+    placeVisitMilestones: [10, 50, 150, 500, 1500] as readonly number[],
+    /** Daily-unique night-time visits to the Woods / The Unknown at which a milestone is recorded. */
+    nightWanderMilestones: [3, 10, 30, 100] as readonly number[],
+  },
+
+  moderation: {
+    /** Rate-limit rejections (any chat-ish action) within abuseWindowMs before an automatic chat mute. */
+    abuseStrikes: 8,
+    abuseWindowMs: 60_000,
+    autoMuteMs: 5 * 60 * 1000,
+    /** Identical messages from one player within duplicateWindowMs beyond this count are dropped. */
+    maxDuplicateMessages: 2,
+    duplicateWindowMs: 30_000,
+    /** Recent chat lines kept per room for report evidence. */
+    evidenceLines: 20,
+  },
+
+  auth: {
+    usernameMin: 3,
+    usernameMax: 24,
+    passwordMin: 8,
+    passwordMax: 128,
+    guestSessionDays: 365,
+    accountSessionDays: 90,
   },
 
   gazette: {
     /** A new issue is compiled this often (real time). */
     issueIntervalMs: 6 * 60 * 60 * 1000,
     maxArticlesPerIssue: 8,
+    /** An issue needs at least this many events in its period; otherwise no issue is published. */
+    minEventsForIssue: 1,
   },
 
   profile: {

@@ -69,6 +69,13 @@ export interface JoinOptions {
   /** Used only for ephemeral guests / first visit; registered profiles use stored values. */
   name?: string;
   appearance?: Appearance;
+  /**
+   * Client hint when re-joining after the previous session was lost (server
+   * restart / reconnection grace expired): where the player was standing.
+   * Optional for the server to honour; if it does it must validate it
+   * (isWalkable, inside the world) and may ignore it (e.g. if too old).
+   */
+  resume?: { x: number; z: number; rot: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +278,12 @@ export interface ProfileSummary {
   discoveries: DiscoveryId[];
   firstVisitAt: number;
   visits: number;
+  /** Items this profile has ever picked up (collection, unique). */
+  inventory?: ItemId[];
+  /** Registered accounts only (lower-case login name). */
+  username?: string;
+  /** Simple activity counters (chats, bellRings, fountainTouches, seatsTaken, itemsPicked, mailSent, …). */
+  stats?: Record<string, number>;
 }
 
 export interface WelcomePayload {
@@ -286,7 +299,15 @@ export interface WelcomePayload {
   /** Recent global/system chat so the log is not empty on join. */
   recentChat: ChatMessage[];
   /** Persistent collective facts. */
-  world: { fountainStage: number; fountainContributors: number; portalAwake: boolean };
+  world: {
+    fountainStage: number;
+    fountainContributors: number;
+    portalAwake: boolean;
+    /** Times the portal has ever been woken (persistent). */
+    portalAwakenings?: number;
+    /** Unix ms when the portal falls dormant again (0 when dormant). */
+    portalAwakeUntil?: number;
+  };
 }
 
 export interface CorrectionPayload {
@@ -347,10 +368,30 @@ export type InteractUi =
 /** One-shot effects everyone nearby should see/hear (bell ring, door creak, splash). */
 export interface ObjectEvent {
   id: string;
-  kind: 'bell_rung' | 'door_opened' | 'door_closed' | 'light_on' | 'light_off' | 'picked_up' | 'dropped' | 'fountain_ripple' | 'rune_lit' | 'rune_faded' | 'portal_awake' | 'portal_sleep';
+  kind:
+    | 'bell_rung'
+    | 'door_opened'
+    | 'door_closed'
+    | 'light_on'
+    | 'light_off'
+    | 'picked_up'
+    | 'dropped'
+    | 'fountain_ripple'
+    | 'rune_lit'
+    | 'rune_faded'
+    | 'portal_awake'
+    | 'portal_sleep'
+    /** Several distinct players rang the bell close together: it answers with a different voice. */
+    | 'bell_chorus'
+    /** The bell rung at world-midnight. */
+    | 'bell_midnight'
+    /** The fountain changed stage (also visible as objects['fountain'].value). */
+    | 'fountain_stage';
   by: string;
   byName: string;
   ts: number;
+  /** Optional kind-specific numbers (e.g. bell_chorus: { voices }, fountain_stage: { stage }). */
+  data?: Record<string, string | number | boolean>;
 }
 
 /** A World Memory event worth surfacing as a toast/banner (collective milestones etc.). */
@@ -437,6 +478,20 @@ export const API = {
   /** GET `${API.gazette}/:id` for a single issue. */
   gazetteIssue: '/api/gazette/:id',
   memory: '/api/memory',
+  /** GET: persistent collective facts + the active Collective Reality rules (transparency). */
+  world: '/api/world',
+  /** Admin (Authorization: Bearer $ADMIN_TOKEN). GET reports?limit= */
+  adminReports: '/api/admin/reports',
+  /** Admin GET sanctions?active=1 ; POST { profileId, kind: 'chat_mute' | 'ban', minutes, reason } */
+  adminSanctions: '/api/admin/sanctions',
+  /** Admin DELETE a sanction. */
+  adminSanction: '/api/admin/sanctions/:id',
+  /** Admin POST { profileId | sessionId, reason } — disconnects the player now. */
+  adminKick: '/api/admin/kick',
+  /** Admin POST { periodStart?, periodEnd? } — compile a Gazette issue now. */
+  adminGazetteCompile: '/api/admin/gazette/compile',
+  /** Admin GET — players currently online. */
+  adminPlayers: '/api/admin/players',
 } as const;
 
 /** All REST errors use this body with an appropriate HTTP status. */

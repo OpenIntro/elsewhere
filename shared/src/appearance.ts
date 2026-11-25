@@ -48,6 +48,9 @@ export const HAIR_STYLES = [
   { id: 'ponytail', label: 'Ponytail' },
   { id: 'swoop', label: 'Swoop' },
   { id: 'spiky', label: 'Spiky' },
+  { id: 'afro', label: 'Cloud' },
+  { id: 'pigtails', label: 'Pigtails' },
+  { id: 'mohawk', label: 'Crest' },
 ] as const satisfies readonly CatalogOption[];
 
 export const HAIR_COLORS = [
@@ -69,6 +72,9 @@ export const FACE_OPTIONS = [
   { id: 'sleepy', label: 'Sleepy' },
   { id: 'surprised', label: 'Surprised' },
   { id: 'wink', label: 'Wink' },
+  { id: 'button', label: 'Button' },
+  { id: 'starry', label: 'Starry' },
+  { id: 'grumpy', label: 'Grumpy' },
 ] as const satisfies readonly CatalogOption[];
 
 /** Warm, muted clothing palette shared by shirt / pants / shoes. */
@@ -115,6 +121,9 @@ export const HAT_OPTIONS = [
   { id: 'sunhat', label: 'Sun hat' },
   { id: 'beret', label: 'Beret' },
   { id: 'flower', label: 'Flower' },
+  { id: 'bucket', label: 'Bucket hat' },
+  { id: 'sprout', label: 'Sprout' },
+  { id: 'headphones', label: 'Headphones' },
 ] as const satisfies readonly CatalogOption[];
 
 export const EYEWEAR_OPTIONS = [
@@ -122,6 +131,7 @@ export const EYEWEAR_OPTIONS = [
   { id: 'round', label: 'Round glasses' },
   { id: 'square', label: 'Square glasses' },
   { id: 'shades', label: 'Sunglasses' },
+  { id: 'monocle', label: 'Monocle' },
 ] as const satisfies readonly CatalogOption[];
 
 export const NECK_OPTIONS = [

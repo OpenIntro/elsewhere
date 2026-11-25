@@ -1,19 +1,85 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { randomAppearance, randomDisplayName } from '@elsewhere/shared';
 import { audio } from './audio/index.js';
+import { AudioDirector } from './audio/AudioDirector.js';
 import { GameCanvas } from './game/GameCanvas.js';
 import { installDebugHook, net } from './net/index.js';
+import { useGameStore } from './state/gameStore.js';
 import { useUiStore } from './state/uiStore.js';
-import { Chat, Hud } from './ui/index.js';
+import { Chat, Hud, Onboarding, Wordmark, enter, hasSavedSession, installUiBridge, resumeSession, toasts, useUiGlobals, type EnterRequest } from './ui/index.js';
 
-export function App() {
-  useEffect(() => {
-    installDebugHook(net);
-    // Foundation: auto-join as a guest. The ui worker inserts <Onboarding> before this.
+/**
+ * App phases (useUiStore.phase):
+ *   loading    → deciding: `?autojoin=1` (automated tests) joins at once as a random guest;
+ *                a saved session token resumes straight into the world ("welcome back");
+ *                otherwise → onboarding.
+ *   onboarding → title sequence → guest / account → look → name → enter (ui/Onboarding).
+ *   playing    → HUD + chat over the world.
+ */
+let flowStarted = false;
+
+function startFlow(setResumeError: (msg: string | null) => void): void {
+  if (flowStarted) return;
+  flowStarted = true;
+  const ui = useUiStore.getState();
+  const params = new URLSearchParams(location.search);
+  if (params.get('autojoin') === '1') {
     net
       .connect({ name: randomDisplayName(), appearance: randomAppearance() })
-      .then(() => useUiStore.getState().setPhase('playing'))
-      .catch(() => undefined);
+      .then(() => ui.setPhase('playing'))
+      .catch(() => setResumeError('Couldn’t reach the island.'));
+    return;
+  }
+  if (!hasSavedSession()) {
+    ui.setPhase('onboarding');
+    return;
+  }
+  resumeSession()
+    .then((name) => {
+      if (name === null) return ui.setPhase('onboarding');
+      ui.setPhase('playing');
+      toasts.push({ level: 'info', text: name ? `Welcome back, ${name}.` : 'Welcome back.', ttlMs: 4200 });
+    })
+    .catch((err: unknown) => setResumeError(err instanceof Error ? err.message : 'Couldn’t reach the island.'));
+}
+
+function Loading({ error, onRetry }: { error: string | null; onRetry(): void }) {
+  return (
+    <div className="loading" data-testid="loading" role="status">
+      <Wordmark className="wordmark--small" />
+      {error ? (
+        <>
+          <p className="loading__text">{error}</p>
+          <button type="button" className="btn btn--primary" onClick={onRetry}>
+            Try again
+          </button>
+        </>
+      ) : (
+        <p className="loading__text loading__text--soft">Finding your way back…</p>
+      )}
+    </div>
+  );
+}
+
+/** Soft veil that lifts as you arrive in the world. */
+function Reveal() {
+  const [on, setOn] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setOn(false), 1600);
+    return () => clearTimeout(t);
+  }, []);
+  return on ? <div className="reveal" aria-hidden="true" /> : null;
+}
+
+export function App() {
+  const phase = useUiStore((s) => s.phase);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  useUiGlobals();
+
+  useEffect(() => {
+    installDebugHook(net);
+    const offBridge = installUiBridge();
+    startFlow(setResumeError);
     const unlock = () => audio.unlock();
     // Leave consented on page close so the server removes us now instead of holding a reconnection seat.
     const leave = () => void net.disconnect();
@@ -21,17 +87,44 @@ export function App() {
     window.addEventListener('keydown', unlock, { once: true });
     window.addEventListener('pagehide', leave);
     return () => {
+      offBridge();
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
       window.removeEventListener('pagehide', leave);
     };
   }, []);
 
+  const onEnter = async (req: EnterRequest) => {
+    await enter(req);
+    useUiStore.getState().setPhase('playing');
+    if (req.mode === 'login') {
+      const name = useGameStore.getState().profile?.name;
+      toasts.push({ level: 'info', text: name ? `Welcome back, ${name}.` : 'Welcome back.', ttlMs: 4200 });
+    }
+  };
+
   return (
     <>
+      <AudioDirector />
       <GameCanvas />
-      <Hud />
-      <Chat />
+      {phase === 'playing' ? (
+        <>
+          <Hud />
+          <Chat />
+          <Reveal />
+        </>
+      ) : phase === 'onboarding' ? (
+        <Onboarding onEnter={onEnter} />
+      ) : (
+        <Loading
+          error={resumeError}
+          onRetry={() => {
+            setResumeError(null);
+            flowStarted = false;
+            startFlow(setResumeError);
+          }}
+        />
+      )}
     </>
   );
 }
