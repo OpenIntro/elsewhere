@@ -66,6 +66,20 @@ function Loading({ error, onRetry }: { error: string | null; onRetry(): void }) 
   );
 }
 
+/** Shown when the server removed this client (kick/ban). Never retries on its own. */
+function Removed({ reason }: { reason: string }) {
+  return (
+    <div className="loading removed" role="alertdialog" aria-labelledby="removed-title" data-testid="removed">
+      <h2 id="removed-title" className="card__title">You were removed from the island</h2>
+      <p className="loading__text">{reason ? `Reason given: ${reason}` : 'A moderator ended your session.'}</p>
+      <p className="loading__text loading__text--small">You won’t be reconnected automatically. If you think this was a mistake, you can try again later.</p>
+      <button type="button" className="btn btn--ghost" onClick={() => location.reload()}>
+        Return to the start
+      </button>
+    </div>
+  );
+}
+
 /** Soft veil that lifts as you arrive in the world. */
 function Reveal() {
   const [on, setOn] = useState(true);
@@ -78,6 +92,7 @@ function Reveal() {
 
 export function App() {
   const phase = useUiStore((s) => s.phase);
+  const kicked = useGameStore((s) => s.kicked);
   const [resumeError, setResumeError] = useState<string | null>(null);
   useUiGlobals();
 
@@ -116,6 +131,7 @@ export function App() {
           <Hud />
           <Chat />
           <Reveal />
+          {kicked ? <Removed reason={kicked.reason} /> : null}
         </>
       ) : phase === 'onboarding' ? (
         <Onboarding onEnter={onEnter} />

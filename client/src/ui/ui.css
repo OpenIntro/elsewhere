@@ -1403,3 +1403,7 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
   transition-duration: 1ms !important;
 }
 html[data-motion='reduced'] .placecard, html[data-motion='reduced'] .chat-peek { animation: none !important; opacity: 1; }
+
+.removed { z-index: 60; background: rgba(16, 12, 10, 0.9); max-width: none; }
+.removed > * { max-width: 440px; }
+.loading__text--small { font-size: 13.5px; color: var(--text-3); }

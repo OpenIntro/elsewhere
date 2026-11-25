@@ -68,12 +68,14 @@ function OnlineCount() {
 
 function ConnectionPill() {
   const connection = useGameStore((s) => s.connection);
-  if (connection === 'connected' || connection === 'idle') return null;
+  const attempt = useGameStore((s) => s.reconnectAttempt);
+  const kicked = useGameStore((s) => s.kicked);
+  if (connection === 'connected' || connection === 'idle' || kicked) return null;
   const lost = connection === 'disconnected' || connection === 'error';
   return (
     <div className={`pill pill--conn${lost ? ' is-lost' : ''}`} role="status" data-testid="hud-connection">
       <span className="conn-dot" aria-hidden="true" />
-      <span className="pill__label">{lost ? 'Connection lost' : connection === 'connecting' ? 'Connecting…' : 'Reconnecting…'}</span>
+      <span className="pill__label">{lost ? 'Connection lost' : connection === 'connecting' ? 'Connecting…' : attempt > 1 ? `Reconnecting… (try ${attempt})` : 'Reconnecting…'}</span>
       {lost ? (
         <button type="button" className="btn btn--primary btn--xs" onClick={() => location.reload()}>
           Rejoin
