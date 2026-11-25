@@ -44,6 +44,7 @@ export const SIGN_LABELS: SignLabel[] = [
   { key: 'house3', text: 'No. 3', bg: '#f1e6d1', fg: '#6b5236', style: 'serif' },
   { key: 'house4', text: 'No. 4', bg: '#f1e6d1', fg: '#5a4458', style: 'serif' },
   { key: 'house5', text: 'No. 5', bg: '#f1e6d1', fg: '#3e4f60', style: 'serif' },
+  { key: 'future_home', text: 'a future home', sub: 'waiting for someone', bg: '#f1e6d1', fg: '#6b4a3a', style: 'script' },
   { key: 'inscription', text: 'ᚠ ᛟ ᚱ ᛗ ᛁ ᚾ ᛞ', sub: 'all who pass are remembered', bg: '#8c877b', fg: '#e8f4ee', style: 'rune' },
 ];
 
@@ -126,4 +127,13 @@ export function signMaterial(): MeshStandardMaterial {
   tex.minFilter = LinearMipmapLinearFilter;
   material = patch(new MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 }), { paint: 0.5 });
   return material;
+}
+
+let cutMaterial: MeshStandardMaterial | null = null;
+/** Same atlas, cutaway-aware (signs on walk-in buildings fade with their wall). */
+export function signCutMaterial(): MeshStandardMaterial {
+  if (cutMaterial) return cutMaterial;
+  const base = signMaterial();
+  cutMaterial = patch(new MeshStandardMaterial({ map: base.map, roughness: 0.85, metalness: 0 }), { paint: 0.5, cut: true });
+  return cutMaterial;
 }

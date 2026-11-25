@@ -63,7 +63,8 @@ export interface StoredSession {
   revokedAt: number | null;
 }
 
-export type SanctionKind = 'chat_mute' | 'ban';
+/** build_ban: may play and chat but not place pieces (admin tool). */
+export type SanctionKind = 'chat_mute' | 'ban' | 'build_ban';
 export interface StoredSanction {
   id: string;
   profileId: string;
@@ -174,6 +175,14 @@ export interface PersistenceService {
   reports: ReportRepository;
   relations: RelationRepository;
   sanctions: SanctionRepository;
+  /**
+   * Raw SQL for feature repositories that live next to their feature
+   * (e.g. server/src/building/repository.ts). `write` is tracked by flush().
+   */
+  sql: {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+    write(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
+  };
   init(): Promise<void>;
   /** Await every write in flight. */
   flush(): Promise<void>;
@@ -240,7 +249,7 @@ function rowToSanction(r: Row): StoredSanction {
   return {
     id: String(r.id),
     profileId: String(r.profile_id),
-    kind: r.kind === 'ban' ? 'ban' : 'chat_mute',
+    kind: r.kind === 'ban' ? 'ban' : r.kind === 'build_ban' ? 'build_ban' : 'chat_mute',
     reason: String(r.reason),
     createdAt: num(r.created_at),
     expiresAt: r.expires_at === null || r.expires_at === undefined ? null : num(r.expires_at),
@@ -580,6 +589,7 @@ export function createPersistence(opts: PersistenceOptions = { dataDir: 'memory:
     reports,
     relations,
     sanctions,
+    sql: { query: q, write: w },
     async init() {
       if (db) return;
       db = await openDb(opts);

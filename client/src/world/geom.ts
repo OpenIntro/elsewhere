@@ -188,6 +188,12 @@ const _v = new Vector3();
 
 export class GeoBuilder {
   private parts = new Map<string, BufferGeometry[]>();
+  /**
+   * Cutaway slot written into every part's `cut` vertex attribute (0 = never cut;
+   * n = slot n-1 of the cutaway uniform, see ../cutaway.ts). Set around the
+   * walls / roof of walk-in buildings so they can fade when you are inside.
+   */
+  cut = 0;
   private stack: Matrix4[] = [new Matrix4()];
   private rnd: () => number;
   /** Ids of interactables this builder drew (coverage check). */
@@ -213,6 +219,23 @@ export class GeoBuilder {
     if (this.stack.length > 1) this.stack.pop();
     return this;
   }
+  /** Run fn with `cut` set to a slot (restored afterwards). */
+  withCut(cut: number, fn: () => void): this {
+    const prev = this.cut;
+    this.cut = cut;
+    try {
+      fn();
+    } finally {
+      this.cut = prev;
+    }
+    return this;
+  }
+
+  private tag(g: BufferGeometry): void {
+    const n = (g.attributes.position as BufferAttribute).count;
+    g.setAttribute('cut', new BufferAttribute(new Float32Array(n).fill(this.cut), 1));
+  }
+
   /** Run fn inside a pushed transform. */
   at(m: Matrix4, fn: () => void): this {
     this.push(m);
@@ -267,6 +290,7 @@ export class GeoBuilder {
       col[i * 3 + 2] = _c.b * f;
     }
     g.setAttribute('color', new BufferAttribute(col, 3));
+    this.tag(g);
     let list = this.parts.get(bucket);
     if (!list) this.parts.set(bucket, (list = []));
     list.push(g);
@@ -281,6 +305,7 @@ export class GeoBuilder {
     const col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) col.set(rgb, i * 3);
     g.setAttribute('color', new BufferAttribute(col, 3));
+    this.tag(g);
     let list = this.parts.get(bucket);
     if (!list) this.parts.set(bucket, (list = []));
     list.push(g);
@@ -297,6 +322,7 @@ export class GeoBuilder {
     const n = uv.count;
     const col = new Float32Array(n * 3).fill(1);
     g.setAttribute('color', new BufferAttribute(col, 3));
+    this.tag(g);
     let list = this.parts.get(bucket);
     if (!list) this.parts.set(bucket, (list = []));
     list.push(g);

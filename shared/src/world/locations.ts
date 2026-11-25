@@ -123,11 +123,19 @@ export function getLocation(id: LocationId): Location {
   return l;
 }
 
+let interiorLocator: ((p: Vec2) => LocationId | null) | null = null;
+/** interiors.ts registers this: a point inside a walk-in building belongs to that building's location. */
+export function setInteriorLocator(fn: (p: Vec2) => LocationId | null): void {
+  interiorLocator = fn;
+}
+
 /**
- * The location containing p (closest center among those whose radius contains it),
- * or null when out in-between places.
+ * The location containing p (the building's location when inside one; else the
+ * closest center among those whose radius contains it), or null when out in-between places.
  */
 export function locationAt(p: Vec2): Location | null {
+  const inside = interiorLocator?.(p);
+  if (inside) return BY_ID.get(inside) ?? null;
   let best: Location | null = null;
   let bestScore = Infinity;
   for (const l of LOCATIONS) {

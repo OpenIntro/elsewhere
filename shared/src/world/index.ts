@@ -4,6 +4,7 @@ export * from './paths.js';
 export * from './ground.js';
 export * from './items.js';
 export * from './buildings.js';
+export * from './interiors.js';
 export * from './interactables.js';
 export * from './structures.js';
 export * from './decor.js';

@@ -5,6 +5,7 @@
  */
 import { Canvas } from '@react-three/fiber';
 import { PCFShadowMap } from 'three';
+import { BuildLayer } from '../build/index.js';
 import { World } from '../world/index.js';
 import { CameraRig, LocalPlayer, PlayerSystems, TouchControls } from '../player/index.js';
 import { useSettingsStore } from '../state/settingsStore.js';
@@ -25,6 +26,7 @@ export function GameCanvas() {
         <World terrainResolution={quality === 'low' ? 2 : 1} />
         <LocalPlayer />
         <RemotePlayers />
+        <BuildLayer />
         <PlayerSystems />
         <WorldOverlay />
       </Canvas>

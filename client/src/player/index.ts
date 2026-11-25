@@ -11,6 +11,7 @@ export {
   onAction,
   installInput,
   isTyping,
+  setKeyInterceptor,
   type InputSnapshot,
   type InputAction,
 } from './input.js';
@@ -25,7 +26,7 @@ export {
   BASE_YAW,
   type CameraState,
 } from './camera.js';
-export { walkTo, walkToInteract, walkToPlayer, cancelPath, hasPath, nav } from './navigation.js';
+export { walkTo, walkToInteract, walkToPlayer, cancelPath, hasPath, nav, refreshNavRect } from './navigation.js';
 export { NavGrid, findPath } from './pathfinding.js';
 export { TouchControls, isTouchDevice, useTouchControlsVisible } from './TouchControls.js';
 export { worldToScreen, groundFromScreen } from './picking.js';

@@ -82,7 +82,7 @@ export const PATHS: readonly WorldPath[] = [
     name: 'Coastal Walk',
     surface: 'sand',
     width: 2.2,
-    points: [p(-31, 25.5), p(-24, 31.5), p(-15, 35.5), p(-5, 38.5), p(4, 41.5), p(9.5, 42.5)],
+    points: [p(-31, 25.5), p(-24, 31.5), p(-15, 35.5), p(-5, 38.5), p(4, 40.3), p(9.5, 41.4)],
     connects: ['residential', 'waterfront'],
   },
   {
@@ -117,7 +117,7 @@ export const PATHS: readonly WorldPath[] = [
     id: 'path_store_woods',
     surface: 'dirt',
     width: 2,
-    points: [p(-21.5, -12), p(-24.5, -14.5), p(-28, -16.8)],
+    points: [p(-18.2, -14.9), p(-22.9, -18.4), p(-28, -17.4)],
     connects: ['general_store', 'woods'],
   },
   {
@@ -125,7 +125,7 @@ export const PATHS: readonly WorldPath[] = [
     name: 'Old Trail',
     surface: 'dirt',
     width: 2,
-    points: [p(-4.5, -24.5), p(-9, -28.5), p(-12.5, -33), p(-15, -38.5)],
+    points: [p(-6.8, -24.0), p(-9.4, -28.4), p(-12.5, -33), p(-15, -38.5)],
     connects: ['town_hall', 'woods'],
   },
   {

@@ -8,7 +8,8 @@
  * Yaw: the object's front faces forward(yaw). For seats, a seated player faces seat.yaw.
  */
 import { rotateOffset, yawFromDirection, type Vec2 } from '../math.js';
-import { BUILDINGS, buildingLocal, doorPosition, getBuilding } from './buildings.js';
+import { BUILDINGS, buildingLocal, doorPosition, getBuilding, type Building } from './buildings.js';
+import { INTERIOR_SEATS, interiorAnchor, type InteriorSeatSpec } from './interiors.js';
 import type { DiscoveryId, ItemId } from './items.js';
 import type { LocationId } from './locations.js';
 
@@ -188,15 +189,20 @@ function pickup(id: string, itemId: ItemId, name: string, locationId: LocationId
 // ---------------------------------------------------------------------------
 
 const SQUARE = v(0, 2);
+/** Local X of the Town Hall bell tower (front-right corner); the bell rope post stands in front of it. */
+export const HALL_TOWER_X = 5.7;
 const RES_CENTER = v(-36, 18);
 const UNKNOWN = v(-10, -61);
 /** The arch stands between two runes on the west side and faces east-north-east, towards the camera side. */
 const ARCH_FACING = v(-1, -56.6);
 
+/** A point relative to a building's FRONT face: lx along it, dz out from it. */
+const front = (b: Building, lx: number, dz: number): Vec2 => buildingLocal(b, lx, b.depth / 2 + dz);
+
 const doors: DoorInteractable[] = BUILDINGS.map((b) => ({
   id: b.doorId,
   kind: 'door',
-  name: `${b.name} door`,
+  name: b.futureHome ? `${b.name} — a future home` : `${b.name} door`,
   locationId: b.locationId,
   position: doorPosition(b),
   yaw: b.yaw,
@@ -226,7 +232,7 @@ const squareLights = [-10, -100, 95, -170, 135].map((deg, i) => streetlight(`lig
 
 // Café outdoor seating: three tables in front of the café, two chairs each.
 const cafe = getBuilding('cafe');
-const cafeTableSpots: Vec2[] = [buildingLocal(cafe, -2.9, 6.3), buildingLocal(cafe, 0.3, 7.6), buildingLocal(cafe, 3.4, 6.1)];
+const cafeTableSpots: Vec2[] = [front(cafe, -2.9, 3.3), front(cafe, 0.3, 4.6), front(cafe, 3.4, 3.1)];
 export const CAFE_TABLES: readonly { id: string; position: Vec2; radius: number }[] = cafeTableSpots.map((p, i) => ({ id: `cafe_table_${i + 1}`, position: p, radius: 0.6 }));
 const cafeChairs: SeatInteractable[] = cafeTableSpots.flatMap((t, i) => {
   const a = rotateOffset(v(-1.05, 0), cafe.yaw);
@@ -239,6 +245,19 @@ const store = getBuilding('general_store');
 const hall = getBuilding('town_hall');
 const workshop = getBuilding('workshop');
 const boathouse = getBuilding('boathouse');
+
+/** Indoor chairs / benches (interiors.ts INTERIOR_SEATS). */
+function indoorSeat(s: InteriorSeatSpec): SeatInteractable {
+  if (s.kind === 'bench') return bench(s.id, s.locationId, s.position, s.yaw, s.name);
+  const seat: Seat = { position: add(s.position, rotateOffset(v(0, 0.05), s.yaw)), height: s.style === 'armchair' ? 0.42 : s.style === 'stool' ? 0.5 : 0.45, yaw: s.yaw, exit: s.exit };
+  return { id: s.id, kind: 'chair', name: s.name, locationId: s.locationId, position: s.position, yaw: s.yaw, prompt: 'Sit', synced: true, radius: 1.8, seats: [seat] };
+}
+const indoorSeats = INTERIOR_SEATS.map(indoorSeat);
+/** Interior anchor as a position (things that live indoors are placed on anchors / furniture). */
+const inside = (interior: string, anchor: string, toward = 0): Vec2 => {
+  const a = interiorAnchor(interior, anchor);
+  return add(a.position, rotateOffset(v(0, toward), a.yaw));
+};
 
 export const INTERACTABLES: readonly Interactable[] = [
   // --- Town Square -------------------------------------------------------
@@ -263,33 +282,40 @@ export const INTERACTABLES: readonly Interactable[] = [
 
   // --- Café ---------------------------------------------------------------
   ...cafeChairs,
-  sign('sign_cafe_menu', 'cafe', buildingLocal(cafe, 4.8, 3.6), cafe.yaw, 'Today at the Café',
+  sign('sign_cafe_menu', 'cafe', front(cafe, 4.6, 0.75), cafe.yaw, 'Today at the Café',
     'Coffee — black, or as dark as the night gets\nTea — whatever the kettle feels like\nCinnamon bun — while they last\n\nTake your time. The tables are for everyone.'),
-  lantern('lantern_cafe', 'cafe', buildingLocal(cafe, -4.6, 3.6), 2.2, 'String lights'),
-  inspect('inspect_cafe_window', 'Café window', 'cafe', buildingLocal(cafe, 2.4, 3.2), cafe.yaw, 'Café window',
+  lantern('lantern_cafe', 'cafe', front(cafe, -4.6, 0.75), 2.2, 'String lights'),
+  inspect('inspect_cafe_window', 'Café window', 'cafe', front(cafe, 2.4, 0.2), cafe.yaw, 'Café window',
     'Through the glass: a chalkboard, a hissing espresso machine, and a cat asleep on a stack of newspapers.', 'Peek inside'),
 
+  inspect('inspect_cafe_piano', 'Upright piano', 'cafe', inside('cafe', 'piano', 0.75), interiorAnchor('cafe', 'piano').yaw + Math.PI, 'Upright piano',
+    'Slightly out of tune, lovingly so. Someone has pencilled "play me" above middle C.', 'Look at the piano'),
+
   // --- General Store ------------------------------------------------------
-  { id: 'mailbox_post_office', kind: 'mailbox', name: 'Post Box', locationId: 'general_store', position: buildingLocal(store, 3.6, 4.6), yaw: store.yaw, prompt: 'Use post box', synced: false, owner: 'public' },
-  sign('sign_store_hours', 'general_store', buildingLocal(store, -3.4, 4.2), store.yaw, 'General Store',
+  { id: 'mailbox_post_office', kind: 'mailbox', name: 'Post Box', locationId: 'general_store', position: front(store, 3.6, 1.35), yaw: store.yaw, prompt: 'Use post box', synced: false, owner: 'public' },
+  sign('sign_store_hours', 'general_store', front(store, -3.4, 0.95), store.yaw, 'General Store',
     'Open when the door is open.\nWe stock: string, lamp oil, apples, postcards, and things you did not know you needed.'),
-  pickup('pickup_apple', 'apple', 'Apple', 'general_store', buildingLocal(store, 2.2, 4.3)),
-  lantern('lantern_store', 'general_store', buildingLocal(store, -1.5, 3.9), 2.2, 'Porch lamp'),
+  pickup('pickup_apple', 'apple', 'Apple', 'general_store', inside('general_store', 'crates', 0.75)),
+  lantern('lantern_store', 'general_store', front(store, -1.5, 0.65), 2.2, 'Porch lamp'),
 
   // --- Town Hall ----------------------------------------------------------
-  { id: 'bell_town_hall', kind: 'bell', name: 'Town Hall Bell', locationId: 'town_hall', position: buildingLocal(hall, 4.6, 5.2), yaw: hall.yaw, prompt: 'Ring the bell', synced: true },
-  { id: 'archive_town_hall', kind: 'archive', name: 'Island Archive', locationId: 'town_hall', position: buildingLocal(hall, -4.6, 5.2), yaw: hall.yaw, prompt: 'Browse the archive', synced: false },
-  sign('sign_town_hall', 'town_hall', buildingLocal(hall, 0, 8.4), Math.PI, 'Town Hall',
+  { id: 'bell_town_hall', kind: 'bell', name: 'Town Hall Bell', locationId: 'town_hall', position: front(hall, HALL_TOWER_X, 0.7), yaw: hall.yaw, prompt: 'Ring the bell', synced: true },
+  { id: 'archive_town_hall', kind: 'archive', name: 'Island Archive', locationId: 'town_hall', position: inside('town_hall', 'archive', 0.9), yaw: interiorAnchor('town_hall', 'archive').yaw + Math.PI, prompt: 'Browse the archive', synced: false },
+  sign('sign_town_hall', 'town_hall', front(hall, 0, 3.9), Math.PI, 'Town Hall',
     'Seat of no government in particular.\nThe bell may be rung by anyone, at any hour, for any reason.\nThe archive inside records everything the island remembers.'),
-  lantern('lantern_hall_left', 'town_hall', buildingLocal(hall, -2.4, 5.0), 2.4, 'Hall lamp'),
-  lantern('lantern_hall_right', 'town_hall', buildingLocal(hall, 2.4, 5.0), 2.4, 'Hall lamp'),
+  lantern('lantern_hall_left', 'town_hall', front(hall, -2.65, 0.8), 2.4, 'Hall lamp'),
+  lantern('lantern_hall_right', 'town_hall', front(hall, 2.65, 0.8), 2.4, 'Hall lamp'),
+  inspect('inspect_hall_notices', 'Notice board', 'town_hall', inside('town_hall', 'notice_board', 0.6), interiorAnchor('town_hall', 'notice_board').yaw + Math.PI, 'Hall notices',
+    'MEETINGS: whenever enough people turn up.\nAGENDA: 1. the bell rope is fraying  2. who keeps leaving acorns on the stump  3. the arch.\nAll are welcome. Chairs are first come, first sat.', 'Read the notices'),
 
   // --- Workshop -----------------------------------------------------------
-  inspect('inspect_workbench', 'Workbench', 'workshop', buildingLocal(workshop, 2.6, 5.2), workshop.yaw, 'Workbench',
+  inspect('inspect_workbench', 'Workbench', 'workshop', inside('workshop', 'workbench_1', 0.45), interiorAnchor('workshop', 'workbench_1').yaw + Math.PI, 'Workbench',
     'Clamps, shavings, a half-built birdhouse, and a list: "1. fix the dock lantern 2. ask about the arch 3. more glue".', 'Look at workbench'),
-  pickup('pickup_wrench', 'wrench', 'Wrench', 'workshop', buildingLocal(workshop, 1.2, 5.6)),
-  sign('sign_workshop', 'workshop', buildingLocal(workshop, -4.0, 4.4), workshop.yaw, 'The Workshop', 'Borrow a tool, return a tool.\nMind the sawdust.'),
-  lantern('lantern_workshop', 'workshop', buildingLocal(workshop, -2.0, 3.9), 2.3, 'Work lamp'),
+  pickup('pickup_wrench', 'wrench', 'Wrench', 'workshop', inside('workshop', 'workbench_2', 0.85)),
+  inspect('inspect_boat_frame', 'Half-built boat', 'workshop', inside('workshop', 'project_1', 0.4), interiorAnchor('workshop', 'project_1').yaw + Math.PI, 'Half-built boat',
+    'Ribs of steamed oak, a keel, and a chalk note: "for whoever wants to see the other island". Nobody remembers starting it.', 'Look at the boat'),
+  sign('sign_workshop', 'workshop', front(workshop, -4.0, 0.9), workshop.yaw, 'The Workshop', 'Borrow a tool, return a tool.\nMind the sawdust.'),
+  lantern('lantern_workshop', 'workshop', front(workshop, -2.4, 0.4), 2.3, 'Work lamp'),
 
   // --- Residential --------------------------------------------------------
   ...houseMailboxes,
@@ -342,6 +368,9 @@ export const INTERACTABLES: readonly Interactable[] = [
   pickup('pickup_seashell', 'seashell', 'Seashell', 'waterfront', v(24.5, 45.2)),
   pickup('pickup_paper_lantern', 'paper_lantern', 'Paper Lantern', 'waterfront', v(6.6, 41.6)),
   hidden('hidden_message_bottle', 'message_bottle', v(-9.5, 40.2), 'waterfront'),
+
+  // --- Indoors ------------------------------------------------------------
+  ...indoorSeats,
   ...doors,
 ];
 

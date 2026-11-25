@@ -22,6 +22,10 @@ export interface DoorAnchor {
   double: boolean;
   /** Panel style. */
   style: 'plank' | 'panel' | 'glass' | 'barn' | 'round';
+  /** Cutaway slot of the wall the door sits in (leaves fade with it). */
+  cut: number;
+  /** Walk-in building: the leaves swing open whenever someone is at the door. */
+  walkIn: boolean;
 }
 
 export interface GlowAnchor {
@@ -39,6 +43,8 @@ export interface LampAnchor {
   color: string;
   range: number;
   intensity: number;
+  /** Walk-in interior this lamp lights (its ground pool / point light only matter there). */
+  interiorId?: string;
 }
 
 export const anchors = {
@@ -195,12 +201,13 @@ export function flowerBox(B: GeoBuilder, w: number): void {
 // Doorways (frame + dark interior + step). The leaf itself is dynamic (Doors.tsx).
 // ---------------------------------------------------------------------------
 
-export function doorway(B: GeoBuilder, id: string, w: number, h: number, o: { frame?: ColorLike; color: string; double?: boolean; style?: DoorAnchor['style']; arched?: boolean; step?: boolean; hood?: ColorLike | null }): void {
+export function doorway(B: GeoBuilder, id: string, w: number, h: number, o: { frame?: ColorLike; color: string; double?: boolean; style?: DoorAnchor['style']; arched?: boolean; step?: boolean; hood?: ColorLike | null; walkIn?: boolean }): void {
   const frame = o.frame ?? P.trim;
-  // Interior (lit softly at night through the open door / glass).
-  // Interior seen when the leaf swings out: sits on the wall surface, under the leaf.
-  B.addRaw('window', rbox(w, h, 0.03, 0.01), [0.55, 0.6, 0], T(0, h / 2, 0.006));
-  B.add('solid', rbox(w + 0.02, 0.04, 0.1, 0.01), P.woodDark, T(0, 0.02, 0.03));
+  if (!o.walkIn) {
+    // Closed building: a softly lit "interior" panel seen when the leaf swings out (sits under the leaf).
+    B.addRaw('window', rbox(w, h, 0.03, 0.01), [0.55, 0.6, 0], T(0, h / 2, 0.006));
+    B.add('solid', rbox(w + 0.02, 0.04, 0.1, 0.01), P.woodDark, T(0, 0.02, 0.03));
+  }
   if (o.arched) {
     B.add('solid', archFrame(w, h, 0.14, 0.14), frame, T(0, 0, 0.04));
   } else {
@@ -215,7 +222,7 @@ export function doorway(B: GeoBuilder, id: string, w: number, h: number, o: { fr
     for (const s of [-1, 1]) B.add('solid', rbox(0.08, 0.5, 0.08, 0.03), shade(frame, 0.9), T(s * (w / 2 + 0.3), h + 0.18, 0.12, 0, -0.6));
   }
   const frameM = B.matrix.clone();
-  anchors.doors.push({ id, frame: frameM, width: w, height: h, color: o.color, double: o.double ?? false, style: o.style ?? 'plank' });
+  anchors.doors.push({ id, frame: frameM, width: w, height: h, color: o.color, double: o.double ?? false, style: o.style ?? 'plank', cut: B.cut, walkIn: o.walkIn ?? false });
 }
 
 // ---------------------------------------------------------------------------

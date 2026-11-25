@@ -7,6 +7,7 @@
  */
 import { dist, distanceToPolyline, mulberry32, type Vec2 } from '../math.js';
 import { BUILDINGS } from './buildings.js';
+import { PROTECTED_ZONES, zoneContains } from './interiors.js';
 import { INTERACTABLES } from './interactables.js';
 import { LOCATIONS, getLocation } from './locations.js';
 import { DECKS, PATHS } from './paths.js';
@@ -50,7 +51,8 @@ interface Obstacle {
 
 function staticObstacles(): Obstacle[] {
   const out: Obstacle[] = [];
-  for (const b of BUILDINGS) out.push({ p: b.position, r: Math.hypot(b.width, b.depth) / 2 + 2.5 });
+  // Closed buildings: bounding circle. Walk-in buildings: their footprint + door apron (clearOf).
+  for (const b of BUILDINGS) if (!b.enterable) out.push({ p: b.position, r: Math.hypot(b.width, b.depth) / 2 + 2.5 });
   for (const i of INTERACTABLES) out.push({ p: i.position, r: 2.4 });
   for (const s of STANDING_STONES) out.push({ p: s.position, r: 2.2 });
   for (const pr of PROPS) out.push({ p: pr.position, r: 2 });
@@ -60,7 +62,11 @@ function staticObstacles(): Obstacle[] {
   return out;
 }
 
-function clearOf(p: Vec2, obstacles: Obstacle[], pathClearance: number): boolean {
+const ENTERABLE = new Set(BUILDINGS.filter((b) => b.enterable).map((b) => b.id));
+const WALK_IN_ZONES = PROTECTED_ZONES.filter((z) => ENTERABLE.has(z.buildingId));
+
+function clearOf(p: Vec2, obstacles: Obstacle[], pathClearance: number, buildingMargin = 2.5): boolean {
+  for (const z of WALK_IN_ZONES) if (zoneContains(z, p, z.kind === 'building' ? buildingMargin : buildingMargin * 0.5)) return false;
   for (const o of obstacles) if (dist(p, o.p) < o.r) return false;
   for (const path of PATHS) if (distanceToPolyline(p, path.points) < path.width / 2 + pathClearance) return false;
   if (distanceToPolyline(p, CREEK_POINTS) < CREEK_BANK_HALF_WIDTH + 0.8) return false;
@@ -133,7 +139,7 @@ function generate(): { trees: Tree[]; rocks: Rock[]; bushes: Bush[] } {
     const p = { x: -62 + rnd() * 126, z: -76 + rnd() * 128 };
     const inland = inlandDistance(p.x, p.z);
     if (inland < 0.5) continue;
-    if (!clearOf(p, obstacles.map((o) => ({ p: o.p, r: o.r * 0.6 })), 0.4)) continue;
+    if (!clearOf(p, obstacles.map((o) => ({ p: o.p, r: o.r * 0.6 })), 0.4, 1.0)) continue;
     const inWoods = dist(p, woods.center) < woods.radius + 4;
     const nearCreek = distanceToPolyline(p, CREEK_POINTS) < CREEK_BANK_HALF_WIDTH + 2.5;
     const kind: Bush['kind'] = nearCreek ? 'reeds' : inWoods ? 'fern' : rnd() < 0.4 ? 'flowers' : 'shrub';

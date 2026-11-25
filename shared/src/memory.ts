@@ -25,7 +25,11 @@ export type WorldEventKind =
   | 'gathering'
   | 'dance_party'
   | 'sat_together'
-  | 'milestone';
+  | 'milestone'
+  /** A resident placed their very first building piece. */
+  | 'first_build'
+  /** A player-built structure (walls incl. a doorway) got its roof. */
+  | 'structure_roofed';
 
 /** Who did it. profileId is stable across sessions; name is the display name at the time. */
 export interface EventActor {

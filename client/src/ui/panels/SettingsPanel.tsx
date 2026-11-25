@@ -113,6 +113,15 @@ function ControlsSection() {
         />
       </div>
       <Toggle label="Run by default" hint="Hold Shift to walk instead." checked={controls.runByDefault} onChange={(v) => setControls({ runByDefault: v })} />
+      <div className="row-control">
+        <span className="row-control__label">
+          <span>Stuck somewhere?</span>
+          <small>Walled in or wedged? This takes you back to the Town Square.</small>
+        </span>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => net.send(C2S.unstuck, {})} data-testid="unstuck">
+          <Icon name="compass" size={18} /> Unstuck
+        </button>
+      </div>
       <Toggle label="Show names above people" checked={controls.showNames} onChange={(v) => setControls({ showNames: v })} />
       <div className="row-control row-control--stack">
         <span className="row-control__label">

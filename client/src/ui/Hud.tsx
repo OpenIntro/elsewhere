@@ -6,6 +6,7 @@
  */
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { LOCATIONS, worldTimeAt } from '@elsewhere/shared';
+import { BuildNavButton, BuildUi, useBuildStore } from '../build/index.js';
 import { cameraControls, pressInteract, useCameraStore, useTouchControlsVisible } from '../player/index.js';
 import { serverNow, useGameStore } from '../state/gameStore.js';
 import { useUiStore, type Panel } from '../state/uiStore.js';
@@ -147,6 +148,8 @@ function BottomNav() {
   const chatOpen = useUiStore((s) => s.chatOpen);
   const { count, mention } = useChatUnread();
   const narrow = useIsNarrow();
+  // While building, the build dock takes the nav's place.
+  const building = useBuildStore((s) => s.mode !== 'off');
   const toggle = (id: NavId) => {
     const ui = useUiStore.getState();
     if (id === 'chat') {
@@ -162,6 +165,7 @@ function BottomNav() {
     if (narrow) ui.setChatOpen(false);
     ui.openPanel({ kind: id } as Panel);
   };
+  if (building) return null;
   return (
     <nav className="nav" aria-label="Main">
       {NAV.map((n) => {
@@ -180,6 +184,7 @@ function BottomNav() {
           </button>
         );
       })}
+      <BuildNavButton />
     </nav>
   );
 }
@@ -457,6 +462,7 @@ export function Hud() {
       <ControlsHint />
       <Prompt />
       <BottomNav />
+      <BuildUi />
       <PanelHost />
     </div>
   );

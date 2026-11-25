@@ -3,7 +3,8 @@
  * geometry, foliage with wind sway, glowing window glass, lamp emissives.
  * All patches read the shared `uniforms` from env.ts.
  */
-import { AdditiveBlending, CanvasTexture, Color, DoubleSide, MeshBasicMaterial, MeshStandardMaterial, type Material, type WebGLProgramParametersWithUniforms } from 'three';
+import { AdditiveBlending, CanvasTexture, Color, DoubleSide, MeshBasicMaterial, MeshDepthMaterial, MeshStandardMaterial, RGBADepthPacking, type Material, type WebGLProgramParametersWithUniforms } from 'three';
+import { CUT_VEC4S, cutUniform } from './cutaway.js';
 import { uniforms } from './env.js';
 
 type Shader = WebGLProgramParametersWithUniforms;
@@ -25,7 +26,30 @@ interface PatchOpts {
   /** Extra fragment code run after lighting (has vWPos, uniforms). */
   extraFrag?: string;
   extraFragHeader?: string;
+  /** Dollhouse cutaway: parts tagged with a `cut` slot dissolve (dithered) as that slot fades. */
+  cut?: boolean;
 }
+
+/** Vertex side of the cutaway: look up this vertex's slot fade (constant per part). */
+export const CUT_VERT_HEADER = /* glsl */ `
+attribute float cut;
+uniform vec4 uCut[${CUT_VEC4S}];
+varying float vCutFade;`;
+export const CUT_VERT = /* glsl */ `{
+  int ci = int(cut + 0.5) - 1;
+  vCutFade = 0.0;
+  if (ci >= 0) {
+    vec4 q = uCut[ci / 4];
+    int m = ci - (ci / 4) * 4;
+    vCutFade = m == 0 ? q.x : m == 1 ? q.y : m == 2 ? q.z : q.w;
+  }
+}`;
+/** Fragment side: interleaved-gradient-noise dissolve (no sorting, no z-fighting, smooth over ~0.4 s). */
+export const CUT_FRAG_HEADER = /* glsl */ `varying float vCutFade;`;
+export const CUT_FRAG = /* glsl */ `if (vCutFade > 0.002) {
+  float cutN = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  if (cutN < vCutFade) discard;
+}`;
 
 export function patch(mat: MeshStandardMaterial, opts: PatchOpts): MeshStandardMaterial {
   const key = JSON.stringify(opts);
@@ -37,6 +61,11 @@ export function patch(mat: MeshStandardMaterial, opts: PatchOpts): MeshStandardM
     shader.uniforms.uGlow = uniforms.uGlow;
     shader.uniforms.uKeyDir = uniforms.uKeyDir;
     shader.uniforms.uSunColor = uniforms.uSunColor;
+    if (opts.cut) {
+      shader.uniforms.uCut = cutUniform;
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${CUT_VERT_HEADER}`).replace('#include <begin_vertex>', `#include <begin_vertex>\n${CUT_VERT}`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${CUT_FRAG_HEADER}`).replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${CUT_FRAG}`);
+    }
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -139,6 +168,13 @@ export const windowMaterial = standard(
   // daytime sky reflection streak
   float streak = smoothstep(0.45, 0.5, fract((vWPos.x + vWPos.z) * 0.6 + vWPos.y * 0.6)) * (1.0 - smoothstep(0.5, 0.6, fract((vWPos.x + vWPos.z) * 0.6 + vWPos.y * 0.6)));
   outgoingLight += vec3(0.25, 0.3, 0.33) * streak * (1.0 - uGlow);
+  // Interior side of a window (b = 1): the sky outside — bright by day, deep blue at night.
+  if (d.b > 0.5) {
+    float sky = clamp(vWPos.y - floor(vWPos.y), 0.0, 1.0);
+    vec3 dayC = mix(vec3(0.78, 0.88, 0.93), vec3(0.95, 0.93, 0.84), 0.35 + 0.3 * sky);
+    vec3 nightC = vec3(0.11, 0.14, 0.27) + vec3(0.05, 0.05, 0.08) * streak;
+    outgoingLight = mix(dayC * (0.9 + 0.1 * streak), nightC, uNight);
+  }
 }`,
   },
 );
@@ -148,6 +184,37 @@ windowMaterial.onBeforeCompile = (shader, renderer) => {
   baseCompile.call(windowMaterial, shader, renderer);
   shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '');
 };
+
+// --- Cutaway variants for architecture (walk-in buildings fade their walls/roof). --------
+export const solidCutMaterial = standard({ vertexColors: true, roughness: 0.84, metalness: 0 }, { paint: 1, rim: 0.22, cut: true });
+export const glazedCutMaterial = standard({ vertexColors: true, roughness: 0.55, metalness: 0 }, { paint: 0.6, rim: 0.25, cut: true });
+export const staticPlantCutMaterial = standard({ vertexColors: true, roughness: 0.92, metalness: 0 }, { paint: 0.9, rim: 0.3, cut: true });
+export const windowCutMaterial = windowMaterial.clone() as MeshStandardMaterial;
+{
+  const winOpts = { extraFrag: 'window', cut: true };
+  const base = windowMaterial.onBeforeCompile;
+  windowCutMaterial.customProgramCacheKey = () => JSON.stringify(winOpts);
+  windowCutMaterial.onBeforeCompile = (shader, renderer) => {
+    base.call(windowCutMaterial, shader, renderer);
+    shader.uniforms.uCut = cutUniform;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${CUT_VERT_HEADER}`).replace('#include <begin_vertex>', `#include <begin_vertex>\n${CUT_VERT}`);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${CUT_FRAG_HEADER}`).replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${CUT_FRAG}`);
+  };
+}
+
+let _cutDepth: MeshDepthMaterial | null = null;
+/** Shadow-pass depth material honouring the cutaway (a faded roof lets the sun into the room). */
+export function cutDepthMaterial(): MeshDepthMaterial {
+  if (_cutDepth) return _cutDepth;
+  const m = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  m.customProgramCacheKey = () => 'cutDepth';
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uCut = cutUniform;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${CUT_VERT_HEADER}`).replace('#include <begin_vertex>', `#include <begin_vertex>\n${CUT_VERT}`);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${CUT_FRAG_HEADER}`).replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${CUT_FRAG}`);
+  };
+  return (_cutDepth = m);
+}
 
 /** Lamp bulbs / glowing bits, per-instance colour drives on/off. */
 export const bulbMaterial = new MeshBasicMaterial({ color: '#ffffff', toneMapped: false });

@@ -104,6 +104,29 @@ export class NavGrid {
     return this;
   }
 
+  /**
+   * Re-sample the already-built cells inside a world rectangle (dynamic
+   * colliders changed there, e.g. a player placed or removed a piece) and
+   * relabel components. Rows not built yet will sample fresh data anyway.
+   */
+  refreshRect(minX: number, minZ: number, maxX: number, maxZ: number): void {
+    const r = this.radius + this.margin;
+    const c0 = Math.max(0, this.colOf(minX - r));
+    const c1 = Math.min(this.cols - 1, this.colOf(maxX + r));
+    const r0 = Math.max(0, this.rowOf(minZ - r));
+    const r1 = Math.min(this.built - 1, this.rowOf(maxZ + r));
+    if (c1 < c0 || r1 < r0) return;
+    const p = { x: 0, z: 0 };
+    for (let row = r0; row <= r1; row++) {
+      p.z = this.minZ + (row + 0.5) * this.cell;
+      for (let col = c0; col <= c1; col++) {
+        p.x = this.minX + (col + 0.5) * this.cell;
+        this.walk[row * this.cols + col] = isWalkable(p, r, this.world) ? 1 : 0;
+      }
+    }
+    if (this.ready) this.labelComponents();
+  }
+
   index(col: number, row: number): number {
     return row * this.cols + col;
   }

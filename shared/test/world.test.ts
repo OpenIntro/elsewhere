@@ -134,7 +134,9 @@ describe('spawn, paths, colliders', () => {
     for (const p of PATHS) for (const pt of p.points) expect(groundHeight(pt.x, pt.z), p.id).toBeGreaterThan(WATER_LEVEL);
   });
   it('colliders include buildings and trees; woods are wooded', () => {
-    expect(COLLIDERS.filter((c) => c.source === 'building').length).toBe(BUILDINGS.length);
+    // Closed buildings are one solid box; walk-in buildings are hollow: 3 walls + the front wall split by its door.
+    expect(COLLIDERS.filter((c) => c.source === 'building').length).toBe(BUILDINGS.filter((b) => !b.enterable).length);
+    for (const b of BUILDINGS.filter((x) => x.enterable)) expect(COLLIDERS.filter((c) => c.source === 'wall' && c.id.startsWith(`col_${b.id}_wall_`)).length, b.id).toBe(5);
     const woods = LOCATIONS.find((l) => l.id === 'woods')!;
     expect(TREES.filter((t) => Math.hypot(t.position.x - woods.center.x, t.position.z - woods.center.z) < woods.radius).length).toBeGreaterThan(50);
   });

@@ -89,6 +89,10 @@ export const CONFIG = {
     social: { capacity: 10, refillPerSecond: 0.5 },
     typing: { capacity: 10, refillPerSecond: 2 },
     stand: { capacity: 6, refillPerSecond: 2 },
+    /** Build place/remove (server keys it per PROFILE; env BUILD_RATE_CAPACITY / BUILD_RATE_PER_SECOND). */
+    build: { capacity: 8, refillPerSecond: 2 },
+    /** "Unstuck" teleport to the Town Square. */
+    unstuck: { capacity: 1, refillPerSecond: 1 / 30 },
   } satisfies Record<string, RateLimitRule>,
 
   clock: {
@@ -175,6 +179,30 @@ export const CONFIG = {
   profile: {
     displayNameMin: 2,
     displayNameMax: 20,
+  },
+
+  /** Player building (shared/src/building.ts is the rulebook; the server enforces, the client previews). */
+  building: {
+    /** Positions must be multiples of this (metres). Structural pieces snap to 1 m in the UI. */
+    grid: 0.5,
+    /** Height of one storey (walls, pillars, doorways). */
+    storeyHeight: 2.6,
+    /** Highest level index (0 = ground). Walls go up to maxLevel - 1, roofs up to maxLevel. */
+    maxLevel: 3,
+    /** Max distance from the builder to the piece centre (server override BUILD_RANGE). */
+    range: 9,
+    /** Pieces one profile may own at once (BUILD_MAX_PER_PLAYER). */
+    maxPiecesPerPlayer: 400,
+    /** Pieces in one world (BUILD_MAX_PER_WORLD). */
+    maxPiecesPerWorld: 6000,
+    /** Max terrain height difference under one ground-level piece. */
+    maxSlope: 0.5,
+    /** Sign text length (after sanitizing). */
+    signMaxLength: 40,
+    /** Pieces per S2C.buildSnapshot chunk. */
+    snapshotChunk: 500,
+    /** World milestones (pieces ever placed) recorded in World Memory. */
+    milestones: [10, 100, 500, 1000, 2500, 5000, 10000] as readonly number[],
   },
 } as const;
 

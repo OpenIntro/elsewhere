@@ -9,4 +9,5 @@ export * from './clock.js';
 export * from './protocol.js';
 export * from './memory.js';
 export * from './collision.js';
+export * from './building.js';
 export * from './world/index.js';

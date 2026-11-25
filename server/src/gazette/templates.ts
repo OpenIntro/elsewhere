@@ -137,6 +137,24 @@ export const TEMPLATES = {
     headlines: ['Hands in the Water', 'At the Fountain'],
     bodies: ['{count} resident(s) touched the fountain this period: {names}.'],
   },
+  first_build: {
+    id: 'first_build',
+    section: 'town_news',
+    headlines: ['New Builders', 'Hammers Out', 'Someone Is Building'],
+    bodies: ['{count} resident(s) placed their very first building piece this period: {names}.', 'Fresh sawdust on the island: {names} started building for the first time.'],
+  },
+  structure_roofed: {
+    id: 'structure_roofed',
+    section: 'town_news',
+    headlines: ['A Roof Goes Up', '{name} Raises a Roof', 'Under a New Roof'],
+    bodies: ['{Time}, {name} put the roof on a little structure of {count} walls, doorway included, near {place}.', 'Walls, a doorway and now a roof: {name} finished a building near {place} {time}.'],
+  },
+  build_pieces: {
+    id: 'build_pieces',
+    section: 'town_news',
+    headlines: ['{count} Pieces and Counting', 'The Island Builds'],
+    bodies: ['With a piece placed by {name} {time}, residents have now placed {count} building pieces on the island.'],
+  },
   numbers: {
     id: 'numbers',
     section: 'by_the_numbers',

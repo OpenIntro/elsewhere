@@ -151,6 +151,31 @@ ALTER TABLE world_events ADD COLUMN IF NOT EXISTS world_id TEXT NOT NULL DEFAULT
 CREATE INDEX IF NOT EXISTS world_events_world_idx ON world_events (world_id, id)
 `,
   },
+  {
+    id: 3,
+    name: 'build_pieces',
+    sql: `
+CREATE TABLE IF NOT EXISTS build_pieces (
+  world_id   TEXT NOT NULL DEFAULT 'default',
+  id         TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  variant    TEXT NOT NULL,
+  x2         INTEGER NOT NULL,
+  z2         INTEGER NOT NULL,
+  rot        SMALLINT NOT NULL,
+  level      SMALLINT NOT NULL,
+  y          DOUBLE PRECISION NOT NULL,
+  owner_id   TEXT NOT NULL,
+  owner_name TEXT NOT NULL,
+  text       TEXT,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (world_id, id)
+);
+CREATE INDEX IF NOT EXISTS build_pieces_owner_idx ON build_pieces (world_id, owner_id);
+ALTER TABLE sanctions DROP CONSTRAINT IF EXISTS sanctions_kind_check;
+ALTER TABLE sanctions ADD CONSTRAINT sanctions_kind_check CHECK (kind IN ('chat_mute','ban','build_ban'))
+`,
+  },
 ];
 
 /** Apply pending migrations. Returns the ids applied this run. */

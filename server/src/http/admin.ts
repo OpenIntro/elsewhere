@@ -9,6 +9,11 @@
  *   POST   /api/admin/kick             { profileId? , sessionId?, reason? }
  *   GET    /api/admin/players
  *   POST   /api/admin/gazette/compile  { periodStart?, periodEnd? }
+ *   GET    /api/admin/build/pieces?owner=&limit=   placed pieces, newest first
+ *   DELETE /api/admin/build/pieces/:id             remove a piece (+ what rests on it)
+ *   DELETE /api/admin/build/profiles/:profileId    remove every piece of a profile
+ *   GET    /api/admin/build/stats?bench=1          counts, validation/collision timing, event-loop delay
+ * Sanction kinds: chat_mute | ban | build_ban (may play and chat, may not build).
  */
 import { timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response, type Router } from 'express';
@@ -63,8 +68,8 @@ export function createAdminRouter(): Router {
     route(async (req) => {
       const b = (req.body ?? {}) as Record<string, unknown>;
       const profileId = str(b.profileId, 80);
-      const kind = b.kind === 'ban' || b.kind === 'chat_mute' ? b.kind : undefined;
-      if (!profileId || !kind) throw new ApiFailure('bad_request', 'profileId and kind (chat_mute|ban) required');
+      const kind = b.kind === 'ban' || b.kind === 'chat_mute' || b.kind === 'build_ban' ? b.kind : undefined;
+      if (!profileId || !kind) throw new ApiFailure('bad_request', 'profileId and kind (chat_mute|ban|build_ban) required');
       if (!(await services().persistence.profiles.get(profileId))) throw new ApiFailure('not_found', 'No such profile');
       const minutes = b.minutes === undefined || b.minutes === null ? null : Number(b.minutes);
       if (minutes !== null && (!Number.isFinite(minutes) || minutes <= 0)) throw new ApiFailure('bad_request', 'minutes must be a positive number (omit for permanent)');
@@ -125,6 +130,35 @@ export function createAdminRouter(): Router {
       const issue = Number.isFinite(start) && start > 0 ? await g.compileIssue(start, Number.isFinite(end) && end > start ? end : Date.now()) : await g.compileDue();
       return { issue };
     }),
+  );
+
+  r.get(
+    API.adminBuildPieces,
+    route(async (req) => {
+      const b = services().building;
+      const owner = str(req.query.owner, 80);
+      const limit = Math.min(5000, Math.max(1, Number.parseInt(String(req.query.limit ?? '200'), 10) || 200));
+      return { total: b.index.size, pieces: b.list({ ...(owner ? { ownerId: owner } : {}), limit }) };
+    }),
+  );
+
+  r.delete(
+    API.adminBuildPiece,
+    route(async (req) => {
+      const removed = await services().building.adminRemove([String(req.params.id)]);
+      if (!removed.length) throw new ApiFailure('not_found', 'No such piece');
+      return { removed };
+    }),
+  );
+
+  r.delete(
+    API.adminBuildProfile,
+    route(async (req) => ({ removed: await services().building.adminRemoveProfile(String(req.params.profileId)) })),
+  );
+
+  r.get(
+    API.adminBuildStats,
+    route(async (req) => services().building.stats(req.query.bench === '1')),
   );
 
   return r;

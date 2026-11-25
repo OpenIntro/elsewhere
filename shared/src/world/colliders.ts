@@ -4,13 +4,14 @@
  * Consumed by ../collision.ts (client prediction and server validation).
  */
 import type { Vec2 } from '../math.js';
-import { BUILDINGS } from './buildings.js';
+import { BUILDINGS, buildingLocal } from './buildings.js';
+import { FURNITURE, wallSegments } from './interiors.js';
 import { INTERACTABLES, type Interactable } from './interactables.js';
 import { ROCKS, TREES } from './nature.js';
 import { FOUNTAIN, PROPS, STANDING_STONES, archPillars } from './structures.js';
 import { DECOR, FENCES, FENCE_HALF_THICKNESS } from './decor.js';
 
-export type ColliderSource = 'building' | 'tree' | 'rock' | 'structure' | 'prop' | 'interactable';
+export type ColliderSource = 'building' | 'wall' | 'furniture' | 'tree' | 'rock' | 'structure' | 'prop' | 'interactable';
 
 export interface CircleCollider {
   id: string;
@@ -66,7 +67,20 @@ function interactableCollider(i: Interactable): Collider | null {
 function build(): Collider[] {
   const out: Collider[] = [];
   for (const b of BUILDINGS) {
-    out.push({ id: `col_${b.id}`, shape: 'box', source: 'building', x: b.position.x, z: b.position.z, halfWidth: b.width / 2, halfDepth: b.depth / 2, yaw: b.yaw });
+    if (!b.enterable) {
+      out.push({ id: `col_${b.id}`, shape: 'box', source: 'building', x: b.position.x, z: b.position.z, halfWidth: b.width / 2, halfDepth: b.depth / 2, yaw: b.yaw });
+      continue;
+    }
+    // Walk-in building: hollow walls with a door gap on the front face (see interiors.ts).
+    wallSegments(b).forEach((w, k) => {
+      const c = buildingLocal(b, w.at[0], w.at[1]);
+      out.push({ id: `col_${b.id}_wall_${w.face}_${k}`, shape: 'box', source: 'wall', x: c.x, z: c.z, halfWidth: w.half[0], halfDepth: w.half[1], yaw: b.yaw });
+    });
+  }
+  for (const f of FURNITURE) {
+    if (!f.shape) continue;
+    if (f.shape.type === 'circle') out.push(circle(`col_${f.id}`, 'furniture', f.position, f.shape.radius));
+    else out.push({ id: `col_${f.id}`, shape: 'box', source: 'furniture', x: f.position.x, z: f.position.z, halfWidth: f.shape.halfWidth, halfDepth: f.shape.halfDepth, yaw: f.yaw });
   }
   out.push(circle('col_fountain', 'structure', FOUNTAIN.position, FOUNTAIN.basinRadius));
   archPillars().forEach((p, idx) => out.push(circle(`col_arch_pillar_${idx + 1}`, 'structure', p, 0.55)));

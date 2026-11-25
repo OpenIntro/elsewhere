@@ -56,6 +56,17 @@ function isEditable(t: EventTarget | null | undefined): boolean {
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable;
 }
 
+/**
+ * Optional key handler consulted first on every keydown (not while typing).
+ * Returning true consumes the key (e.g. build mode: B toggles, R rotates the
+ * piece instead of the camera, Esc leaves build mode).
+ */
+type KeyInterceptor = (code: string, e: KeyboardEvent) => boolean;
+let keyInterceptor: KeyInterceptor | null = null;
+export function setKeyInterceptor(fn: KeyInterceptor | null): void {
+  keyInterceptor = fn;
+}
+
 const MOVE_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
 let installed = 0;
@@ -71,6 +82,7 @@ export function installInput(): () => void {
       if (MOVE_CODES.has(code) || code === 'Space') e.preventDefault();
       keys.add(code);
       if (e.repeat) return;
+      if (keyInterceptor?.(code, e)) return;
       switch (code) {
         case 'KeyE':
           emit('interact');

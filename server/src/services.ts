@@ -4,6 +4,7 @@
  */
 import { CONFIG } from '@elsewhere/shared';
 import { createAuth, type AuthService } from './auth/index.js';
+import { createBuilding, type BuildingService } from './building/index.js';
 import { createChat, type ChatService } from './chat/index.js';
 import { createCollective, type CollectiveService } from './collective/index.js';
 import { ENV } from './env.js';
@@ -23,6 +24,7 @@ export interface ServerServices {
   collective: CollectiveService;
   interactions: InteractionService;
   gazette: GazetteService;
+  building: BuildingService;
   /** Services with room lifecycle hooks, in call order. */
   hooks: RoomHooks[];
 }
@@ -52,7 +54,9 @@ export async function initServices(opts: InitOptions = {}): Promise<ServerServic
     clock: () => ({ epochMs: collective.facts().clockEpochMs, dayLengthMs: ENV.dayLengthMs, startTimeOfDay: CONFIG.clock.startTimeOfDay }),
   });
   gazette.start();
-  current = { persistence, auth, moderation, chat, memory, collective, interactions, gazette, hooks: [moderation, chat, collective, interactions] };
+  const building = createBuilding({ persistence, memory, moderation, worldId: collective.worldId, options: ENV.building });
+  await building.load();
+  current = { persistence, auth, moderation, chat, memory, collective, interactions, gazette, building, hooks: [moderation, chat, collective, interactions, building] };
   return current;
 }
 

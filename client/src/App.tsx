@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import { randomAppearance, randomDisplayName } from '@elsewhere/shared';
 import { audio } from './audio/index.js';
 import { AudioDirector } from './audio/AudioDirector.js';
+import { installBuildInput, installBuildSync } from './build/index.js';
 import { GameCanvas } from './game/GameCanvas.js';
 import { installDebugHook, net } from './net/index.js';
 import { useGameStore } from './state/gameStore.js';
@@ -102,6 +103,8 @@ export function App() {
   useEffect(() => {
     installDebugHook(net);
     const offBridge = installUiBridge();
+    const offBuild = installBuildSync();
+    const offBuildInput = installBuildInput();
     startFlow(setResumeError);
     const unlock = () => audio.unlock();
     // Leave consented on page close so the server removes us now instead of holding a reconnection seat.
@@ -111,6 +114,8 @@ export function App() {
     window.addEventListener('pagehide', leave);
     return () => {
       offBridge();
+      offBuild();
+      offBuildInput();
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
       window.removeEventListener('pagehide', leave);

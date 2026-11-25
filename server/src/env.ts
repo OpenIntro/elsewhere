@@ -69,8 +69,21 @@ export const ENV = {
     bellChorusPlayers: Math.max(2, Math.round(num('BELL_CHORUS_PLAYERS', CONFIG.collective.bellChorusPlayers))),
     gatheringThreshold: Math.max(2, Math.round(num('GATHERING_THRESHOLD', CONFIG.collective.gatheringThreshold))),
   },
+  /** Player building (defaults in CONFIG.building / CONFIG.rateLimits.build). */
+  building: {
+    enabled: !(process.env.BUILD_ENABLED === '0' || process.env.BUILD_ENABLED === 'false'),
+    range: Math.max(1, num('BUILD_RANGE', CONFIG.building.range)),
+    maxPerPlayer: Math.max(0, Math.round(num('BUILD_MAX_PER_PLAYER', CONFIG.building.maxPiecesPerPlayer))),
+    maxPerWorld: Math.max(0, Math.round(num('BUILD_MAX_PER_WORLD', CONFIG.building.maxPiecesPerWorld))),
+    rate: {
+      capacity: Math.max(1, num('BUILD_RATE_CAPACITY', CONFIG.rateLimits.build.capacity)),
+      refillPerSecond: Math.max(0.01, num('BUILD_RATE_PER_SECOND', CONFIG.rateLimits.build.refillPerSecond)),
+    },
+  },
   version: process.env.npm_package_version ?? '0.1.0',
 } as const;
+
+export type BuildingTunables = (typeof ENV)['building'];
 
 export type CollectiveTunables = (typeof ENV)['collective'];
 

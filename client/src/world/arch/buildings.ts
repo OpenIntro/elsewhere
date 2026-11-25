@@ -4,6 +4,8 @@
  * with shutters and flower boxes, tile-coursed roofs, chimneys with smoke.
  * Footprints match the shared BUILDINGS colliders exactly; decorative bits
  * that stick out stay small (trims, sills, awnings overhead).
+ * Walk-in buildings (`enterable`) are built as hollow shells with interiors
+ * in ./walkin.ts + ./furniture.ts; the designers here draw the closed ones.
  */
 import { Matrix4 } from 'three';
 import { type Building, terrainHeight } from '@elsewhere/shared';
@@ -32,6 +34,7 @@ import {
   worldPoint,
   type Face,
 } from './kit.js';
+import { buildWalkIn } from './walkin.js';
 
 function plinth(B: GeoBuilder, w: number, d: number, h = 0.4, color = P.stoneMid): void {
   B.add('solid', rbox(w + 0.36, h + 0.5, d + 0.36, 0.12), color, T(0, h / 2 - 0.25, 0), { grad: 0.25 });
@@ -400,6 +403,14 @@ function cottage(B: GeoBuilder, b: Building, n: number): void {
     B.at(onFace('back', w, d, 1.2, y0 + 1.0), () => windowUnit(B, 0.9, 1.0, { frame: v.trim }));
     // house number plaque
     sign(B, `house${n}`, 0.6, onFace('front', w, d, -0.95, y0 + 2.2, 0.06), v.trim);
+    if (b.futureHome) {
+      // "a future home": a little hand-painted board hung on the door
+      B.at(onFace('front', w, d, 0, y0 + 1.45, 0.1), () => {
+        B.add('solid', cyl(0.006, 0.006, 0.36, 3), '#6a4f3e', T(-0.16, 0.3, 0, 0, 0, -0.5), { ao: false });
+        B.add('solid', cyl(0.006, 0.006, 0.36, 3), '#6a4f3e', T(0.16, 0.3, 0, 0, 0, 0.5), { ao: false });
+        signBoard(B, 'future_home', 0.78, 0.26, signUV('future_home'), quad, '#6a4f3e', false);
+      });
+    }
     if (v.porch) {
       // little porch roof on posts (posts within the footprint edge)
       B.add('solid', rbox(2.6, 0.12, 1.0, 0.05), shade(b.roofColor, 0.95), T(0, h - 0.35, d / 2 + 0.42, 0, 0.16), { ao: false });
@@ -525,6 +536,7 @@ function boathouse(B: GeoBuilder, b: Building): void {
 }
 
 export function buildBuilding(B: GeoBuilder, b: Building): void {
+  if (b.enterable) return buildWalkIn(B, b);
   switch (b.style) {
     case 'cafe':
       return cafe(B, b);

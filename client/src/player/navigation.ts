@@ -68,6 +68,24 @@ export function prebuildNavGrid(): () => void {
   };
 }
 
+let pendingRefresh: { minX: number; minZ: number; maxX: number; maxZ: number } | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * Dynamic colliders changed inside this rectangle (player-built pieces):
+ * re-sample the nav grid there. Batched (one relabel per burst of changes).
+ */
+export function refreshNavRect(minX: number, minZ: number, maxX: number, maxZ: number): void {
+  const p = pendingRefresh;
+  pendingRefresh = p ? { minX: Math.min(p.minX, minX), minZ: Math.min(p.minZ, minZ), maxX: Math.max(p.maxX, maxX), maxZ: Math.max(p.maxZ, maxZ) } : { minX, minZ, maxX, maxZ };
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    const r = pendingRefresh;
+    pendingRefresh = null;
+    if (r) navGrid().refreshRect(r.minX, r.minZ, r.maxX, r.maxZ);
+  }, 30);
+}
+
 export function hasPath(): boolean {
   return nav.goal !== null;
 }

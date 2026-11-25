@@ -9,8 +9,8 @@ import { GeoBuilder } from './geom.js';
 import { buildBuilding } from './arch/buildings.js';
 import { anchors, resetAnchors } from './arch/kit.js';
 import { buildDeck, buildInteractable, buildProp, buildUnknownStatics, finishStrings } from './arch/props.js';
-import { glazedMaterial, solidMaterial, staticPlantMaterial, windowMaterial } from './materials.js';
-import { signMaterial } from './signs.js';
+import { cutDepthMaterial, glazedCutMaterial, solidCutMaterial, staticPlantCutMaterial, windowCutMaterial } from './materials.js';
+import { signCutMaterial } from './signs.js';
 import { buildDressing } from './arch/dressing.js';
 import { buildDecorPieces, buildFences } from './arch/decor.js';
 
@@ -34,7 +34,7 @@ export function buildWorld(): BuiltWorld {
   for (const b of BUILDINGS) buildBuilding(get(b.style === 'cottage' ? `res_${b.id}` : b.locationId), b);
   for (const i of INTERACTABLES) buildInteractable(get(i.locationId), i);
   for (const p of PROPS) {
-    const loc: LocationId = p.id.includes('cafe') ? 'cafe' : p.id.includes('store') ? 'general_store' : p.id.includes('workshop') || p.id === 'workbench' ? 'workshop' : 'residential';
+    const loc: LocationId = p.id.includes('cafe') ? 'cafe' : p.id.includes('store') ? 'general_store' : p.id.includes('workshop') ? 'workshop' : 'residential';
     buildProp(get(loc), p);
   }
   for (const d of DECKS) buildDeck(get(d.kind === 'bridge' ? 'woods' : 'waterfront'), d);
@@ -61,18 +61,19 @@ export function buildWorld(): BuiltWorld {
   return built;
 }
 
+/** Architecture uses the cutaway-aware materials (walk-in buildings dissolve their walls/roof). */
 function materialFor(bucket: string): Material {
   switch (bucket) {
     case 'window':
-      return windowMaterial;
+      return windowCutMaterial;
     case 'glazed':
-      return glazedMaterial;
+      return glazedCutMaterial;
     case 'plant':
-      return staticPlantMaterial;
+      return staticPlantCutMaterial;
     case 'sign':
-      return signMaterial();
+      return signCutMaterial();
     default:
-      return solidMaterial;
+      return solidCutMaterial;
   }
 }
 
@@ -88,6 +89,7 @@ export function Architecture({ shadows }: { shadows: boolean }) {
           material={materialFor(c.bucket)}
           castShadow={shadows && c.bucket !== 'window' && c.bucket !== 'sign'}
           receiveShadow
+          customDepthMaterial={cutDepthMaterial()}
         />
       ))}
     </group>

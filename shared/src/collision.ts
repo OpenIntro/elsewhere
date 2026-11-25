@@ -64,16 +64,98 @@ function key(x: number, z: number): number {
   return ((x + 32768) << 16) | ((z + 32768) & 0xffff);
 }
 
+/**
+ * Mutable collider layer on top of the static world (player-built pieces).
+ * Colliders are grouped under an owner key (e.g. a piece id) so they can be
+ * replaced/removed together. Both client prediction and server validation
+ * consult it through the same CollisionWorld, so they stay in agreement as
+ * long as both apply the same changes.
+ */
+export class DynamicColliderLayer {
+  private cells = new Map<number, Set<Collider>>();
+  private byOwner = new Map<string, { colliders: readonly Collider[]; keys: number[] }>();
+  /** Increments on every change (consumers such as nav grids can cache against it). */
+  version = 0;
+
+  get size(): number {
+    return this.byOwner.size;
+  }
+
+  set(owner: string, colliders: readonly Collider[]): void {
+    this.remove(owner, false);
+    if (!colliders.length) {
+      this.version++;
+      return;
+    }
+    const keys: number[] = [];
+    for (const c of colliders) {
+      const r = colliderBoundingRadius(c);
+      const x0 = Math.floor((c.x - r) / CELL);
+      const x1 = Math.floor((c.x + r) / CELL);
+      const z0 = Math.floor((c.z - r) / CELL);
+      const z1 = Math.floor((c.z + r) / CELL);
+      for (let x = x0; x <= x1; x++) {
+        for (let z = z0; z <= z1; z++) {
+          const k = key(x, z);
+          let set = this.cells.get(k);
+          if (!set) this.cells.set(k, (set = new Set()));
+          set.add(c);
+          keys.push(k);
+        }
+      }
+    }
+    this.byOwner.set(owner, { colliders, keys });
+    this.version++;
+  }
+
+  remove(owner: string, bump = true): void {
+    const e = this.byOwner.get(owner);
+    if (!e) return;
+    const own = new Set(e.colliders);
+    for (const k of e.keys) {
+      const set = this.cells.get(k);
+      if (!set) continue;
+      for (const c of own) set.delete(c);
+      if (set.size === 0) this.cells.delete(k);
+    }
+    this.byOwner.delete(owner);
+    if (bump) this.version++;
+  }
+
+  clear(): void {
+    this.cells.clear();
+    this.byOwner.clear();
+    this.version++;
+  }
+
+  /** Adds colliders near p to `out` (does not clear it). */
+  queryInto(p: Vec2, radius: number, out: Set<Collider>): void {
+    if (this.cells.size === 0) return;
+    const x0 = Math.floor((p.x - radius) / CELL);
+    const x1 = Math.floor((p.x + radius) / CELL);
+    const z0 = Math.floor((p.z - radius) / CELL);
+    const z1 = Math.floor((p.z + radius) / CELL);
+    for (let x = x0; x <= x1; x++) {
+      for (let z = z0; z <= z1; z++) {
+        const set = this.cells.get(key(x, z));
+        if (set) for (const c of set) out.add(c);
+      }
+    }
+  }
+}
+
 export interface CollisionWorld {
   colliders: readonly Collider[];
   grid: ColliderGrid;
   /** Ground predicate; defaults to the island + decks. */
   groundWalkable: (p: Vec2) => boolean;
+  /** Player-built pieces (mutable). Every collision query consults it too. */
+  dynamic: DynamicColliderLayer;
 }
 
-/** Build a collision world (tests can pass custom colliders / ground). */
+/** Build a collision world (tests can pass custom colliders / ground). Each world has its own empty dynamic layer. */
 export function createCollisionWorld(colliders: readonly Collider[] = COLLIDERS, groundWalkable: (p: Vec2) => boolean = isGroundWalkable): CollisionWorld {
-  return { colliders, grid: new ColliderGrid(colliders), groundWalkable };
+  return { colliders, grid: new ColliderGrid(colliders), groundWalkable, dynamic: new DynamicColliderLayer() };
 }
 
 let defaultWorld: CollisionWorld | null = null;
@@ -81,6 +163,18 @@ function world(w?: CollisionWorld): CollisionWorld {
   if (w) return w;
   if (!defaultWorld) defaultWorld = createCollisionWorld();
   return defaultWorld;
+}
+
+/** The process-wide default collision world (static island + its dynamic layer). */
+export function defaultCollisionWorld(): CollisionWorld {
+  return world();
+}
+
+/** Static + dynamic colliders near p. */
+function queryAll(cw: CollisionWorld, p: Vec2, radius: number, out: Set<Collider>): Set<Collider> {
+  cw.grid.query(p, radius, out);
+  cw.dynamic.queryInto(p, radius, out);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +239,7 @@ const scratch = new Set<Collider>();
 /** First collider overlapping a circle at p, or null. */
 export function collidesAt(p: Vec2, radius: number = CONFIG.movement.playerRadius, w?: CollisionWorld): Collider | null {
   const cw = world(w);
-  for (const c of cw.grid.query(p, radius, scratch)) {
+  for (const c of queryAll(cw, p, radius, scratch)) {
     if (penetration(p, radius, c)) return c;
   }
   return null;
@@ -158,7 +252,7 @@ export function pushOut(p: Vec2, radius: number, w?: CollisionWorld, iterations 
   let z = p.z;
   for (let it = 0; it < iterations; it++) {
     let moved = false;
-    for (const c of cw.grid.query({ x, z }, radius, scratch)) {
+    for (const c of queryAll(cw, { x, z }, radius, scratch)) {
       const pen = penetration({ x, z }, radius, c);
       if (pen) {
         x += pen.x;

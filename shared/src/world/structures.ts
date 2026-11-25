@@ -72,17 +72,19 @@ export interface Prop {
   height: number;
 }
 
+/** A point relative to a building's FRONT face: lx along it, dz out from it. */
+const front = (b: ReturnType<typeof getBuilding>, lx: number, dz: number): Vec2 => buildingLocal(b, lx, b.depth / 2 + dz);
 const store = getBuilding('general_store');
 const workshop = getBuilding('workshop');
 const cafe = getBuilding('cafe');
 
 export const PROPS: readonly Prop[] = [
   ...CAFE_TABLES.map((t): Prop => ({ id: t.id, kind: 'cafe_table', position: t.position, yaw: 0, shape: { type: 'circle', radius: t.radius }, height: 0.75 })),
-  { id: 'crate_store_1', kind: 'crate', position: buildingLocal(store, 2.2, 3.9), yaw: store.yaw, shape: { type: 'box', halfWidth: 0.5, halfDepth: 0.5 }, height: 0.8 },
-  { id: 'barrel_store', kind: 'barrel', position: buildingLocal(store, -2.4, 3.8), yaw: 0, shape: { type: 'circle', radius: 0.45 }, height: 1 },
-  { id: 'workbench', kind: 'workbench', position: buildingLocal(workshop, 2.6, 4.4), yaw: workshop.yaw, shape: { type: 'box', halfWidth: 1.2, halfDepth: 0.5 }, height: 0.9 },
-  { id: 'crate_workshop', kind: 'crate', position: buildingLocal(workshop, 4.4, 4.0), yaw: workshop.yaw + 0.3, shape: { type: 'box', halfWidth: 0.5, halfDepth: 0.5 }, height: 0.8 },
+  { id: 'crate_store_1', kind: 'crate', position: front(store, 2.35, 0.65), yaw: store.yaw, shape: { type: 'box', halfWidth: 0.5, halfDepth: 0.5 }, height: 0.8 },
+  { id: 'barrel_store', kind: 'barrel', position: front(store, -2.4, 0.55), yaw: 0, shape: { type: 'circle', radius: 0.45 }, height: 1 },
+  // (The Workshop's workbenches are indoors now: interiors.ts furniture.)
+  { id: 'crate_workshop', kind: 'crate', position: front(workshop, 4.6, 0.5), yaw: workshop.yaw + 0.3, shape: { type: 'box', halfWidth: 0.5, halfDepth: 0.5 }, height: 0.8 },
   { id: 'garden_bed', kind: 'garden_bed', position: { x: -36, z: 17 }, yaw: 0, shape: { type: 'box', halfWidth: 2, halfDepth: 1.2 }, height: 0.35 },
-  { id: 'planter_cafe_1', kind: 'planter', position: buildingLocal(cafe, -4.7, 4.8), yaw: cafe.yaw, shape: { type: 'box', halfWidth: 0.4, halfDepth: 0.4 }, height: 0.6 },
-  { id: 'planter_cafe_2', kind: 'planter', position: buildingLocal(cafe, 4.7, 4.8), yaw: cafe.yaw, shape: { type: 'box', halfWidth: 0.4, halfDepth: 0.4 }, height: 0.6 },
+  { id: 'planter_cafe_1', kind: 'planter', position: front(cafe, -4.7, 1.8), yaw: cafe.yaw, shape: { type: 'box', halfWidth: 0.4, halfDepth: 0.4 }, height: 0.6 },
+  { id: 'planter_cafe_2', kind: 'planter', position: front(cafe, 4.7, 1.8), yaw: cafe.yaw, shape: { type: 'box', halfWidth: 0.4, halfDepth: 0.4 }, height: 0.6 },
 ];

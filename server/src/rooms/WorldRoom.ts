@@ -27,6 +27,7 @@ import {
   locationAt,
   pickSpawnPoint,
   resolveMovement,
+  sameSpace,
   sanitizeAppearance,
   validateDisplayName,
   wrapAngle,
@@ -77,7 +78,7 @@ const RESUME_HINT_MAX_M = 3;
 export function resumePosition(saved: { x: number; z: number } | null | undefined, hint?: unknown): { x: number; z: number } | null {
   if (!saved || !isFiniteNumber(saved.x) || !isFiniteNumber(saved.z)) return null;
   const h = hint as { x?: unknown; z?: unknown } | undefined;
-  if (h && isFiniteNumber(h.x) && isFiniteNumber(h.z) && Math.hypot(h.x - saved.x, h.z - saved.z) <= RESUME_HINT_MAX_M && isWalkable({ x: h.x, z: h.z })) {
+  if (h && isFiniteNumber(h.x) && isFiniteNumber(h.z) && Math.hypot(h.x - saved.x, h.z - saved.z) <= RESUME_HINT_MAX_M && isWalkable({ x: h.x, z: h.z }) && sameSpace(saved, { x: h.x, z: h.z })) {
     return { x: h.x, z: h.z };
   }
   return isWalkable(saved) ? { x: saved.x, z: saved.z } : findNearestWalkable(saved, CONFIG.movement.playerRadius, 4);
@@ -366,6 +367,13 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.on(C2S.mute, 'social', (sid, m) => s.moderation.mute(this.ctx, sid, m));
     this.on(C2S.unmute, 'social', (sid, m) => s.moderation.unmute(this.ctx, sid, m));
     this.on(C2S.report, 'report', (sid, m) => s.moderation.report(this.ctx, sid, m));
+    // Building rate-limits per profile inside the service (survives reconnects).
+    this.on(C2S.buildPlace, null, (sid, m) => s.building.place(this.ctx, sid, m));
+    this.on(C2S.buildRemove, null, (sid, m) => s.building.remove(this.ctx, sid, m));
+    this.on(C2S.unstuck, 'unstuck', (sid) => {
+      if (this.state.players.get(sid)?.seat) s.interactions.stand(this.ctx, sid);
+      s.building.unstuck(this.ctx, sid);
+    });
   }
 
   private handleMove(sid: string, m: C2SPayloads['move']): void {
@@ -430,7 +438,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       return;
     }
     const range = (target.radius ?? CONFIG.interaction.radius) + CONFIG.interaction.serverSlack;
-    if (dist({ x: p.x, z: p.z }, target.position) > range) {
+    // No interacting through walls: indoor things need you indoors in the same building (doors: either side).
+    if (dist({ x: p.x, z: p.z }, target.position) > range || !sameSpace({ x: p.x, z: p.z }, target.position, target.kind === 'door')) {
       if (process.env.ELSEWHERE_DEBUG) console.log(`[WorldRoom] too_far ${p.name} ${target.id} player=(${p.x.toFixed(2)},${p.z.toFixed(2)}) target=(${target.position.x.toFixed(2)},${target.position.z.toFixed(2)}) d=${dist({ x: p.x, z: p.z }, target.position).toFixed(2)} range=${range.toFixed(2)}`);
       this.sendTo(sid, S2C.interactResult, { id: target.id, ok: false, error: 'too_far' });
       return;

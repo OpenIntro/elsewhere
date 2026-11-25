@@ -97,7 +97,10 @@ export function buildArticles(events: readonly WorldEvent[], clock: ClockParams,
     else if (m === 'residents') one('residents', e, { count: Number(e.data?.contributions ?? 0) }, 45);
     else if (m === 'place_visits') one('place_visits', e, { count: Number(e.data?.contributions ?? 0) }, 30);
     else if (m === 'night_wanders') one('night_wanders', e, { count: Number(e.data?.contributions ?? 0) }, 30);
+    else if (m === 'build_pieces') one('build_pieces', e, { count: Number(e.data?.contributions ?? 0) }, 32);
   }
+  for (const e of byKind('structure_roofed')) one('structure_roofed', e, { count: Number(e.data?.walls ?? 0) }, 52);
+  many('first_build', byKind('first_build'), {}, 22);
   for (const e of byKind('gathering')) one('gathering', e, { count: Number(e.data?.count ?? e.actors.length) }, 40);
   for (const e of byKind('dance_party')) one('dance_party', e, { count: Number(e.data?.count ?? e.actors.length) }, 35);
   many('newcomers', byKind('player_first_visit'), {}, 25);

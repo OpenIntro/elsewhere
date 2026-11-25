@@ -3,8 +3,9 @@
  * RoomContext backed by the real Colyseus schema classes, a manual clock and
  * manual timers. No network.
  */
-import { CONFIG, SYNCED_INTERACTABLES, getInteractable, groundHeight, worldTimeAt, type S2CPayloads, type S2CType } from '@elsewhere/shared';
+import { CONFIG, SYNCED_INTERACTABLES, createCollisionWorld, getInteractable, groundHeight, worldTimeAt, type CollisionWorld, type S2CPayloads, type S2CType } from '@elsewhere/shared';
 import { newGuestProfile } from '../src/auth/index.js';
+import { createBuilding, type BuildingOptions, type BuildingService } from '../src/building/index.js';
 import { createChat, type ChatService } from '../src/chat/index.js';
 import { createCollective, type CollectiveService } from '../src/collective/index.js';
 import type { CollectiveTunables } from '../src/env.js';
@@ -65,6 +66,10 @@ export interface World {
   memory: MemoryService;
   collective: CollectiveService;
   interactions: InteractionService;
+  /** Only when makeWorld({ building }) was used. */
+  building: BuildingService | undefined;
+  /** This world's own collision world (static island + its dynamic layer; building writes into it). */
+  collision: CollisionWorld;
   hooks: RoomHooks[];
   ctx: RoomContext;
   state: WorldState;
@@ -84,7 +89,7 @@ export interface World {
   close(): Promise<void>;
 }
 
-export async function makeWorld(opts: { persistence?: PersistenceService; tunables?: Partial<CollectiveTunables>; clock?: FakeClock } = {}): Promise<World> {
+export async function makeWorld(opts: { persistence?: PersistenceService; tunables?: Partial<CollectiveTunables>; clock?: FakeClock; building?: Partial<BuildingOptions> | true } = {}): Promise<World> {
   const clock = opts.clock ?? new FakeClock();
   const persistence = opts.persistence ?? createPersistence({ dataDir: 'memory://' });
   await persistence.init();
@@ -95,14 +100,21 @@ export async function makeWorld(opts: { persistence?: PersistenceService; tunabl
   await collective.load();
   const interactions = createInteractions({ persistence, memory, collective, moderation, now: clock.now });
   const hooks: RoomHooks[] = [moderation, chat, collective, interactions];
-  const services = { clock, persistence, moderation, chat, memory, collective, interactions, hooks };
+  const collision = createCollisionWorld();
+  let building: BuildingService | undefined;
+  if (opts.building) {
+    building = createBuilding({ persistence, memory, moderation, now: clock.now, collision, ...(opts.building === true ? {} : { options: opts.building }) });
+    await building.load();
+    hooks.push(building);
+  }
+  const services = { clock, persistence, moderation, chat, memory, collective, interactions, building, collision, hooks };
   return openRoomWith(services, 'test');
 }
 
 let sessionCounter = 0;
 
 async function openRoomWith(
-  services: Pick<World, 'clock' | 'persistence' | 'moderation' | 'chat' | 'memory' | 'collective' | 'interactions' | 'hooks'>,
+  services: Pick<World, 'clock' | 'persistence' | 'moderation' | 'chat' | 'memory' | 'collective' | 'interactions' | 'building' | 'collision' | 'hooks'>,
   roomId: string,
 ): Promise<World> {
   const { clock, persistence, collective, interactions, hooks } = services;

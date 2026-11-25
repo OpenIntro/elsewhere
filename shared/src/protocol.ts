@@ -12,6 +12,7 @@
  * from users are sanitized/length-limited by the server before rebroadcast.
  */
 import type { Appearance } from './appearance.js';
+import type { BuildRefusal, PieceKind } from './building.js';
 import type { GazetteIssue, WorldEvent, WorldEventKind } from './memory.js';
 import type { DiscoveryId, ItemId } from './world/items.js';
 import type { LocationId } from './world/locations.js';
@@ -164,6 +165,12 @@ export const C2S = {
   mute: 'mute',
   unmute: 'unmute',
   report: 'report',
+  /** Building: place a piece (server validates everything, see shared/src/building.ts). */
+  buildPlace: 'build_place',
+  /** Building: remove one of your own pieces. */
+  buildRemove: 'build_remove',
+  /** Always-available rescue: teleport to the Town Square (rate limited). */
+  unstuck: 'unstuck',
 } as const;
 export type C2SType = (typeof C2S)[keyof typeof C2S];
 
@@ -234,11 +241,35 @@ export interface RelationEntry {
 }
 export interface ReportPayload {
   target: string;
+  /** Report by profile instead (offline players, owners of built pieces); wins over `target`. */
+  profileId?: string;
   reason: ReportReason;
   details?: string;
   /** Chat message ids relevant to the report. */
   messageIds?: string[];
 }
+
+export interface BuildPlacePayload {
+  /** Client request id, echoed in S2C.buildResult. */
+  reqId: number;
+  kind: PieceKind;
+  /** Variant id from the catalog (e.g. "oak"). */
+  variant: string;
+  /** Piece centre, multiples of CONFIG.building.grid. */
+  x: number;
+  z: number;
+  /** Quarter turns 0..3 (yaw = rot * PI/2). */
+  rot: number;
+  /** Storey index 0..CONFIG.building.maxLevel. */
+  level: number;
+  /** Signs only: the text (sanitized, filtered and length-capped by the server). */
+  text?: string;
+}
+export interface BuildRemovePayload {
+  reqId: number;
+  id: string;
+}
+export type UnstuckPayload = Record<string, never>;
 
 export interface C2SPayloads {
   [C2S.move]: MovePayload;
@@ -258,6 +289,9 @@ export interface C2SPayloads {
   [C2S.mute]: TargetPayload;
   [C2S.unmute]: TargetPayload;
   [C2S.report]: ReportPayload;
+  [C2S.buildPlace]: BuildPlacePayload;
+  [C2S.buildRemove]: BuildRemovePayload;
+  [C2S.unstuck]: UnstuckPayload;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +314,14 @@ export const S2C = {
   notice: 'notice',
   rateLimited: 'rate_limited',
   error: 'error',
+  /** Building: all pieces of the world, in chunks, right after joining. */
+  buildSnapshot: 'build_snapshot',
+  /** Building: a piece was placed (everyone in the world). */
+  buildPlaced: 'build_placed',
+  /** Building: pieces were removed (everyone in the world). */
+  buildRemoved: 'build_removed',
+  /** Building: outcome of the requester's place/remove. */
+  buildResult: 'build_result',
 } as const;
 export type S2CType = (typeof S2C)[keyof typeof S2C];
 
@@ -461,6 +503,59 @@ export interface ErrorPayload {
   inResponseTo?: C2SType;
 }
 
+/** A placed piece as the server stores it (y is authoritative, computed by the server). */
+export interface PieceView {
+  id: string;
+  kind: PieceKind;
+  variant: string;
+  x: number;
+  z: number;
+  rot: number;
+  level: number;
+  /** Base height (metres). */
+  y: number;
+  ownerId: string;
+  ownerName: string;
+  text?: string;
+}
+
+/**
+ * Compact snapshot row: [id, kindIndex, variantIndex, x*2, z*2, rot, level, y in cm, ownerIndex, text].
+ * kindIndex / variantIndex index PIECE_KINDS / the piece's `variants`; ownerIndex indexes `owners`.
+ */
+export type PieceWire = [string, number, number, number, number, number, number, number, number, string];
+
+export interface BuildSnapshotPayload {
+  /** First chunk: drop everything known so far. */
+  reset: boolean;
+  /** Last chunk. */
+  done: boolean;
+  /** Pieces in the whole snapshot. */
+  total: number;
+  /** [profileId, name] referenced by ownerIndex. */
+  owners: [string, string][];
+  pieces: PieceWire[];
+}
+export interface BuildPlacedPayload {
+  piece: PieceView;
+  /** sessionId of the builder ("" if not in this room). */
+  by: string;
+}
+export interface BuildRemovedPayload {
+  ids: string[];
+  /** Who removed them: the owner, or a moderator (admin tools). */
+  by: 'owner' | 'admin';
+}
+export interface BuildResultPayload {
+  reqId: number;
+  action: 'place' | 'remove';
+  ok: boolean;
+  reason?: BuildRefusal;
+  /** Short human-readable reason (shown next to the ghost). */
+  message?: string;
+  pieceId?: string;
+}
+
 export interface S2CPayloads {
   [S2C.welcome]: WelcomePayload;
   [S2C.correction]: CorrectionPayload;
@@ -477,6 +572,10 @@ export interface S2CPayloads {
   [S2C.notice]: NoticePayload;
   [S2C.rateLimited]: RateLimitedPayload;
   [S2C.error]: ErrorPayload;
+  [S2C.buildSnapshot]: BuildSnapshotPayload;
+  [S2C.buildPlaced]: BuildPlacedPayload;
+  [S2C.buildRemoved]: BuildRemovedPayload;
+  [S2C.buildResult]: BuildResultPayload;
 }
 
 // ---------------------------------------------------------------------------
@@ -510,6 +609,14 @@ export const API = {
   adminPlayers: '/api/admin/players',
   /** GET (auth): the caller's blocked + muted profiles with names → RelationsResponse. */
   relations: '/api/profile/relations',
+  /** Admin GET ?owner=&limit= — placed pieces (newest first) + totals. */
+  adminBuildPieces: '/api/admin/build/pieces',
+  /** Admin DELETE one piece (anything resting on it goes too). */
+  adminBuildPiece: '/api/admin/build/pieces/:id',
+  /** Admin DELETE every piece a profile owns. */
+  adminBuildProfile: '/api/admin/build/profiles/:profileId',
+  /** Admin GET — building stats (counts, timing of collision/validation, event-loop delay). */
+  adminBuildStats: '/api/admin/build/stats',
 } as const;
 
 /** GET API.relations */

@@ -8,6 +8,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import { Box3, Vector3 } from 'three';
 import { BUILDINGS, CONFIG, INTERACTABLES, type AnimState, groundHeight, isGroundWalkable, isWalkable } from '@elsewhere/shared';
+import { buildPointer } from '../build/input.js';
 import { registerDebugQuery, registerDebugSection, sampleBuffer, sampleRemote } from '../net/index.js';
 import { runtime, type PoseSnapshot, type RemoteRuntime } from '../state/runtime.js';
 import { useUiStore } from '../state/uiStore.js';
@@ -49,8 +50,11 @@ export function PlayerSystems() {
     const offInteraction = installInteraction();
     const offGrid = prebuildNavGrid();
     let lastHover = 0;
+    let lastBuildHover = 0;
     const offPointer = installPointer(el, {
       tap(x, y, type) {
+        // Build mode owns taps/clicks on the world (aim / place / select).
+        if (buildPointer.tap(x, y, type)) return;
         const ui = useUiStore.getState();
         if (ui.playerMenu) ui.closePlayerMenu();
         if (useCameraStore.getState().free) cameraControls.recenter();
@@ -78,6 +82,11 @@ export function PlayerSystems() {
       },
       hover(x, y) {
         const now = performance.now();
+        if (now - lastBuildHover >= 33 && buildPointer.hover(x, y)) {
+          lastBuildHover = now;
+          el.style.cursor = 'crosshair';
+          return;
+        }
         if (now - lastHover < 80) return;
         lastHover = now;
         const pick = pickAt(x, y, 'mouse');

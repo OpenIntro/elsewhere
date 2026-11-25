@@ -9,6 +9,7 @@
  *  - `groundHeight(x, z)`: what a character stands on (terrain or a deck/bridge).
  */
 import { clamp, distanceToPolyline, lerp, smoothstep, type Vec2 } from '../math.js';
+import { BUILDINGS } from './buildings.js';
 import { LOCATIONS } from './locations.js';
 
 export const WATER_LEVEL = 0;
@@ -160,8 +161,41 @@ function pads(): Pad[] {
   return padsCache;
 }
 
-/** Terrain height at (x, z). Deterministic and continuous. */
-export function terrainHeight(x: number, z: number): number {
+/**
+ * Level ground under walk-in buildings: their raised floors are flat, so the
+ * terrain is levelled to the height at the building centre over the footprint
+ * (+ BUILDING_PAD_MARGIN) and blended back over BUILDING_PAD_BLEND metres.
+ */
+const BUILDING_PAD_MARGIN = 0.9;
+const BUILDING_PAD_BLEND = 3.5;
+interface BuildingPad {
+  x: number;
+  z: number;
+  c: number;
+  s: number;
+  hw: number;
+  hd: number;
+  r: number;
+  height: number;
+}
+let buildingPadsCache: BuildingPad[] | null = null;
+function buildingPads(): BuildingPad[] {
+  if (!buildingPadsCache) {
+    buildingPadsCache = BUILDINGS.filter((b) => b.enterable).map((b) => ({
+      x: b.position.x,
+      z: b.position.z,
+      c: Math.cos(b.yaw),
+      s: Math.sin(b.yaw),
+      hw: b.width / 2 + BUILDING_PAD_MARGIN,
+      hd: b.depth / 2 + BUILDING_PAD_MARGIN,
+      r: Math.hypot(b.width / 2, b.depth / 2) + BUILDING_PAD_MARGIN + BUILDING_PAD_BLEND,
+      height: locationPadded(b.position.x, b.position.z),
+    }));
+  }
+  return buildingPadsCache;
+}
+
+function locationPadded(x: number, z: number): number {
   let h = rawHeight(x, z);
   const d = inlandDistance(x, z);
   if (d > 0) {
@@ -173,6 +207,23 @@ export function terrainHeight(x: number, z: number): number {
         h = lerp(h, p.height, w);
       }
     }
+  }
+  return h;
+}
+
+/** Terrain height at (x, z). Deterministic and continuous. */
+export function terrainHeight(x: number, z: number): number {
+  let h = locationPadded(x, z);
+  for (const p of buildingPads()) {
+    const dx = x - p.x;
+    const dz = z - p.z;
+    if (dx * dx + dz * dz > p.r * p.r) continue;
+    const lx = dx * p.c - dz * p.s;
+    const lz = dx * p.s + dz * p.c;
+    const ex = Math.max(Math.abs(lx) - p.hw, 0);
+    const ez = Math.max(Math.abs(lz) - p.hd, 0);
+    const w = 1 - smoothstep(0, BUILDING_PAD_BLEND, Math.hypot(ex, ez));
+    if (w > 0) h = lerp(h, p.height, w);
   }
   // Creek carve.
   const dc = distanceToPolyline({ x, z }, CREEK_POINTS);

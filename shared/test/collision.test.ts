@@ -78,10 +78,14 @@ describe('resolveMovement — The Commons', () => {
     expect(dist(end, FOUNTAIN.position)).toBeGreaterThanOrEqual(FOUNTAIN.basinRadius + R - 1e-6);
   });
 
-  it('cannot walk through Town Hall', () => {
+  it('cannot walk through Town Hall walls (it is entered through its door)', () => {
     const hall = getBuilding('town_hall');
-    const end = resolveMovement({ x: hall.position.x, z: hall.position.z + 9 }, { x: hall.position.x, z: hall.position.z - 12 }, R);
-    expect(end.z).toBeGreaterThan(hall.position.z + hall.depth / 2);
+    // From behind (north of) the hall straight south: stopped by the back wall.
+    const back = resolveMovement({ x: hall.position.x - 3, z: hall.position.z - hall.depth / 2 - 3 }, { x: hall.position.x - 3, z: hall.position.z + 2 }, R);
+    expect(back.z).toBeLessThan(hall.position.z - hall.depth / 2);
+    // From inside, straight out through the side wall: stopped inside.
+    const side = resolveMovement({ x: hall.position.x - 2, z: hall.position.z }, { x: hall.position.x - 14, z: hall.position.z }, R);
+    expect(side.x).toBeGreaterThan(hall.position.x - hall.width / 2);
   });
 
   it('cannot walk off the beach into the sea, but can walk the dock', () => {

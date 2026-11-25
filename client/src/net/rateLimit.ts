@@ -25,6 +25,9 @@ const ACTION_FOR: Record<C2SType, string | null> = {
   [C2S.mute]: 'social',
   [C2S.unmute]: 'social',
   [C2S.report]: 'report',
+  [C2S.buildPlace]: 'build',
+  [C2S.buildRemove]: 'build',
+  [C2S.unstuck]: 'unstuck',
 };
 
 interface Bucket {

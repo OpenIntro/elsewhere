@@ -155,7 +155,7 @@ function buildDecor(): DecorPiece[] {
   add('decor_workshop_lumber', 'lumber', local(ws, ws.width / 2 + 0.5, 1.0, 0), box(0.42, 1.32), 0.8);
   add('decor_workshop_wheel', 'cart_wheel', local(ws, -ws.width / 2 - 0.25, 1.2, 0), box(0.2, 0.65), 1.2);
   add('decor_workshop_gears', 'gear_pile', local(ws, -ws.width / 2 - 0.9, -1.6, 0), circle(0.5), 0.6);
-  add('decor_workshop_sawhorse', 'sawhorse', local(ws, 6.2, 5.0, 0.3), box(0.78, 0.32), 0.85);
+  add('decor_workshop_sawhorse', 'sawhorse', local(ws, ws.width / 2 + 1.4, ws.depth / 2 + 1.5, 0.3), box(0.78, 0.32), 0.85);
 
   // Cottage yards.
   const yard = (n: number, kind: DecorKind, lx: number, shape: DecorPiece['shape'], h: number, yaw = 0) => {
@@ -166,7 +166,7 @@ function buildDecor(): DecorPiece[] {
   yard(4, 'wheelbarrow', 2.3, box(0.42, 0.7), 0.7, 0.4);
 
   // Waterfront.
-  add('decor_net_frame', 'net_frame', { position: { x: -0.2, z: 46.6 }, yaw: 1.4 }, box(1.08, 0.14), 1.6);
+  add('decor_net_frame', 'net_frame', { position: { x: -1.4, z: 46.6 }, yaw: 1.4 }, box(1.08, 0.14), 1.6);
   add('decor_rowboat', 'rowboat', { position: { x: -1.0, z: 50.2 }, yaw: 1.1 }, box(0.62, 1.5), 0.6);
 
   // The Unknown: ruins.

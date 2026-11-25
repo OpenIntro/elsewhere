@@ -11,8 +11,9 @@ import { net } from '../net/index.js';
 import { anchors, P, shade, type DoorAnchor } from './arch/kit.js';
 import { cone, cyl, GeoBuilder, lathe, rbox, sphere, T, torus } from './geom.js';
 import { env } from './env.js';
-import { solidMaterial, glazedMaterial, windowMaterial } from './materials.js';
+import { cutDepthMaterial, solidMaterial, glazedMaterial, solidCutMaterial, windowCutMaterial } from './materials.js';
 import { bellRings, doorOpen } from './objectState.js';
+import { runtime } from '../state/runtime.js';
 
 const _p = new Vector3();
 const _q = new Quaternion();
@@ -27,6 +28,7 @@ function decompose(m: Matrix4, g: Group): void {
 /** Geometry for one door leaf: hinge at local x=0, leaf extends to +x (width w). */
 function leafGeometry(d: DoorAnchor, w: number, mirror: boolean): Map<string, BufferGeometry> {
   const B = new GeoBuilder(d.id.length);
+  B.cut = d.cut; // leaves fade with the wall they sit in
   const h = d.height;
   const no = { ao: false };
   const c = d.color;
@@ -58,6 +60,20 @@ function leafGeometry(d: DoorAnchor, w: number, mirror: boolean): Map<string, Bu
   return B.build();
 }
 
+const _dp = new Vector3();
+/** Someone (local or remote) standing at a walk-in door: it swings open for them. */
+function someoneAt(d: DoorAnchor): boolean {
+  _dp.setFromMatrixPosition(d.frame);
+  const r2 = 2.1 * 2.1;
+  const lp = runtime.localPlayer;
+  if (lp.ready && (lp.x - _dp.x) ** 2 + (lp.z - _dp.z) ** 2 < r2) return true;
+  for (const [, r] of runtime.remotes) {
+    const p = r.render;
+    if (p && p.visible && (p.x - _dp.x) ** 2 + (p.z - _dp.z) ** 2 < r2) return true;
+  }
+  return false;
+}
+
 function Door({ d }: { d: DoorAnchor }) {
   const root = useRef<Group>(null);
   const leaves = useRef<Group[]>([]);
@@ -71,15 +87,16 @@ function Door({ d }: { d: DoorAnchor }) {
     if (root.current) decompose(d.frame, root.current);
   }, [d]);
   useFrame((_, dt) => {
-    const target = doorOpen(d.id) ? 1 : 0;
+    const target = doorOpen(d.id) || (d.walkIn && someoneAt(d)) ? 1 : 0;
     const k = 1 - Math.exp(-dt * 5);
     angle.current += (target - angle.current) * k;
     const a = angle.current;
-    // ease with a little overshoot feel via sine
-    const open = a * (Math.PI * 0.55) * (1 + 0.06 * Math.sin(a * Math.PI));
+    // ease with a little overshoot feel via sine; walk-in doors swing inwards, closed ones out
+    const open = a * (Math.PI * (d.walkIn ? 0.47 : 0.55)) * (1 + 0.06 * Math.sin(a * Math.PI));
+    const s = d.walkIn ? -1 : 1;
     parts.forEach((p, i) => {
       const g = leaves.current[i];
-      if (g) g.rotation.y = p.mirror ? open : -open;
+      if (g) g.rotation.y = (p.mirror ? open : -open) * s;
     });
   });
   return (
@@ -87,7 +104,7 @@ function Door({ d }: { d: DoorAnchor }) {
       {parts.map((p, i) => (
         <group key={i} position={[p.x, 0, 0.02]} ref={(g) => void (g && (leaves.current[i] = g))}>
           {[...p.geo].map(([bucket, geo]) => (
-            <mesh key={bucket} geometry={geo} material={bucket === 'w' ? windowMaterial : solidMaterial} castShadow receiveShadow />
+            <mesh key={bucket} geometry={geo} material={bucket === 'w' ? windowCutMaterial : solidCutMaterial} castShadow receiveShadow customDepthMaterial={cutDepthMaterial()} />
           ))}
         </group>
       ))}
