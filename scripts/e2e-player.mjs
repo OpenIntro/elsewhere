@@ -223,8 +223,8 @@ async function testCameraRelative(page) {
   const e0 = keyDir(k0, yaw0);
   const a0 = angleBetween({ x: m0.dx, z: m0.dz }, e0);
   await page.keyboard.press('KeyR');
-  await sleep(800);
-  const yaw1 = (await snap(page)).camera.yaw;
+  // The eased 90° turn takes ~0.5 s of real time; wait for a rendered frame at the end of it.
+  const yaw1 = (await waitFor(page, (sn) => Math.abs(Math.abs(sn.camera.yaw - yaw0) - Math.PI / 2) < 0.005, 'rotation to settle', 10_000)).camera.yaw;
   const k1 = await freeKey(page, yaw1);
   const m1 = await holdAndMeasure(page, k1, 700);
   const e1 = keyDir(k1, yaw1);
@@ -304,14 +304,27 @@ async function testClickBehindBuilding(page) {
   if (!chosen) return record('click-to-move reaches a point behind a building', false, 'no suitable building on screen');
   const { b, p } = chosen;
   await clickWorld(page, p);
+  await sleep(100);
+  const planned = (await snap(page)).motion?.path?.points ?? [];
   const samples = await sampleUntil(page, (sn, out) => out.length > 5 && !sn.motion?.path && sn.local.speed < 0.05, 45_000);
   const last = samples.at(-1);
-  let walkable = true;
+  // Every sampled position is walkable; the planned path segments are walkable; and where samples are
+  // dense enough (<0.8 m apart) the chord between them is too (sparse chords may legitimately cut corners).
+  let walkable = (await countUnwalkable(page, samples)) === 0;
   let bad = null;
   let insideCount = 0;
+  let prev = samples[0];
+  for (const q of planned) {
+    const r = await segmentWalkable(page, prev, q);
+    if (!r.ok) {
+      walkable = false;
+      bad = r;
+    }
+    prev = q;
+  }
   for (let i = 0; i < samples.length; i++) {
     if (insideBox(samples[i], b, 0.3)) insideCount++;
-    if (i > 0) {
+    if (i > 0 && Math.hypot(samples[i].x - samples[i - 1].x, samples[i].z - samples[i - 1].z) < 0.8) {
       const r = await segmentWalkable(page, samples[i - 1], samples[i]);
       if (!r.ok) {
         walkable = false;
@@ -327,7 +340,7 @@ async function testClickBehindBuilding(page) {
   record(
     'click-to-move walks around a building to a point behind it',
     ok,
-    `building ${b.id}; target (${p.x.toFixed(1)}, ${p.z.toFixed(1)}); reached within ${reached.toFixed(2)} m in ${(last.t / 1000).toFixed(1)} s; ${samples.length} samples all walkable=${walkable}${bad ? ` (bad at ${bad.x.toFixed(2)},${bad.z.toFixed(2)})` : ''}; inside building=${insideCount}; travelled ${travelled.toFixed(1)} m vs straight ${straight.toFixed(1)} m`,
+    `building ${b.id}; target (${p.x.toFixed(1)}, ${p.z.toFixed(1)}); reached within ${reached.toFixed(2)} m in ${(last.t / 1000).toFixed(1)} s; planned path ${planned.length} waypoints; ${samples.length} samples all walkable=${walkable}${bad ? ` (bad at ${bad.x.toFixed(2)},${bad.z.toFixed(2)})` : ''}; inside building=${insideCount}; travelled ${travelled.toFixed(1)} m vs straight ${straight.toFixed(1)} m`,
   );
   return { b, p };
 }

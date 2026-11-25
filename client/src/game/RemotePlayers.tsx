@@ -21,6 +21,7 @@ import { sampleRemote } from '../net/index.js';
 import { useGameStore, type PlayerInfo } from '../state/gameStore.js';
 import { runtime, type Pose, type RemoteRenderState } from '../state/runtime.js';
 import { useShallow } from 'zustand/react/shallow';
+import { perfAdd } from './perf.js';
 
 const APPEAR_MS = 380;
 const LEAVE_MS = 450;
@@ -48,8 +49,24 @@ const RemotePlayer = memo(function RemotePlayer({ id, cached, leavingAt }: { id:
   const group = useRef<Group>(null);
   const inner = useRef<Group>(null);
   const sample = useRef<Pose>({ x: 0, y: 0, z: 0, rot: 0 });
-  const rs = useRef<RemoteRenderState>({ x: 0, y: 0, z: 0, rot: 0, speed: 0, visible: false });
-  const st = useRef({ init: false, teleportSeq: -1, mountedAt: performance.now(), px: 0, pz: 0, seatBlend: 0, shadowCheck: 0, anim: 'idle' as AnimState });
+  const rs = useRef<RemoteRenderState>({
+    x: 0,
+    y: 0,
+    z: 0,
+    rot: 0,
+    speed: 0,
+    visible: false,
+  });
+  const st = useRef({
+    init: false,
+    teleportSeq: -1,
+    mountedAt: performance.now(),
+    px: 0,
+    pz: 0,
+    seatBlend: 0,
+    shadowCheck: 0,
+    anim: 'idle' as AnimState,
+  });
   const infoRef = useRef(info);
   infoRef.current = info;
   const [anim, setAnim] = useState<AnimState>(info.anim === 'sit' ? 'sit' : 'idle');
@@ -59,6 +76,14 @@ const RemotePlayer = memo(function RemotePlayer({ id, cached, leavingAt }: { id:
     const g = group.current;
     const ig = inner.current;
     if (!g || !ig) return;
+    const t0 = performance.now();
+    try {
+      frameBody(g, ig, rawDt);
+    } finally {
+      perfAdd('remotes', performance.now() - t0);
+    }
+  });
+  function frameBody(g: Group, ig: Group, rawDt: number): void {
     const dt = Math.min(rawDt, 0.1);
     const now = performance.now();
     const s = st.current;
@@ -147,7 +172,7 @@ const RemotePlayer = memo(function RemotePlayer({ id, cached, leavingAt }: { id:
       const near = Math.hypot(out.x - v.focusX, out.z - v.focusZ) < SHADOW_RADIUS;
       setShadow((prev) => (prev === near ? prev : near));
     }
-  });
+  }
 
   return (
     <group ref={group} name={`remote-${id}`} visible={false}>

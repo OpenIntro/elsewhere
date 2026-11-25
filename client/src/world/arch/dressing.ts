@@ -79,29 +79,6 @@ export function buildDressing(get: (key: string) => GeoBuilder): void {
       S.at(T(0, 0.06, 0.02), () => flowerPatch(S, 3.5, 0.65, 24));
     });
   }
-  // flower cart at the plaza rim (between the café and workshop path mouths)
-  {
-    const a = (2 * Math.PI) / 180;
-    const p = { x: sq.x + Math.cos(a) * 9.6, z: sq.z + Math.sin(a) * 9.6 };
-    if (clearSpot(p, 0.7, 0.4)) {
-      at(S, p, Math.atan2(sq.x - p.x, sq.z - p.z), () => {
-        S.add('solid', rbox(1.6, 0.45, 0.9, 0.06), '#7a5c46', T(0, 0.55, 0));
-        for (const s2 of [-1, 1]) {
-          S.add('solid', torus(0.32, 0.05, 6, 16), '#5e4636', T(s2 * 0.85, 0.34, 0, Math.PI / 2));
-          for (let k = 0; k < 4; k++) S.add('solid', rbox(0.04, 0.6, 0.04, 0.01), '#6a5040', T(s2 * 0.85, 0.34, 0, Math.PI / 2, 0, (k / 4) * Math.PI));
-        }
-        S.add('solid', rbox(0.05, 0.05, 1.2, 0.02), '#6a5040', T(0, 0.45, -0.95, 0, -0.25));
-        for (let k = 0; k < 3; k++) {
-          S.add('solid', rbox(0.46, 0.2, 0.7, 0.04), '#b98f66', T(-0.52 + k * 0.52, 0.88 + (k === 1 ? 0.12 : 0), 0));
-          S.at(T(-0.52 + k * 0.52, 0.98 + (k === 1 ? 0.12 : 0), 0), () => flowerPatch(S, 0.38, 0.6, 9, [P.petals[k]!, P.petals[(k + 3) % 6]!, '#f4efe6']));
-        }
-        S.add('solid', cyl(0.025, 0.025, 1.6, 6), '#e8e0cf', T(0.75, 1.4, 0.35));
-        for (let k = 0; k < 8; k++) S.add('solid', cone(0.9, 0.35, 3), k % 2 ? '#5f8f99' : '#efe3cf', T(0.75, 2.25, 0.35, (k / 8) * Math.PI * 2, 0, 0, 0.42, 1, 1), { ao: false });
-        S.add('solid', crateGeoPlaceholder(), '#7a5c46', T(-1.2, 0.2, 0.3, 0.3));
-      });
-    }
-  }
-
   // --- Woods: mushroom rings, logs, a fairy door, a teacup, glowing caps ----------
   const W = get('woods');
   const woods = getLocation('woods');
@@ -168,15 +145,6 @@ export function buildDressing(get: (key: string) => GeoBuilder): void {
       for (let k = 0; k < 8; k++) F.add('solid', cone(1.0, 0.4, 3), k % 2 ? '#5f8f99' : '#f4efe6', T(-0.58, 2.05, 0.2, (k / 8) * Math.PI * 2, 0, 0.12, 0.42, 1, 1), { ao: false });
     });
   }
-  const boat = { x: -1.0, z: 50.2 };
-  if (inlandDistance(boat.x, boat.z) > 0.2 && !collidesAt(boat, 0.8)) {
-    at(F, boat, 1.1, () => {
-      F.add('solid', sphere(1.0, 14, 8, ), '#5f7c74', T(0, 0.2, 0, 0, 0, 0, 0.62, 0.45, 1.6));
-      F.add('solid', sphere(0.92, 14, 8), '#e8e0cf', T(0, 0.3, 0, 0, 0, 0, 0.55, 0.38, 1.5));
-      F.add('solid', rbox(1.0, 0.06, 0.25, 0.02), P.woodLight, T(0, 0.48, 0));
-      F.add('solid', rbox(0.06, 0.04, 2.0, 0.02), P.woodLight, T(0.3, 0.52, 0.2, 0, 0, 0.2));
-    });
-  }
   for (let k = 0; k < 16; k++) {
     const a = rnd() * Math.PI * 2;
     const r = 6 + rnd() * 10;
@@ -188,17 +156,6 @@ export function buildDressing(get: (key: string) => GeoBuilder): void {
       else F.add('solid', sphere(0.12 + rnd() * 0.1, 8, 6), '#a8a294', T(0, 0.04, 0, 0, 0, 0, 1.3, 0.5, 1), { ao: false });
     });
   }
-  // drying fish net on poles beside the boathouse
-  const net = { x: 3.2, z: 41.2 };
-  if (clearSpot(net, 0.5, 0.3)) {
-    at(F, net, 0, () => {
-      for (const s of [-1, 1]) F.add('solid', cyl(0.05, 0.06, 1.6, 6), P.wood, T(s * 1.0, 0.8, 0));
-      for (let k = 0; k < 9; k++) F.add('solid', cyl(0.008, 0.008, 1.3, 3), '#c9b18a', T(-0.9 + k * 0.225, 0.95, 0, 0, 0, 0.05 * Math.sin(k)), { ao: false });
-      for (let k = 0; k < 6; k++) F.add('solid', cyl(0.008, 0.008, 2.0, 3), '#c9b18a', T(0, 0.45 + k * 0.19 - 0.04 * Math.sin(k), 0, 0, 0, Math.PI / 2), { ao: false });
-      F.add('solid', sphere(0.08, 6, 5), '#e98a6b', T(0.4, 0.7, 0.02), { ao: false });
-    });
-  }
-
   // --- Residential: washing line between houses 1 and 2, a garden shed ----------
   const R = get('residential');
   const l0 = { x: -33.6, z: 3.0 };
@@ -235,22 +192,5 @@ export function buildDressing(get: (key: string) => GeoBuilder): void {
   }
   // Workshop yard: sawhorse + gear pile (non-solid, clear spots)
   const K = get('workshop');
-  const saw = { x: 28.2, z: 7.6 };
-  if (clearSpot(saw, 0.5, 0.3)) {
-    at(K, saw, 0.6, () => {
-      K.add('solid', rbox(1.4, 0.12, 0.14, 0.03), P.woodLight, T(0, 0.7, 0));
-      for (const s of [-1, 1]) for (const t of [-1, 1]) K.add('solid', rbox(0.08, 0.8, 0.08, 0.02), P.wood, T(s * 0.55, 0.36, t * 0.18, 0, t * 0.25));
-      K.add('solid', rbox(0.9, 0.1, 0.24, 0.03), '#c49a6a', T(0.1, 0.81, 0, 0.2));
-    });
-  }
-  const gears = { x: 36.6, z: 17.4 };
-  if (clearSpot(gears, 0.5, 0.3)) {
-    at(K, gears, 0, () => {
-      for (let k = 0; k < 3; k++) {
-        K.add('solid', cyl(0.35 - k * 0.08, 0.35 - k * 0.08, 0.08, 12), k % 2 ? P.brass : P.iron, T(k * 0.12, 0.05 + k * 0.09, k * 0.05));
-      }
-      crate(K, 0.5, '#a98a62');
-    });
-  }
   void shade;
 }

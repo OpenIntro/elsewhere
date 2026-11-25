@@ -433,7 +433,11 @@ export class NetClient {
       console.warn(`[net] room left unexpectedly (${code}); rejoining`);
       this.scheduleRejoin();
     });
-    room.onError((code, message) => console.error('[net] room error', code, message));
+    room.onError((code, message) => {
+      // Failed reconnection attempts surface here too; they are expected while the server is away.
+      if (useGameStore.getState().connection === 'reconnecting') console.warn('[net] reconnect attempt failed', code ?? '', message ?? '');
+      else console.error('[net] room error', code, message);
+    });
   }
 
   /**

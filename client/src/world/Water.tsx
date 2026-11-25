@@ -84,11 +84,11 @@ void main(){
   float du = depth * 6.0;
   vec2 p = vWPos.xz;
   // base colour by depth
-  vec3 shallow = uWaterShallow * 1.18 + vec3(0.03, 0.05, 0.03);
+  vec3 shallow = uWaterShallow * 1.06;
   vec3 col = mix(shallow, uWaterDeep, smoothstep(0.0, 0.5, depth));
   col = mix(col, uWaterDeep * 0.82, smoothstep(0.5, 1.0, depth));
   // painterly large-scale variation
-  col *= 0.94 + 0.12 * wFbm(p * 0.05 + uTime * 0.01);
+  col *= 0.97 + 0.06 * wFbm(p * 0.05 + uTime * 0.01);
   // wave normal from two scrolling noise fields
   float e = 0.4;
   vec2 q1 = p * 0.42 + vec2(uTime * 0.12, uTime * 0.05);
@@ -96,20 +96,20 @@ void main(){
   float h0 = wNoise(q1) + 0.5 * wNoise(q2);
   float hx = wNoise(q1 + vec2(e, 0.0)) + 0.5 * wNoise(q2 + vec2(e, 0.0));
   float hz = wNoise(q1 + vec2(0.0, e)) + 0.5 * wNoise(q2 + vec2(0.0, e));
-  vec3 N = normalize(vec3((h0 - hx) * 1.3, 1.0, (h0 - hz) * 1.3));
+  vec3 N = normalize(vec3((h0 - hx) * 0.55, 1.0, (h0 - hz) * 0.55));
   vec3 V = normalize(cameraPosition - vWPos);
   vec3 L = normalize(uKeyDir);
   // soft sky reflection
   float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-  col = mix(col, uBgTop * 1.05, clamp(fres * 0.5, 0.0, 0.35));
+  col = mix(col, uBgTop, clamp(fres * 0.25, 0.0, 0.12));
   // gentle diffuse wave shading
   col *= 0.95 + 0.1 * clamp(dot(N, L), 0.0, 1.0);
   // painterly wave streaks
-  col *= 0.97 + 0.06 * smoothstep(0.55, 0.8, wNoise(vec2(p.x * 0.25 + p.y * 0.1, p.y * 0.9) + uTime * 0.04));
+  col *= 0.985 + 0.03 * smoothstep(0.55, 0.8, wNoise(vec2(p.x * 0.25 + p.y * 0.1, p.y * 0.9) + uTime * 0.04));
   // caustics in the shallows (day)
   if (uDetail > 0.5) {
     float c = 1.0 - smoothstep(0.0, 0.42, caustic(p * 0.9));
-    col += vec3(0.9, 1.0, 0.95) * c * c * 0.16 * (1.0 - smoothstep(0.03, 0.22, depth)) * uDaylight;
+    col += vec3(0.9, 1.0, 0.95) * c * c * 0.06 * (1.0 - smoothstep(0.03, 0.22, depth)) * uDaylight;
   }
   // glints: sparkling cells near the reflection direction
   vec3 H = normalize(L + V);
@@ -126,17 +126,17 @@ void main(){
   float crest = 1.0;
   vec3 glintCol = mix(uSunColor, vec3(0.75, 0.82, 1.0), uNight);
   float glintAmt = (uSunIntensity * 0.25 + uNight * 0.35);
-  col += glintCol * (spec * 0.5 + tw * crest * 0.9) * glintAmt * (0.4 + 0.6 * smoothstep(0.05, 0.4, depth));
+  col += glintCol * (spec * 0.35 + tw * crest * 0.55) * glintAmt * (0.4 + 0.6 * smoothstep(0.05, 0.4, depth));
   // soft broad sheen towards the light
   col += glintCol * pow(max(dot(Ns, H), 0.0), 18.0) * 0.06 * glintAmt;
   // shoreline foam: a crisp lip plus waves travelling in towards the beach
   float nf = wNoise(p * 1.3 + uTime * 0.2);
-  float lip = 1.0 - smoothstep(0.012, 0.03 + nf * 0.02, depth);
+  float lip = 1.0 - smoothstep(0.01, 0.045 + nf * 0.02, depth);
   float waves = smoothstep(0.72, 0.95, sin(du * 9.0 - uTime * 1.7 + nf * 3.0)) * (1.0 - smoothstep(0.02, 0.13, depth));
   waves *= smoothstep(0.25, 0.6, wNoise(p * 0.45 + vec2(uTime * 0.05, 0.0)));
-  float foam = clamp(max(lip, waves * 0.75), 0.0, 1.0);
+  float foam = clamp(max(lip * 0.85, waves * 0.35), 0.0, 1.0);
   vec3 foamCol = mix(vec3(1.0, 0.98, 0.93), vec3(0.62, 0.68, 0.85), uNight) * mix(vec3(1.0), uSunColor, 0.15);
-  col = mix(col, foamCol, foam * 0.92);
+  col = mix(col, foamCol, foam * 0.7);
   float alpha = mix(0.5, 0.96, smoothstep(0.0, 0.3, depth));
   alpha = max(alpha, foam);
   gl_FragColor = vec4(col, alpha);

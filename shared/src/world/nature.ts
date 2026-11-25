@@ -11,6 +11,7 @@ import { INTERACTABLES } from './interactables.js';
 import { LOCATIONS, getLocation } from './locations.js';
 import { DECKS, PATHS } from './paths.js';
 import { FOUNTAIN, PROPS, STANDING_STONES } from './structures.js';
+import { DECOR_OBSTACLES } from './decor.js';
 import { CREEK_BANK_HALF_WIDTH, CREEK_POINTS, inlandDistance, terrainHeight } from './terrain.js';
 
 export type TreeKind = 'pine' | 'oak' | 'birch' | 'fruit';
@@ -55,6 +56,7 @@ function staticObstacles(): Obstacle[] {
   for (const pr of PROPS) out.push({ p: pr.position, r: 2 });
   for (const d of DECKS) out.push({ p: d.center, r: Math.max(d.halfLength, d.halfWidth) + 2 });
   out.push({ p: FOUNTAIN.position, r: FOUNTAIN.basinRadius + 4 });
+  for (const o of DECOR_OBSTACLES) out.push(o);
   return out;
 }
 

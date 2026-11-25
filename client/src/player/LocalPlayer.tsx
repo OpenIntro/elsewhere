@@ -14,31 +14,21 @@
  *    the synced `seat` is set; moving / Space asks the server to stand.
  * Sends C2S.move at CONFIG.movement.sendRateHz while the pose changes.
  */
-import { useFrame } from "@react-three/fiber";
-import { useEffect, useRef, useState } from "react";
-import type { Group } from "three";
-import {
-  C2S,
-  CONFIG,
-  S2C,
-  angleDelta,
-  getSeat,
-  groundHeight,
-  isWalkable,
-  resolveMovement,
-  type AnimState,
-  type LocomotionAnim,
-} from "@elsewhere/shared";
-import { Character } from "../characters/index.js";
-import { net, registerDebugSection } from "../net/index.js";
-import { useGameStore } from "../state/gameStore.js";
-import { runtime } from "../state/runtime.js";
-import { useSettingsStore } from "../state/settingsStore.js";
-import { useUiStore } from "../state/uiStore.js";
-import { cameraControls, useCameraStore } from "./camera.js";
-import { sampleInput, screenToWorld } from "./input.js";
-import { interactNow, requestStand } from "./interaction.js";
-import { cancelPath, nav, walkTo } from "./navigation.js";
+import { useFrame } from '@react-three/fiber';
+import { useEffect, useRef, useState } from 'react';
+import type { Group } from 'three';
+import { C2S, CONFIG, S2C, angleDelta, getSeat, groundHeight, isWalkable, resolveMovement, type AnimState, type LocomotionAnim } from '@elsewhere/shared';
+import { Character } from '../characters/index.js';
+import { perfAdd } from '../game/perf.js';
+import { net, registerDebugSection } from '../net/index.js';
+import { useGameStore } from '../state/gameStore.js';
+import { runtime } from '../state/runtime.js';
+import { useSettingsStore } from '../state/settingsStore.js';
+import { useUiStore } from '../state/uiStore.js';
+import { cameraControls, useCameraStore } from './camera.js';
+import { sampleInput, screenToWorld } from './input.js';
+import { interactNow, requestStand } from './interaction.js';
+import { cancelPath, nav, walkTo } from './navigation.js';
 
 const SEND_INTERVAL = 1 / CONFIG.movement.sendRateHz;
 const WALK = CONFIG.movement.walkSpeed;
@@ -68,10 +58,10 @@ const motion = {
   forceSend: false,
   lastSentX: NaN,
   lastSentZ: NaN,
-  lastSentAnim: "idle" as LocomotionAnim,
+  lastSentAnim: 'idle' as LocomotionAnim,
   lastSentRot: 0,
   /** Seat we are blending into ('' = none). */
-  seatRef: "",
+  seatRef: '',
   /** Stuck detection for path following. */
   stuckT: 0,
   stuckX: 0,
@@ -93,31 +83,22 @@ function resetMotion(): void {
   motion.sendAcc = 0;
   motion.forceSend = true;
   motion.lastSentX = motion.lastSentZ = NaN;
-  motion.seatRef = "";
+  motion.seatRef = '';
   histSeq.fill(-1);
   cancelPath();
 }
 
-function applyCorrection(c: {
-  x: number;
-  z: number;
-  y: number;
-  seq: number;
-  reason: string;
-}): void {
+function applyCorrection(c: { x: number; z: number; y: number; seq: number; reason: string }): void {
   const lp = runtime.localPlayer;
   if (!lp.ready) return;
-  if (c.reason === "seated") return; // pose is driven by the seat while seated
+  if (c.reason === 'seated') return; // pose is driven by the seat while seated
   let tx = c.x;
   let tz = c.z;
   const slot = c.seq % HISTORY;
-  if (c.reason !== "teleport" && histSeq[slot] === c.seq) {
+  if (c.reason !== 'teleport' && histSeq[slot] === c.seq) {
     // Re-base: keep the movement predicted since that seq, shifted by the server's delta,
     // and re-run it through collision from the authoritative point.
-    const rebased = resolveMovement(
-      { x: c.x, z: c.z },
-      { x: lp.x + (c.x - histX[slot]!), z: lp.z + (c.z - histZ[slot]!) },
-    );
+    const rebased = resolveMovement({ x: c.x, z: c.z }, { x: lp.x + (c.x - histX[slot]!), z: lp.z + (c.z - histZ[slot]!) });
     tx = rebased.x;
     tz = rebased.z;
   }
@@ -132,7 +113,7 @@ function applyCorrection(c: {
   lp.x = tx;
   lp.z = tz;
   lp.y = groundHeight(tx, tz);
-  if (c.reason === "teleport" || err > SNAP_DISTANCE) {
+  if (c.reason === 'teleport' || err > SNAP_DISTANCE) {
     motion.vx = motion.vz = 0;
     if (err > SNAP_DISTANCE) cancelPath();
   }
@@ -142,34 +123,31 @@ function applyCorrection(c: {
 
 function locomotionFor(speed: number, prev: LocomotionAnim): LocomotionAnim {
   // Hysteresis so the anim doesn't flicker at thresholds.
-  if (prev === "idle")
-    return speed > 0.35 ? (speed > RUN_THRESHOLD ? "run" : "walk") : "idle";
-  if (speed < 0.2) return "idle";
-  if (prev === "run") return speed < RUN_THRESHOLD - 0.4 ? "walk" : "run";
-  return speed > RUN_THRESHOLD + 0.2 ? "run" : "walk";
+  if (prev === 'idle') return speed > 0.35 ? (speed > RUN_THRESHOLD ? 'run' : 'walk') : 'idle';
+  if (speed < 0.2) return 'idle';
+  if (prev === 'run') return speed < RUN_THRESHOLD - 0.4 ? 'walk' : 'run';
+  return speed > RUN_THRESHOLD + 0.2 ? 'run' : 'walk';
 }
 
-const ONE_SHOTS: readonly AnimState[] = ["wave", "dance", "interact"];
+const ONE_SHOTS: readonly AnimState[] = ['wave', 'dance', 'interact'];
 
 export function LocalPlayer() {
   const sessionId = useGameStore((s) => s.sessionId);
-  const me = useGameStore((s) =>
-    s.sessionId ? s.players[s.sessionId] : undefined,
-  );
+  const me = useGameStore((s) => (s.sessionId ? s.players[s.sessionId] : undefined));
   const group = useRef<Group>(null);
-  const [anim, setAnim] = useState<AnimState>("idle");
-  const animRef = useRef<AnimState>("idle");
+  const [anim, setAnim] = useState<AnimState>('idle');
+  const animRef = useRef<AnimState>('idle');
 
   useEffect(() => {
     const offs = [
       net.on(S2C.correction, applyCorrection),
       net.onLifecycle((e) => {
-        if (e === "joined") resetMotion();
-        if (e === "resumed") motion.forceSend = true;
+        if (e === 'joined') resetMotion();
+        if (e === 'resumed') motion.forceSend = true;
       }),
     ];
     const vis = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === 'visible') {
         // Resync once on return instead of replaying anything.
         motion.sendAcc = 0;
         motion.forceSend = true;
@@ -177,8 +155,8 @@ export function LocalPlayer() {
         motion.vx = motion.vz = 0;
       }
     };
-    document.addEventListener("visibilitychange", vis);
-    registerDebugSection("motion", () => ({
+    document.addEventListener('visibilitychange', vis);
+    registerDebugSection('motion', () => ({
       vx: motion.vx,
       vz: motion.vz,
       offset: Math.hypot(motion.ox, motion.oz),
@@ -195,11 +173,20 @@ export function LocalPlayer() {
     }));
     return () => {
       for (const o of offs) o();
-      document.removeEventListener("visibilitychange", vis);
+      document.removeEventListener('visibilitychange', vis);
     };
   }, []);
 
   useFrame((_, rawDt) => {
+    const tPerf = performance.now();
+    try {
+      localFrame(rawDt);
+    } finally {
+      perfAdd('local', performance.now() - tPerf);
+    }
+  });
+
+  function localFrame(rawDt: number): void {
     const lp = runtime.localPlayer;
     const g = group.current;
     if (!lp.ready || !sessionId) {
@@ -213,8 +200,8 @@ export function LocalPlayer() {
     const dt = frameDt / steps;
     const game = useGameStore.getState();
     const info = game.players[sessionId];
-    const live = game.connection === "connected";
-    const seatRef = info?.seat ?? "";
+    const live = game.connection === 'connected';
+    const seatRef = info?.seat ?? '';
     const seat = seatRef ? getSeat(seatRef) : null;
     const input = sampleInput();
     const mag = Math.hypot(input.moveX, input.moveY);
@@ -223,8 +210,7 @@ export function LocalPlayer() {
     if (manual) {
       if (nav.goal) cancelPath();
       if (useCameraStore.getState().free) cameraControls.recenter();
-      if (useUiStore.getState().playerMenu)
-        useUiStore.getState().closePlayerMenu();
+      if (useUiStore.getState().playerMenu) useUiStore.getState().closePlayerMenu();
     }
 
     // --- Seat handling -----------------------------------------------------
@@ -264,13 +250,8 @@ export function LocalPlayer() {
       } else if (manual) {
         const dir = screenToWorld(input.moveX / mag, input.moveY / mag);
         const runDefault = useSettingsStore.getState().controls.runByDefault;
-        running =
-          input.source === "touch"
-            ? mag > 0.92 || (runDefault && mag > 0.6)
-            : runDefault
-              ? !input.run
-              : input.run;
-        const analog = input.source === "touch" ? Math.min(1, mag / 0.85) : 1;
+        running = input.source === 'touch' ? mag > 0.92 || (runDefault && mag > 0.6) : runDefault ? !input.run : input.run;
+        const analog = input.source === 'touch' ? Math.min(1, mag / 0.85) : 1;
         const speed = running ? RUN : WALK * Math.max(0.35, analog);
         desiredX = dir.x * speed;
         desiredZ = dir.z * speed;
@@ -284,10 +265,7 @@ export function LocalPlayer() {
           motion.replans = 0;
         }
         const near = nav.arriveNear;
-        if (
-          near &&
-          Math.hypot(near.x - lp.x, near.z - lp.z) <= nav.arriveRadius
-        ) {
+        if (near && Math.hypot(near.x - lp.x, near.z - lp.z) <= nav.arriveRadius) {
           arrive();
         } else {
           let wp = nav.points[nav.index];
@@ -308,20 +286,13 @@ export function LocalPlayer() {
             let speed = running ? RUN : WALK;
             // Ease into the final point.
             const toGoal = Math.hypot(nav.goal.x - lp.x, nav.goal.z - lp.z);
-            if (nav.index === nav.points.length - 1)
-              speed *= Math.min(
-                1,
-                Math.max(0.3, toGoal / (running ? 2.2 : 1.2)),
-              );
+            if (nav.index === nav.points.length - 1) speed *= Math.min(1, Math.max(0.3, toGoal / (running ? 2.2 : 1.2)));
             desiredX = (dx / d) * speed;
             desiredZ = (dz / d) * speed;
             // Stuck detection: replan once, then give up.
             motion.stuckT += dt;
             if (motion.stuckT > 0.7) {
-              const moved = Math.hypot(
-                lp.x - motion.stuckX,
-                lp.z - motion.stuckZ,
-              );
+              const moved = Math.hypot(lp.x - motion.stuckX, lp.z - motion.stuckZ);
               motion.stuckT = 0;
               motion.stuckX = lp.x;
               motion.stuckZ = lp.z;
@@ -347,23 +318,13 @@ export function LocalPlayer() {
 
       // --- Integrate ----------------------------------------------------------
       if (!seat) {
-        const wantFaster =
-          desiredX * desiredX + desiredZ * desiredZ >
-          motion.vx * motion.vx + motion.vz * motion.vz;
+        const wantFaster = desiredX * desiredX + desiredZ * desiredZ > motion.vx * motion.vx + motion.vz * motion.vz;
         const k = 1 - Math.exp(-dt * (wantFaster ? ACCEL : DECEL));
         motion.vx += (desiredX - motion.vx) * k;
         motion.vz += (desiredZ - motion.vz) * k;
-        if (
-          desiredX === 0 &&
-          desiredZ === 0 &&
-          motion.vx * motion.vx + motion.vz * motion.vz < 0.0025
-        )
-          motion.vx = motion.vz = 0;
+        if (desiredX === 0 && desiredZ === 0 && motion.vx * motion.vx + motion.vz * motion.vz < 0.0025) motion.vx = motion.vz = 0;
         if (motion.vx !== 0 || motion.vz !== 0) {
-          const next = resolveMovement(
-            { x: lp.x, z: lp.z },
-            { x: lp.x + motion.vx * dt, z: lp.z + motion.vz * dt },
-          );
+          const next = resolveMovement({ x: lp.x, z: lp.z }, { x: lp.x + motion.vx * dt, z: lp.z + motion.vz * dt });
           // Velocity becomes what actually happened (sliding along walls loses the blocked component).
           if (dt > 0) {
             motion.vx = (next.x - lp.x) / dt;
@@ -387,7 +348,7 @@ export function LocalPlayer() {
         const targetYaw = Math.atan2(motion.vx, motion.vz);
         lp.rot += angleDelta(lp.rot, targetYaw) * (1 - Math.exp(-dt * TURN));
       }
-      lp.anim = seat ? "idle" : locomotionFor(speed, lp.anim);
+      lp.anim = seat ? 'idle' : locomotionFor(speed, lp.anim);
       ground = groundHeight(lp.x, lp.z);
       lp.y = ground;
       void running;
@@ -406,12 +367,7 @@ export function LocalPlayer() {
       motion.ryInit = true;
     }
     // Follow the terrain tightly while walking, ease into / out of seats.
-    motion.ry +=
-      (targetY - motion.ry) *
-      (1 -
-        Math.exp(
-          -frameDt * (seat || Math.abs(targetY - motion.ry) > 0.25 ? 10 : 30),
-        ));
+    motion.ry += (targetY - motion.ry) * (1 - Math.exp(-frameDt * (seat || Math.abs(targetY - motion.ry) > 0.25 ? 10 : 30)));
     if (g) {
       g.visible = true;
       g.position.set(lp.x + motion.ox, motion.ry, lp.z + motion.oz);
@@ -419,47 +375,27 @@ export function LocalPlayer() {
     }
 
     // Display anim: seat › moving › server one-shot (wave/dance) › idle.
-    const serverAnim = info?.anim ?? "idle";
-    const display: AnimState = seat
-      ? "sit"
-      : speed > 0.3
-        ? lp.anim
-        : ONE_SHOTS.includes(serverAnim)
-          ? serverAnim
-          : lp.anim;
+    const serverAnim = info?.anim ?? 'idle';
+    const display: AnimState = seat ? 'sit' : speed > 0.3 ? lp.anim : ONE_SHOTS.includes(serverAnim) ? serverAnim : lp.anim;
     if (display !== animRef.current) {
       animRef.current = display;
       setAnim(display);
     }
-  });
+  }
 
   if (!me) return null;
   return (
     <group ref={group} name="local-player">
-      <Character
-        appearance={me.appearance}
-        anim={anim}
-        animSeq={me.animSeq}
-        held={me.held}
-      />
+      <Character appearance={me.appearance} anim={anim} animSeq={me.animSeq} held={me.held} />
     </group>
   );
 }
 
 /** Send C2S.move at CONFIG.movement.sendRateHz of SIMULATED time (called per sub-step). */
-function maybeSend(
-  lp: typeof runtime.localPlayer,
-  live: boolean,
-  seated: boolean,
-  dt: number,
-): void {
+function maybeSend(lp: typeof runtime.localPlayer, live: boolean, seated: boolean, dt: number): void {
   motion.sendAcc += dt;
   if (live && !seated) {
-    const changed =
-      lp.x !== motion.lastSentX ||
-      lp.z !== motion.lastSentZ ||
-      lp.anim !== motion.lastSentAnim ||
-      Math.abs(angleDelta(lp.rot, motion.lastSentRot)) > 0.15;
+    const changed = lp.x !== motion.lastSentX || lp.z !== motion.lastSentZ || lp.anim !== motion.lastSentAnim || Math.abs(angleDelta(lp.rot, motion.lastSentRot)) > 0.15;
     if ((changed && motion.sendAcc >= SEND_INTERVAL) || motion.forceSend) {
       motion.sendAcc = 0;
       lp.seq += 1;
@@ -490,6 +426,6 @@ function arrive(): void {
   const action = nav.onArrive;
   cancelPath();
   if (!action) return;
-  if (action.kind === "interact") interactNow(action.id);
-  else useUiStore.getState().openPlayerMenu(action.sessionId, "pointer");
+  if (action.kind === 'interact') interactNow(action.id);
+  else useUiStore.getState().openPlayerMenu(action.sessionId, 'pointer');
 }

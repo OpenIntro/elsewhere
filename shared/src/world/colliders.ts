@@ -8,6 +8,7 @@ import { BUILDINGS } from './buildings.js';
 import { INTERACTABLES, type Interactable } from './interactables.js';
 import { ROCKS, TREES } from './nature.js';
 import { FOUNTAIN, PROPS, STANDING_STONES, archPillars } from './structures.js';
+import { DECOR, FENCES, FENCE_HALF_THICKNESS } from './decor.js';
 
 export type ColliderSource = 'building' | 'tree' | 'rock' | 'structure' | 'prop' | 'interactable';
 
@@ -73,6 +74,15 @@ function build(): Collider[] {
   for (const pr of PROPS) {
     if (pr.shape.type === 'circle') out.push(circle(`col_${pr.id}`, 'prop', pr.position, pr.shape.radius));
     else out.push({ id: `col_${pr.id}`, shape: 'box', source: 'prop', x: pr.position.x, z: pr.position.z, halfWidth: pr.shape.halfWidth, halfDepth: pr.shape.halfDepth, yaw: pr.yaw });
+  }
+  for (const f of FENCES) {
+    const dx = f.b.x - f.a.x;
+    const dz = f.b.z - f.a.z;
+    out.push({ id: `col_${f.id}`, shape: 'box', source: 'prop', x: (f.a.x + f.b.x) / 2, z: (f.a.z + f.b.z) / 2, halfWidth: FENCE_HALF_THICKNESS, halfDepth: Math.hypot(dx, dz) / 2 + 0.05, yaw: Math.atan2(dx, dz) });
+  }
+  for (const d of DECOR) {
+    if (d.shape.type === 'circle') out.push(circle(`col_${d.id}`, 'prop', d.position, d.shape.radius));
+    else out.push({ id: `col_${d.id}`, shape: 'box', source: 'prop', x: d.position.x, z: d.position.z, halfWidth: d.shape.halfWidth, halfDepth: d.shape.halfDepth, yaw: d.yaw });
   }
   for (const i of INTERACTABLES) {
     const c = interactableCollider(i);

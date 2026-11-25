@@ -6,6 +6,7 @@ export * from './items.js';
 export * from './buildings.js';
 export * from './interactables.js';
 export * from './structures.js';
+export * from './decor.js';
 export * from './nature.js';
 export * from './colliders.js';
 export * from './spawn.js';

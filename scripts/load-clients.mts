@@ -140,10 +140,10 @@ try {
     if (page) {
       const s = (await page.evaluate(() => {
         const snap = window.__ELSEWHERE__!.snapshot();
-        return { frame: snap.frame, players: snap.players.length, remotes: (snap.remotes as { visible: boolean }[]).filter((r) => r.visible).length, connection: snap.connection };
-      })) as { frame: FrameStats; players: number; remotes: number; connection: string };
+        return { perf: snap.perf, frame: snap.frame, players: snap.players.length, remotes: (snap.remotes as { visible: boolean }[]).filter((r) => r.visible).length, connection: snap.connection };
+      })) as { perf: Record<string, { avgMs: number; maxMs: number }>; frame: FrameStats; players: number; remotes: number; connection: string };
       samples.push({ t: Math.round((Date.now() - t0) / 1000), frame: s.frame, players: s.players, remotesVisible: s.remotes, connection: s.connection });
-      log(`t=${samples.at(-1)!.t}s players=${s.players} visibleRemotes=${s.remotes} frame avg=${s.frame.avg.toFixed(1)}ms p95=${s.frame.p95.toFixed(1)}ms max=${s.frame.max.toFixed(1)}ms >50ms=${s.frame.over50}/${s.frame.n}`);
+      log(`t=${samples.at(-1)!.t}s players=${s.players} visibleRemotes=${s.remotes} frame avg=${s.frame.avg.toFixed(1)}ms p95=${s.frame.p95.toFixed(1)}ms max=${s.frame.max.toFixed(1)}ms >50ms=${s.frame.over50}/${s.frame.n} | CPU per frame: ${Object.entries(s.perf ?? {}).map(([k, v]) => `${k} ${v.avgMs.toFixed(2)}ms (max ${v.maxMs.toFixed(1)})`).join(', ')}`);
     } else {
       log(`t=${Math.round((Date.now() - t0) / 1000)}s bots=${bots.length}`);
     }

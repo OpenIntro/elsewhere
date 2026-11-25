@@ -57,6 +57,7 @@ const shots = [
   { name: 'doors-open', q: 'cam=-38,13,30&time=0.45&doors=1' },
   { name: 'night-cafe', q: 'cam=cafe&time=0.93' },
   { name: 'night-residential', q: 'cam=residential&time=0.9' },
+  { name: 'detail-trees', q: 'cam=15.5,-0.8,90&time=0.53' },
   { name: 'quality-low', q: `cam=town_square&time=${MID}&quality=low` },
   { name: 'quality-high', q: `cam=town_square&time=${MID}&quality=high` },
 ].filter((s) => !filter || filter.split(',').some((f) => s.name.includes(f)));

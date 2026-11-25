@@ -12,6 +12,7 @@ import { buildDeck, buildInteractable, buildProp, buildUnknownStatics, finishStr
 import { glazedMaterial, solidMaterial, staticPlantMaterial, windowMaterial } from './materials.js';
 import { signMaterial } from './signs.js';
 import { buildDressing } from './arch/dressing.js';
+import { buildDecorPieces, buildFences } from './arch/decor.js';
 
 export interface BuiltWorld {
   chunks: { key: string; bucket: string; geometry: BufferGeometry }[];
@@ -44,6 +45,8 @@ export function buildWorld(): BuiltWorld {
   const f1 = buildingLocal(cafe, -3.0, cafe.depth / 2 + 0.1);
   const f2 = buildingLocal(cafe, 3.4, cafe.depth / 2 + 0.1);
   finishStrings(get('cafe'), [new Vector3(f1.x, y + 3.3, f1.z), new Vector3(f2.x, y + 3.3, f2.z)]);
+  buildFences(get);
+  buildDecorPieces(get);
   buildDressing(get);
 
   const represented = new Set<string>();

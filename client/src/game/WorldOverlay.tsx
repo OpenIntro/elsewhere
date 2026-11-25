@@ -25,6 +25,7 @@ import { CLOTHING_COLORS, CONFIG, colorHex } from '@elsewhere/shared';
 import { useGameStore } from '../state/gameStore.js';
 import { runtime } from '../state/runtime.js';
 import { useSettingsStore } from '../state/settingsStore.js';
+import { perfAdd, perfFrame } from './perf.js';
 import { REACTION_MS, bubbles, installSocialFeed, pruneSocial, reactions } from './social.js';
 
 const MAX_LABELS = 18;
@@ -175,7 +176,14 @@ function overlaps(n: number, x0: number, y0: number, x1: number, y1: number): bo
 export function WorldOverlay() {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
-  const ref = useRef<{ container: HTMLDivElement | null; actors: Map<string, ActorDom>; order: ActorDom[]; reactionEls: HTMLSpanElement[]; frame: number; lastPrune: number }>({
+  const ref = useRef<{
+    container: HTMLDivElement | null;
+    actors: Map<string, ActorDom>;
+    order: ActorDom[];
+    reactionEls: HTMLSpanElement[];
+    frame: number;
+    lastPrune: number;
+  }>({
     container: null,
     actors: new Map(),
     order: [],
@@ -208,6 +216,16 @@ export function WorldOverlay() {
   }, [gl]);
 
   useFrame(() => {
+    perfFrame();
+    const t0 = performance.now();
+    try {
+      overlayFrame();
+    } finally {
+      perfAdd('overlay', performance.now() - t0);
+    }
+  });
+
+  function overlayFrame(): void {
     const st = ref.current;
     const container = st.container;
     if (!container) return;
@@ -400,7 +418,7 @@ export function WorldOverlay() {
     // Actors not seen this frame (left / off-screen): fade out, then drop.
     for (const [id, a] of st.actors) {
       if (a.seen === frame && a.onScreen) continue;
-      a.alpha *= Math.exp(-16.7 / FADE_MS * 3);
+      a.alpha *= Math.exp((-16.7 / FADE_MS) * 3);
       const op = Math.round(a.alpha * 100) / 100;
       if (op !== a.lastOpacity) {
         a.lastOpacity = op;
@@ -437,7 +455,7 @@ export function WorldOverlay() {
       el.style.display = '';
     }
     for (let i = used; i < els.length; i++) if (els[i]!.style.display !== 'none') els[i]!.style.display = 'none';
-  });
+  }
 
   return null;
 }

@@ -23,7 +23,6 @@ import {
   onFace,
   P,
   pavilionRoof,
-  picketFence,
   roof,
   shade,
   shrub,
@@ -183,16 +182,6 @@ function store(B: GeoBuilder, b: Building): void {
       gableEnds(B, w, 1.6, d + 0.2, b.wallColor);
     });
     stovepipe(B, -2.6, h + 0.5, -1.8, 1.6);
-    // side: stacked crates, sacks and a ladder against the left wall
-    B.at(onFace('left', w, d, -1.6, 0, 0.35), () => {
-      crate(B, 0.6, '#b58f62');
-      B.at(T(0.15, 0.6, 0.05, 0.3), () => crate(B, 0.5, '#a88257'));
-      B.add('solid', sphere(0.32, 10, 8), '#d8c8a2', T(0.75, 0.24, 0.05, 0, 0, 0, 1, 0.75, 0.85));
-    });
-    B.at(onFace('right', w, d, -1.8, 0, 0.18), () => {
-      for (const s of [-1, 1]) B.add('solid', rbox(0.06, 3.0, 0.06, 0.02), P.wood, T(s * 0.25, 1.5, 0.1, 0, -0.12));
-      for (let i = 0; i < 7; i++) B.add('solid', rbox(0.5, 0.05, 0.05, 0.02), P.wood, T(0, 0.3 + i * 0.4, 0.13 - i * 0.05));
-    });
   });
 }
 
@@ -369,15 +358,6 @@ function workshop(B: GeoBuilder, b: Building): void {
       B.add('solid', torus(0.13, 0.03, 6, 12), P.iron, T(0.05, 0, 0.05));
       B.add('solid', rbox(0.5, 0.08, 0.04, 0.01), '#a8705a', T(0.4, 0.05, 0.05, 0, 0, 0.4));
     });
-    // lumber stack + sawhorse along the right side, cart wheel leaning on the left
-    B.at(onFace('right', w, d, -1.0, 0, 0.45), () => {
-      for (let i = 0; i < 4; i++) for (let k = 0; k < 3 - (i > 2 ? 1 : 0); k++) B.add('solid', rbox(0.22, 0.18, 2.6, 0.04), shade('#c49a6a', 0.9 + B.random() * 0.15), T(-0.25 + k * 0.24, 0.1 + i * 0.19, 0));
-    });
-    B.at(onFace('left', w, d, 1.2, 0, 0.18), () => {
-      B.add('solid', torus(0.55, 0.06, 8, 20), P.woodDark, T(0, 0.58, 0, 0, -0.15));
-      for (let k = 0; k < 6; k++) B.add('solid', rbox(0.05, 1.05, 0.05, 0.02), P.wood, T(0, 0.58, 0, 0, -0.15, (k / 6) * Math.PI));
-      B.add('solid', cyl(0.1, 0.1, 0.12, 10), P.iron, T(0, 0.58, 0.02, 0, Math.PI / 2 - 0.15));
-    });
     // little windmill on the ridge (spinner)
     anchors.spinners.push({ matrix: worldMatrix(B, -2.8, h + 2.2, 0.5), kind: 'windmill', speed: 1.4, size: 0.7 });
     B.add('solid', cyl(0.04, 0.05, 1.0, 6), P.iron, T(-2.8, h + 1.55, 0.3));
@@ -474,19 +454,6 @@ function cottage(B: GeoBuilder, b: Building, n: number): void {
       });
     }
     chimney(B, v.chimneyX, h + 0.4, -0.8, v.roof === 'gambrel' ? 2.6 : 2.0, n % 2 ? '#a8705a' : '#9a8f84');
-    // garden: low picket fence wings + flower beds along the front wall
-    const fz0 = d / 2 + 0.35;
-    const fz1 = d / 2 + 3.0;
-    const fc = n === 2 || n === 5 ? '#e8ebe4' : '#efe6d4';
-    picketFence(B, -w / 2 - 0.35, fz0, -w / 2 - 0.35, fz1, fc);
-    picketFence(B, w / 2 + 0.35, fz0, w / 2 + 0.35, fz1, fc);
-    picketFence(B, w / 2 + 0.35, fz1, 1.0, fz1, fc);
-    picketFence(B, -1.0 - 1.4, fz1, -w / 2 - 0.35, fz1, fc);
-    // gate posts
-    for (const s of [-1, 1]) {
-      B.add('solid', rbox(0.16, 0.85, 0.16, 0.04), fc, T(s * 1.0, 0.42, fz1));
-      B.add('solid', sphere(0.1, 8, 6), fc, T(s * 1.0, 0.9, fz1));
-    }
     for (const s of [-1, 1]) {
       B.at(T(s * 2.3, 0, d / 2 + 0.75), () => {
         B.add('solid', rbox(1.5, 0.16, 0.6, 0.06), P.soil, T(0, 0.06, 0));
@@ -494,25 +461,22 @@ function cottage(B: GeoBuilder, b: Building, n: number): void {
       });
     }
     // a personal touch per house
-    if (n === 1) B.at(T(2.6, 0, d / 2 + 2.2), () => birdbath(B));
     if (n === 2) B.at(T(-2.5, 0, d / 2 + 2.3), () => shrub(B, 0.55, P.leaf, 6));
-    if (n === 3) B.at(T(2.4, 0, d / 2 + 2.3), () => { barrel(B, 0.32, 0.7, '#7a6a55'); B.add('solid', cyl(0.28, 0.28, 0.04, 12), '#5f8f99', T(0, 0.66, 0)); });
-    if (n === 4) B.at(T(2.5, 0, d / 2 + 2.0, 0.4), () => wheelbarrow(B));
-    if (n === 5) B.at(T(2.6, 0, d / 2 + 2.3), () => shrub(B, 0.5, '#7f9a5c', 4));
+    if (n === 5) B.at(T(-2.5, 0, d / 2 + 2.3), () => shrub(B, 0.5, '#7f9a5c', 4));
     // back garden shrubs
     for (const s of [-1, 1]) B.at(T(s * 2.2, 0, -d / 2 - 0.8), () => shrub(B, 0.6 + B.random() * 0.2, P.leaf, n % 2 ? 3 : 0));
     flowerBox(B, 0.01); // keeps RNG streams stable across variants
   });
 }
 
-function birdbath(B: GeoBuilder): void {
+export function birdbath(B: GeoBuilder): void {
   B.add('solid', cyl(0.18, 0.24, 0.12, 12), P.stone, T(0, 0.06, 0));
   B.add('solid', cyl(0.09, 0.12, 0.7, 10), P.stone, T(0, 0.45, 0));
   B.add('solid', cyl(0.42, 0.24, 0.16, 16), P.stone, T(0, 0.86, 0));
   B.add('glazed', cyl(0.36, 0.36, 0.02, 16), '#7fb7bb', T(0, 0.93, 0));
 }
 
-function wheelbarrow(B: GeoBuilder): void {
+export function wheelbarrow(B: GeoBuilder): void {
   B.add('solid', rbox(0.7, 0.32, 0.9, 0.08), '#6b7f86', T(0, 0.45, 0));
   B.add('solid', torus(0.18, 0.05, 6, 14), P.iron, T(0, 0.2, 0.5, Math.PI / 2));
   for (const s of [-1, 1]) {

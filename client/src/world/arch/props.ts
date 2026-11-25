@@ -619,21 +619,8 @@ export function buildUnknownStatics(B: GeoBuilder): void {
       });
     });
   }
-  // ruins: a toppled stone, lintel fragments and a ring of kerb stones around the flagstones
+  // a ring of kerb stones around the flagstones (ruins are shared DECOR)
   const U = { x: -10, z: -61 };
-  const ruins: [number, number, number][] = [[-3.2, -66.0, 0.6], [-16.6, -66.4, 2.1], [-4.0, -57.2, 1.2]];
-  ruins.forEach(([x, z, yaw], k) => {
-    const g = terrainHeight(x, z);
-    B.at(T(x, g, z, yaw), () => {
-      if (k === 0) {
-        B.add('solid', rbox(0.9, 0.7, 2.6, 0.24), '#98938a', T(0, 0.3, 0, 0, 0.05, 0.08), { grad: 0.3 });
-        B.add('plant', sphere(0.4, 8, 6), '#7d9a55', T(0.2, 0.62, 0.4, 0, 0, 0, 1.4, 0.35, 1.8));
-      } else {
-        B.add('solid', rbox(1.3, 0.5, 0.6, 0.14), '#a19c91', T(0, 0.2, 0, 0.3, 0.1, 0.12), { grad: 0.3 });
-        B.add('solid', rbox(0.6, 0.4, 0.5, 0.12), '#98938a', T(0.9, 0.15, 0.4, 1.0, 0.2, 0), { grad: 0.3 });
-      }
-    });
-  });
   for (let k = 0; k < 28; k++) {
     const a = (k / 28) * Math.PI * 2;
     const x = U.x + Math.cos(a) * 6.0;

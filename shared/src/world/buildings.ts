@@ -34,14 +34,14 @@ const facing = (from: Vec2, to: Vec2): number => yawFromDirection(to.x - from.x,
 
 const RES_CENTER: Vec2 = { x: -36, z: 18 };
 
-function cottage(n: number, position: Vec2, wallColor: string, roofColor: string): Building {
+function cottage(n: number, position: Vec2, wallColor: string, roofColor: string, faceTo: Vec2 = RES_CENTER): Building {
   return {
     id: `house_${n}`,
     name: `House ${n}`,
     locationId: 'residential',
     style: 'cottage',
     position,
-    yaw: facing(position, RES_CENTER),
+    yaw: facing(position, faceTo),
     width: 6,
     depth: 5.5,
     height: 3.4,
@@ -58,7 +58,8 @@ export const BUILDINGS: readonly Building[] = [
     locationId: 'cafe',
     style: 'cafe',
     position: { x: 23, z: -13.5 },
-    yaw: facing({ x: 23, z: -13.5 }, { x: 0, z: 2 }),
+    // Faces south-south-west (door, awning and terrace visible from the isometric camera), towards Café Walk.
+    yaw: facing({ x: 23, z: -13.5 }, { x: 19.5, z: -3.5 }),
     width: 8,
     depth: 6,
     height: 4,
@@ -113,8 +114,9 @@ export const BUILDINGS: readonly Building[] = [
   cottage(1, { x: -29, z: 5.5 }, '#e9d6c4', '#a65e4b'),
   cottage(2, { x: -40.5, z: 6 }, '#d7dccb', '#5f7c74'),
   cottage(3, { x: -48, z: 15 }, '#efe0b9', '#8a6a4a'),
-  cottage(4, { x: -46.5, z: 26 }, '#d9c6d0', '#6b5568'),
-  cottage(5, { x: -35.5, z: 30.5 }, '#cfd8dd', '#58697a'),
+  // Houses 4 and 5 turn their fronts towards the south/east so doors read from the isometric camera.
+  cottage(4, { x: -46.5, z: 26 }, '#d9c6d0', '#6b5568', { x: -36, z: 30 }),
+  cottage(5, { x: -35.5, z: 30.5 }, '#cfd8dd', '#58697a', { x: -28, z: 38 }),
   {
     id: 'boathouse',
     name: 'Boathouse',

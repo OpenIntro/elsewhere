@@ -103,7 +103,13 @@ function DevHook() {
       },
       info() {
         const r = gl.info.render;
-        return { calls: r.calls, triangles: r.triangles, geometries: gl.info.memory.geometries, textures: gl.info.memory.textures, programs: gl.info.programs?.length ?? 0, avgFrameMs: stats.avgMs, pixelRatio: gl.getPixelRatio(), quality: env.quality.level };
+        let shadowMap = 0;
+        scene.traverse((o) => {
+          const l = o as unknown as { isDirectionalLight?: boolean; castShadow: boolean; shadow?: { map: { width: number } | null; mapSize: { x: number } } };
+          if (l.isDirectionalLight && l.shadow) shadowMap = l.castShadow && gl.shadowMap.enabled ? (l.shadow.map?.width ?? -l.shadow.mapSize.x) : 0;
+        });
+        return {
+          shadowMap, calls: r.calls, triangles: r.triangles, geometries: gl.info.memory.geometries, textures: gl.info.memory.textures, programs: gl.info.programs?.length ?? 0, avgFrameMs: stats.avgMs, pixelRatio: gl.getPixelRatio(), quality: env.quality.level };
       },
       /** Time N synchronous renders (CPU submit + GPU finish via readPixels). */
       bench(n = 20) {
@@ -163,8 +169,20 @@ export function World(_props: WorldProps) {
   }, []);
   const Q = QUALITY[graphics] ?? QUALITY.medium;
   env.quality = Q;
-  const shadowsEnabled = useThree((s) => s.gl.shadowMap.enabled);
-  const shadows = Q.shadows && shadowsEnabled;
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const shadows = Q.shadows;
+  // Runtime quality switches: own the renderer's shadow toggle and force programs to recompile.
+  useEffect(() => {
+    if (gl.shadowMap.enabled === shadows) return;
+    gl.shadowMap.enabled = shadows;
+    gl.shadowMap.needsUpdate = true;
+    scene.traverse((o) => {
+      const m = (o as unknown as { material?: { needsUpdate: boolean } | { needsUpdate: boolean }[] }).material;
+      if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));
+      else if (m) m.needsUpdate = true;
+    });
+  }, [gl, scene, shadows]);
 
   useMemo(() => {
     const built = buildWorld();

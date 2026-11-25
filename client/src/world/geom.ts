@@ -173,6 +173,14 @@ export interface AddOpts {
   jitter?: number;
   /** Vertical gradient: darken bottom by this much relative to top of the part. */
   grad?: number;
+  /**
+   * Soft sculpted shading: blend normals towards the direction from this point
+   * (builder frame, e.g. a canopy centre), hiding facets for a smooth clay look.
+   */
+  radialFrom?: [number, number, number];
+  radialBlend?: number;
+  /** Darken by the radial normal's downward component (baked underside AO). */
+  underside?: number;
 }
 
 const _c = new Color();
@@ -234,8 +242,19 @@ export class GeoBuilder {
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
     }
+    let rad: Vector3 | null = null;
+    const nrm = g.attributes.normal as BufferAttribute;
+    if (opts.radialFrom) rad = new Vector3(...opts.radialFrom).applyMatrix4(this.matrix); // builder frame, not the part's
+    const _r = new Vector3();
+    const _n = new Vector3();
     for (let i = 0; i < n; i++) {
       let f = j;
+      if (rad) {
+        _r.fromBufferAttribute(pos, i).sub(rad).normalize();
+        _n.fromBufferAttribute(nrm, i).lerp(_r, opts.radialBlend ?? 0.7).normalize();
+        nrm.setXYZ(i, _n.x, _n.y, _n.z);
+        if (opts.underside) f *= 1 - opts.underside * (1 - Math.min(1, Math.max(0, (_r.y + 0.7) / 1.3)));
+      }
       if (ao) {
         _v.fromBufferAttribute(pos, i);
         const gy = groundHeight(_v.x, _v.z);

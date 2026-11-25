@@ -4,7 +4,7 @@
  * extra ferns). Everything is instanced: one InstancedMesh per template.
  */
 import { useMemo } from 'react';
-import { BufferAttribute, Color, InstancedMesh, Matrix4, SphereGeometry, Vector3, type BufferGeometry, type Material } from 'three';
+import { BufferAttribute, Color, InstancedMesh, LatheGeometry, Matrix4, SphereGeometry, Vector2, Vector3, type BufferGeometry, type Material } from 'three';
 import {
   BUSHES,
   DECKS,
@@ -30,7 +30,7 @@ import { fbm, groundColor, vnoise } from './Terrain.js';
 
 const blobCache = new Map<string, BufferGeometry>();
 /** Lumpy soft sphere (smooth normals) for canopies and bushes. */
-function blob(r: number, seed: number, amp = 0.14, ws = 9, hs = 7): BufferGeometry {
+function blob(r: number, seed: number, amp = 0.12, ws = 10, hs = 7): BufferGeometry {
   const key = `${r},${seed},${amp},${ws}`;
   let g = blobCache.get(key);
   if (g) return g;
@@ -61,45 +61,66 @@ function tierProfile(r: number, h: number): [number, number][] {
   ];
 }
 
+/** A soft, rounded pine tier: a lathe with a pillowy profile and lumpy rim. */
+function softTier(key: string, r: number, h: number, seed: number): BufferGeometry {
+  let g = blobCache.get(key);
+  if (g) return g;
+  const prof: [number, number][] = [[0.001, h], [r * 0.32, h * 0.8], [r * 0.7, h * 0.45], [r * 0.95, h * 0.15], [r * 0.92, -0.04], [r * 0.6, -0.14], [0.001, -0.1]];
+  const lat = new LatheGeometry(prof.map(([x, y]) => new Vector2(x, y)), 11);
+  const pos = lat.attributes.position as BufferAttribute;
+  const v = new Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const a = Math.atan2(v.z, v.x);
+    const k = 1 + 0.07 * Math.sin(a * 5 + seed) + 0.04 * (vnoise(v.x * 2 + seed, v.z * 2) - 0.5);
+    pos.setXYZ(i, v.x * k, v.y, v.z * k);
+  }
+  lat.computeVertexNormals();
+  g = lat.toNonIndexed();
+  blobCache.set(key, g);
+  return g;
+}
+
 function buildTree(kind: TreeKind, variant: number): BufferGeometry {
   const B = new GeoBuilder(77 + variant * 13);
   const no = { ao: false };
   const bark = '#6e5242';
   if (kind === 'pine') {
     B.add('t', cyl(0.15, 0.27, 1.5, 8), bark, T(0, 0.75, 0), { ...no, grad: 0.3 });
-    const tiers = 4;
+    const tiers = 3;
     for (let i = 0; i < tiers; i++) {
-      const r = 1.65 - i * 0.33 + variant * 0.06;
-      const h = 1.55 - i * 0.12;
-      const y = 1.05 + i * 0.92;
-      const col = new Color('#4f6c4c').lerp(new Color('#6a8a55'), i / tiers + 0.1);
-      B.add('t', lathe(`pine${i},${variant}`, tierProfile(r, h), 9), col, T(0, y, 0, i * 0.6 + variant), { ...no, grad: 0.35 });
+      const r = 1.75 - i * 0.45 + variant * 0.06;
+      const h = 1.9 - i * 0.2;
+      const y = 1.0 + i * 1.15;
+      const col = new Color('#62795a').lerp(new Color('#6f875d'), i / tiers);
+      B.add('t', softTier(`pine${i},${variant}`, r, h, i * 7 + variant), col, T(0, y, 0, i * 0.6 + variant), { ...no, radialFrom: [0, y + h * 0.25, 0], radialBlend: 0.6, underside: 0.16 });
     }
-    B.add('t', cone(0.25, 0.7, 7), '#6f8f58', T(0, 1.05 + tiers * 0.92 + 0.35, 0), no);
+    B.add('t', blob(0.32, 33 + variant, 0.08, 8, 6), '#7a955e', T(0, 1.0 + tiers * 1.15 + 0.25, 0, 0, 0, 0, 1, 1.5, 1), { ...no, radialFrom: [0, 1.0 + tiers * 1.15 + 0.2, 0], radialBlend: 0.6 });
   } else if (kind === 'oak') {
     B.add('t', cyl(0.2, 0.34, 2.1, 9), bark, T(0, 1.05, 0), { ...no, grad: 0.3 });
     B.add('t', cyl(0.07, 0.12, 1.1, 6), bark, T(0.4, 2.1, 0.1, 0, 0.2, -0.75), no);
     B.add('t', cyl(0.07, 0.11, 1.0, 6), bark, T(-0.35, 2.15, -0.1, 0, -0.2, 0.7), no);
     const blobs: [number, number, number, number][] = [
-      [0, 3.05, 0, 1.5], [0.95, 2.65, 0.35, 1.05], [-0.85, 2.75, -0.2, 1.1], [0.15, 3.75, -0.25, 1.0], [-0.2, 2.5, 0.85, 0.95],
+      [0, 3.05, 0, 1.55], [0.95, 2.65, 0.35, 1.08], [-0.85, 2.75, -0.2, 1.12], [0.1, 3.72, -0.25, 1.02],
     ];
+    const col = new Color('#7d9258');
     blobs.forEach(([x, y, z, r], k) => {
-      const col = new Color('#6f8f4f').lerp(new Color('#93ad62'), (y - 2.4) / 1.6 * 0.8 + (k % 2) * 0.08);
-      B.add('t', blob(r, k + variant * 7), col, T(x, y, z, k), { ...no, grad: 0.32 });
+      B.add('t', blob(r, k + variant * 7, 0.1, 12, 8), col, T(x, y, z, k), { ...no, jitter: 0, radialFrom: [0, 3.0, 0], radialBlend: 0.78, underside: 0.34 });
     });
   } else if (kind === 'birch') {
     B.add('t', cyl(0.1, 0.15, 3.4, 8), '#e9e4d8', T(0, 1.7, 0, 0, 0.03, 0.02), no);
     for (let k = 0; k < 4; k++) B.add('t', cyl(0.12, 0.13, 0.07, 6, true), '#4a4440', T(0, 0.5 + k * 0.65, 0, k, 0, 0, 1, 1, 0.6 + (k % 3) * 0.2), no);
     const blobs: [number, number, number, number][] = [[0, 3.6, 0, 0.95], [0.45, 3.1, 0.2, 0.75], [-0.4, 3.2, -0.15, 0.78], [0.05, 4.25, 0.05, 0.7]];
+    const bcol = new Color('#a6ab6c');
     blobs.forEach(([x, y, z, r], k) => {
-      const col = new Color('#9aae5c').lerp(new Color('#bdc56f'), (y - 3) / 1.3 * 0.7);
-      B.add('t', blob(r, 20 + k + variant * 5, 0.18), col, T(x, y, z, k, 0, 0, 1, 1.25, 1), { ...no, grad: 0.3 });
+      B.add('t', blob(r, 20 + k + variant * 5, 0.1, 11, 8), bcol, T(x, y, z, k, 0, 0, 1, 1.25, 1), { ...no, jitter: 0, radialFrom: [0, 3.5, 0], radialBlend: 0.78, underside: 0.32 });
     });
   } else {
     B.add('t', cyl(0.14, 0.24, 1.5, 8), bark, T(0, 0.75, 0, 0, 0.05, 0), { ...no, grad: 0.3 });
-    B.add('t', blob(1.25, 40 + variant), '#7a9c55', T(0, 2.3, 0), { ...no, grad: 0.3 });
-    B.add('t', blob(0.8, 41 + variant), '#86a85c', T(0.7, 2.0, 0.3), { ...no, grad: 0.3 });
-    B.add('t', blob(0.75, 42 + variant), '#86a85c', T(-0.6, 2.1, -0.4), { ...no, grad: 0.3 });
+    const fr = { ...no, jitter: 0, radialFrom: [0, 2.2, 0] as [number, number, number], radialBlend: 0.78, underside: 0.32 };
+    B.add('t', blob(1.3, 40 + variant, 0.1, 12, 8), '#83995b', T(0, 2.3, 0), fr);
+    B.add('t', blob(0.8, 41 + variant, 0.1, 10, 7), '#83995b', T(0.7, 2.0, 0.3), fr);
+    B.add('t', blob(0.75, 42 + variant, 0.1, 10, 7), '#83995b', T(-0.6, 2.1, -0.4), fr);
     const rnd = mulberry32(99 + variant);
     for (let k = 0; k < 8; k++) {
       const a = rnd() * Math.PI * 2;
@@ -147,7 +168,7 @@ function bushGeometry(kind: 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft', var
   const no = { ao: false };
   if (kind === 'shrub') {
     const pts: [number, number, number, number][] = [[0, 0.45, 0, 0.6], [0.45, 0.35, 0.15, 0.42], [-0.4, 0.33, -0.1, 0.45], [0.1, 0.32, -0.45, 0.4]];
-    pts.forEach(([x, y, z, r], k) => B.add('t', blob(r, 60 + k + variant * 4, 0.16, 9, 6), new Color('#6c8c4e').lerp(new Color('#8eaa5f'), y), T(x, y, z), { ...no, grad: 0.4 }));
+    pts.forEach(([x, y, z, r], k) => B.add('t', blob(r, 60 + k + variant * 4, 0.1, 10, 7), new Color('#7a9058'), T(x, y, z), { jitter: 0, ...no, radialFrom: [0, 0.3, 0], radialBlend: 0.75, underside: 0.32 }));
   } else if (kind === 'fern') {
     const n = 7;
     for (let k = 0; k < n; k++) {
@@ -158,7 +179,7 @@ function bushGeometry(kind: 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft', var
   } else if (kind === 'flowers') {
     const palettes = [['#e7a0a6', '#f4efe6'], ['#f1d27a', '#e98a3b'], ['#b9a2d8', '#9fc0e8'], ['#f4efe6', '#e7a0a6']];
     const pal = palettes[variant % palettes.length]!;
-    B.add('t', blob(0.28, 100 + variant, 0.15, 7, 5), '#6f9050', T(0, 0.16, 0, 0, 0, 0, 1.2, 0.7, 1.2), { ...no, grad: 0.4 });
+    B.add('t', blob(0.28, 100 + variant, 0.12, 8, 6), '#75904f', T(0, 0.16, 0, 0, 0, 0, 1.2, 0.7, 1.2), { ...no, radialFrom: [0, 0.05, 0], radialBlend: 0.8, underside: 0.3 });
     const rnd = mulberry32(300 + variant);
     for (let k = 0; k < 6; k++) {
       const a = rnd() * Math.PI * 2;
@@ -182,7 +203,7 @@ function bushGeometry(kind: 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft', var
     for (let k = 0; k < 4; k++) {
       const a = (k / 4) * Math.PI * 2 + rnd();
       const h = 0.16 + rnd() * 0.16;
-      B.add('t', cone(0.08, h, 3), new Color(1, 1, 1).multiplyScalar(0.92 + 0.2 * (h / 0.32)), T(Math.cos(a) * 0.07, h / 2 - 0.02, Math.sin(a) * 0.07, a, Math.sin(a) * 0.3, Math.cos(a) * 0.3, 1, 1, 0.55), no);
+      B.add('t', cone(0.08, h, 3), new Color(1, 1, 1).multiplyScalar(0.92 + 0.2 * (h / 0.32)), T(Math.cos(a) * 0.07, h / 2 - 0.02, Math.sin(a) * 0.07, a, Math.sin(a) * 0.3, Math.cos(a) * 0.3, 1, 1, 0.55), { ...no, jitter: 0, radialFrom: [0, -0.4, 0], radialBlend: 0.85 });
     }
   }
   return B.build().get('t')!;
@@ -253,7 +274,9 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
           const m = T(t.position.x, y, t.position.z, t.yaw, (rnd() - 0.5) * 0.06, (rnd() - 0.5) * 0.06, s * (0.95 + rnd() * 0.1), s * (0.92 + rnd() * 0.16), s * (0.95 + rnd() * 0.1));
           list.push({ m, c: jitterColor(rnd, 0.09, 0.03) });
         });
-        out.push(...makeInstanced(buildTree(kind, v), foliageMaterial, list, shadows));
+        // Canopies cast but do not receive shadow-map shadows: low-poly self-shadowing
+        // shows up as faceted dark patches; sculpted normals + baked AO give the form.
+        out.push(...makeInstanced(buildTree(kind, v), foliageMaterial, list, shadows, false));
       }
     }
     // Rocks.
@@ -337,7 +360,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
       const kind = key.replace(/\d+$/, '') as 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft';
       const variant = Number(key.match(/\d+$/)?.[0] ?? 0);
       const mat = kind === 'shrub' ? foliageMaterial : plantMaterial;
-      out.push(...makeInstanced(bushGeometry(kind, variant), mat, list, shadows && kind === 'shrub', true));
+      out.push(...makeInstanced(bushGeometry(kind, variant), mat, list, shadows && kind === 'shrub', kind !== 'shrub' && kind !== 'fern'));
     }
     void DECKS;
     return out;

@@ -50,12 +50,12 @@ export function fbm(x: number, z: number): number {
 
 const C = (h: string) => new Color(h);
 const PAL = {
-  grassSun: C('#a9b872'),
-  grassMid: C('#8ea563'),
-  grassDeep: C('#738f57'),
-  grassLush: C('#8fb067'),
-  clover: C('#b5bf7c'),
-  forest: C('#5f7a4b'),
+  grassSun: C('#afb27b'),
+  grassMid: C('#959d69'),
+  grassDeep: C('#7b8a5d'),
+  grassLush: C('#97a76c'),
+  clover: C('#b6b583'),
+  forest: C('#64744b'),
   needles: C('#86744f'),
   moss: C('#6f8a4c'),
   heath: C('#a1a072'),

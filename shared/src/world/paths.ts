@@ -29,7 +29,7 @@ export const PATHS: readonly WorldPath[] = [
     id: 'path_square_cafe',
     surface: 'cobble',
     width: 2.6,
-    points: [p(5.5, -2.5), p(9.5, -5.2), p(13.5, -6.8)],
+    points: [p(5.5, -2.5), p(9.5, -5.2), p(13.5, -6.8), p(16.6, -6.4)],
     connects: ['town_square', 'cafe'],
   },
   {
@@ -86,6 +86,20 @@ export const PATHS: readonly WorldPath[] = [
     connects: ['residential', 'waterfront'],
   },
   {
+    id: 'path_house_4',
+    surface: 'gravel',
+    width: 1.8,
+    points: [p(-40.4, 28.4), p(-38.9, 26.0), p(-37.2, 24.4)],
+    connects: ['residential'],
+  },
+  {
+    id: 'path_house_5',
+    surface: 'gravel',
+    width: 1.8,
+    points: [p(-31.0, 34.9), p(-27.4, 33.6), p(-24, 31.5)],
+    connects: ['residential', 'waterfront'],
+  },
+  {
     id: 'path_workshop_waterfront',
     surface: 'dirt',
     width: 2,
@@ -96,7 +110,7 @@ export const PATHS: readonly WorldPath[] = [
     id: 'path_cafe_hall',
     surface: 'gravel',
     width: 2,
-    points: [p(16.5, -14.5), p(12.5, -19), p(8.5, -22)],
+    points: [p(15.4, -10.6), p(14.0, -14.8), p(11.6, -19.2), p(8.5, -22)],
     connects: ['cafe', 'town_hall'],
   },
   {

@@ -17,7 +17,7 @@ const deg = (r: number) => (r * 180) / Math.PI;
 const pts = (list: readonly { x: number; z: number }[]) => list.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(' ');
 
 /** Short label lines so names sit nicely on the map. */
-const LABEL_OFFSET: Partial<Record<LocationId, number>> = { town_square: 7.5, general_store: -5, town_hall: -9, waterfront: 2 };
+const LABEL_OFFSET: Partial<Record<LocationId, number>> = { town_square: -6.5, cafe: 5, general_store: -5, town_hall: -9, waterfront: 2 };
 
 interface Dot {
   id: string;
