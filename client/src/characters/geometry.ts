@@ -143,7 +143,32 @@ export function onSurface(pos: readonly number[], normal: readonly number[], loc
 // ---------------------------------------------------------------------------
 
 const prim = new Map<string, BufferGeometry>();
-function cached(key: string, make: () => BufferGeometry): BufferGeometry {
+// ---------------------------------------------------------------------------
+// Detail levels (same silhouettes, fewer segments). Set for the duration of a build.
+// ---------------------------------------------------------------------------
+
+export type Detail = 'high' | 'medium' | 'low';
+export const DETAILS: readonly Detail[] = ['high', 'medium', 'low'];
+let DETAIL: Detail = 'high';
+export function currentDetail(): Detail {
+  return DETAIL;
+}
+export function withDetail<T>(d: Detail, fn: () => T): T {
+  const prev = DETAIL;
+  DETAIL = d;
+  try {
+    return fn();
+  } finally {
+    DETAIL = prev;
+  }
+}
+/** Pick a value per detail level. */
+export function byDetail<T>(high: T, medium: T, low: T): T {
+  return DETAIL === 'high' ? high : DETAIL === 'medium' ? medium : low;
+}
+
+function cached(rawKey: string, make: () => BufferGeometry): BufferGeometry {
+  const key = `${DETAIL}:${rawKey}`;
   let g = prim.get(key);
   if (!g) {
     g = make();
@@ -154,36 +179,46 @@ function cached(key: string, make: () => BufferGeometry): BufferGeometry {
 
 /** Unit sphere (radius 1). Detail: 'hi' | 'mid' | 'lo'. */
 export function sphere(detail: 'hi' | 'mid' | 'lo' = 'mid'): BufferGeometry {
-  const [w, h] = detail === 'hi' ? [28, 18] : detail === 'mid' ? [12, 9] : [8, 6];
+  const [w, h] =
+    detail === 'hi' ? byDetail([28, 18], [18, 12], [12, 8]) : detail === 'mid' ? byDetail([12, 9], [10, 7], [7, 5]) : byDetail([8, 6], [7, 5], [5, 4]);
   return cached(`sphere-${detail}`, () => new SphereGeometry(1, w, h));
 }
 
 /** Partial sphere (theta from the top). */
 export function sphereCap(thetaLength: number, detail: 'hi' | 'mid' = 'mid'): BufferGeometry {
-  const [w, h] = detail === 'hi' ? [26, 9] : [16, 6];
+  const [w, h] = detail === 'hi' ? byDetail([26, 9], [18, 6], [12, 4]) : byDetail([16, 6], [12, 5], [9, 3]);
   return cached(`cap-${thetaLength.toFixed(3)}-${detail}`, () => new SphereGeometry(1, w, h, 0, Math.PI * 2, 0, thetaLength));
 }
 
 /** Capsule along Y, centred, radius r, straight length len. */
 export function capsule(r: number, len: number, radial = 8): BufferGeometry {
-  return cached(`caps-${r.toFixed(4)}-${len.toFixed(4)}-${radial}`, () => new CapsuleGeometry(r, len, 3, radial));
+  const rad = byDetail(radial, Math.max(6, radial - 2), Math.max(5, radial - 3));
+  const capSeg = byDetail(3, 2, 2);
+  return cached(`caps-${r.toFixed(4)}-${len.toFixed(4)}-${radial}`, () => new CapsuleGeometry(r, len, capSeg, rad));
 }
 
 /** Torus in the XY plane. */
 export function torus(r: number, tube: number, arc = Math.PI * 2, radial = 6, tubular = 18): BufferGeometry {
-  return cached(`torus-${r.toFixed(4)}-${tube.toFixed(4)}-${arc.toFixed(3)}-${radial}-${tubular}`, () => new TorusGeometry(r, tube, radial, tubular, arc));
+  // tubular 4 = deliberate square rim; keep it.
+  const rad = byDetail(radial, Math.max(4, radial - 1), Math.max(3, radial - 2));
+  const tub = tubular <= 4 ? tubular : byDetail(tubular, Math.max(6, Math.round(tubular * 0.75)), Math.max(5, Math.round(tubular * 0.55)));
+  return cached(`torus-${r.toFixed(4)}-${tube.toFixed(4)}-${arc.toFixed(3)}-${radial}-${tubular}`, () => new TorusGeometry(r, tube, rad, tub, arc));
 }
 
 export function cylinder(rt: number, rb: number, h: number, radial = 14): BufferGeometry {
-  return cached(`cyl-${rt.toFixed(4)}-${rb.toFixed(4)}-${h.toFixed(4)}-${radial}`, () => new CylinderGeometry(rt, rb, h, radial, 1, false));
+  const rad = byDetail(radial, Math.max(8, Math.round(radial * 0.75)), Math.max(6, Math.round(radial * 0.55)));
+  return cached(`cyl-${rt.toFixed(4)}-${rb.toFixed(4)}-${h.toFixed(4)}-${radial}`, () => new CylinderGeometry(rt, rb, h, rad, 1, false));
 }
 
 export function roundedBox(w: number, h: number, d: number, r: number): BufferGeometry {
-  return cached(`rbox-${w}-${h}-${d}-${r}`, () => new RoundedBoxGeometry(w, h, d, 2, r));
+  const seg = byDetail(2, 2, 1);
+  return cached(`rbox-${w}-${h}-${d}-${r}`, () => new RoundedBoxGeometry(w, h, d, seg, r));
 }
 
 /** Lathe from (radius, y) pairs, smoothed with a Catmull-Rom pass. */
-export function lathe(key: string, pts: readonly (readonly [number, number])[], segments = 18, samples = 2): BufferGeometry {
+export function lathe(key: string, pts: readonly (readonly [number, number])[], segmentsHigh = 18, samplesHigh = 2): BufferGeometry {
+  const segments = byDetail(segmentsHigh, Math.max(12, Math.round(segmentsHigh * 0.75)), Math.max(10, Math.round(segmentsHigh * 0.55)));
+  const samples = byDetail(samplesHigh, samplesHigh, 1);
   return cached(`lathe-${key}`, () => {
     const out: Vector2[] = [];
     for (let i = 0; i < pts.length - 1; i++) {
@@ -209,7 +244,7 @@ export function lathe(key: string, pts: readonly (readonly [number, number])[], 
 export function superHead(rx: number, ry: number, n: number): BufferGeometry {
   return cached(`head-${rx}-${ry}-${n}`, () => {
     const pts: Vector2[] = [];
-    const steps = 20;
+    const steps = byDetail(20, 14, 10);
     for (let i = 0; i <= steps; i++) {
       // parameter angle from bottom (-pi/2) to top (pi/2)
       const a = -Math.PI / 2 + (Math.PI * i) / steps;
@@ -219,7 +254,7 @@ export function superHead(rx: number, ry: number, n: number): BufferGeometry {
       const y = ry * Math.sign(s) * Math.pow(Math.abs(s), 2 / n);
       pts.push(new Vector2(Math.max(0, x), y));
     }
-    return new LatheGeometry(pts, 30);
+    return new LatheGeometry(pts, byDetail(30, 22, 16));
   });
 }
 
@@ -268,8 +303,8 @@ export function hairlineAt(h: HairlineSpec, phi: number): number {
 export function hairShell(rx: number, ry: number, n: number, h: HairlineSpec): BufferGeometry {
   const key = `shell2-${rx}-${ry}-${n}-${h.front}-${h.side}-${h.back}-${h.thick}-${h.bulk ?? 0}`;
   return cached(key, () => {
-    const COLS = 40;
-    const ROWS = 14;
+    const COLS = byDetail(40, 28, 20);
+    const ROWS = byDetail(14, 9, 6);
     const pt = (phi: number, a: number, out: number) => {
       const c = Math.cos(a);
       const s = Math.sin(a);

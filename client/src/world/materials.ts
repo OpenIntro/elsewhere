@@ -115,7 +115,7 @@ export const glazedMaterial = standard({ vertexColors: true, roughness: 0.55, me
 /** Foliage: wind + paint. */
 export const foliageMaterial = standard({ vertexColors: true, roughness: 0.9, metalness: 0 }, { paint: 1.2, wind: 0.006, rim: 0.35 });
 /** Low plants (stronger sway relative to height). */
-export const plantMaterial = standard({ vertexColors: true, roughness: 0.92, metalness: 0, side: DoubleSide }, { paint: 0.8, wind: 0.09, rim: 0.3 });
+export const plantMaterial = standard({ vertexColors: true, roughness: 0.92, metalness: 0, side: DoubleSide }, { paint: 0.8, wind: 0.09, rim: 0.06 });
 /** Merged static plants (flower boxes, beds): world-space geometry, so no height-based sway. */
 export const staticPlantMaterial = standard({ vertexColors: true, roughness: 0.92, metalness: 0 }, { paint: 0.9, rim: 0.3 });
 /** Trunks / rocks (no wind). */

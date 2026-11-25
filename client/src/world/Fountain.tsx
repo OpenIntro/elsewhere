@@ -57,8 +57,9 @@ function waterMaterial(kind: 'flow' | 'pool', magic: { value: number }): ShaderM
           ? `float s = fract(vUv.y * 3.0 - uTime * 1.6 + sin(vUv.x * 25.0) * 0.08);
              float streak = smoothstep(0.0, 0.25, s) * smoothstep(1.0, 0.55, s);
              float fine = 0.5 + 0.5 * sin(vUv.x * 60.0 + vUv.y * 8.0 - uTime * 7.0);
-             c = base * (0.85 + 0.35 * streak) + vec3(1.0) * fine * 0.18;
-             a = 0.55 + 0.3 * streak;`
+             float strands = smoothstep(0.35, 0.9, 0.5 + 0.5 * sin(vUv.x * 90.0 + sin(vUv.x * 13.0) * 2.0));
+             c = base * (0.9 + 0.35 * streak) + vec3(1.0) * fine * 0.2;
+             a = (0.12 + 0.42 * streak * strands + 0.12 * fine) * (0.6 + 0.4 * smoothstep(0.0, 0.25, vUv.y));`
           : `vec2 p = vW.xz - vec2(${FOUNTAIN.position.x.toFixed(2)}, ${FOUNTAIN.position.z.toFixed(2)});
              float r = length(p);
              float rip = 0.5 + 0.5 * sin(r * 7.0 - uTime * 2.6);
@@ -206,7 +207,7 @@ function rainbowMaterial(): ShaderMaterial {
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: `uniform float uTime; uniform float uNight; varying vec2 vUv;
       vec3 hue(float h){ return clamp(abs(mod(h*6.0+vec3(0,4,2),6.0)-3.0)-1.0, 0.0, 1.0); }
-      void main(){ vec3 c = hue(vUv.y * 0.85); float a = 0.32 * sin(vUv.x * 3.14159) * (0.8 + 0.2 * sin(uTime + vUv.x * 6.0)); gl_FragColor = vec4(c * a * (1.0 - uNight * 0.4), 1.0); }`,
+      void main(){ vec3 c = hue(vUv.y * 0.85); float a = 0.16 * sin(vUv.x * 3.14159) * (0.8 + 0.2 * sin(uTime + vUv.x * 6.0)); gl_FragColor = vec4(c * a * (1.0 - uNight * 0.4), 1.0); }`,
   });
 }
 

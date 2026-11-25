@@ -44,7 +44,7 @@ function portalMaterial(awake: { value: number }): ShaderMaterial {
         float rim = smoothstep(0.05, 0.0, abs(r - 0.5 - 0.02 * sin(a * 7.0 + uTime * 2.0)));
         c += teal * rim * 1.2;
         float dormant = (0.06 + 0.05 * sin(uTime * 0.7 + a * 3.0)) * smoothstep(0.62, 0.3, r) * bands;
-        float alpha = mix(dormant, edge * (0.75 + 0.25 * bands) + rim, uAwake);
+        float alpha = mix(dormant, edge * (0.9 + 0.3 * bands) + rim * 1.3, uAwake);
         gl_FragColor = vec4(c * alpha * (1.0 + uNight * 0.3), 1.0);
       }`,
   });

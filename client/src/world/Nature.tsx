@@ -319,7 +319,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
       } else if (tufts < tuftTarget && (clump > 0.48 || rnd() < 0.15)) {
         tufts++;
         const s = 0.8 + rnd() * 0.9;
-        const c = tmpC.clone().multiplyScalar(1.18 + rnd() * 0.14);
+        const c = tmpC.clone().multiplyScalar(1.06 + rnd() * 0.12);
         pushB(`tuft${tufts % 3}`, { m: T(x, h - 0.02, z, rnd() * 6.28, 0, 0, s, s * (0.8 + rnd() * 0.6), s), c });
       }
     }
