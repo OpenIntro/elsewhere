@@ -23,8 +23,16 @@ const PATCH_MS = 1000 / CONFIG.network.patchRateHz;
 export const EXTRAPOLATE_MS = 100;
 /** A jump larger than this between consecutive snapshots is a teleport. */
 export const TELEPORT_DISTANCE = 4;
-/** If the previous sample is older than this when movement resumes, insert a hold sample. */
-const STALE_GAP_MS = PATCH_MS * 1.6;
+/** Minimum spacing between consecutive snapshot stamps (bunched arrivals are spread out). */
+const MIN_SPACING_MS = PATCH_MS * 0.9;
+/** A smoothed stamp may run at most this far ahead of the real receive time. */
+const MAX_LEAD_MS = PATCH_MS * 6;
+/** Segments may not imply moving faster than gait speed × this (see pushInto). */
+const MAX_SPEED_FACTOR = 1.25;
+/** Identical patches for at least this long mean the remote was standing still. */
+const STILL_CONFIRM_MS = PATCH_MS * 2.5;
+/** No update at all for this long (moving senders send at 15 Hz) also means it had stopped. */
+const QUIET_GAP_MS = 400;
 
 /** Extra bookkeeping kept alongside RemoteRuntime (module private). */
 interface Track {
@@ -65,30 +73,53 @@ export function pushInto(r: RemoteRuntime, snap: PoseSnapshot): void {
   const t = trackOf(r);
   const b = r.buffer;
   const last = b[b.length - 1];
-  if (last) {
-    if (snap.t < last.t) return; // out of order (shouldn't happen with receive stamps)
-    if (last.x === snap.x && last.z === snap.z && last.y === snap.y && last.rot === snap.rot) {
-      t.confirmedAt = snap.t;
-      return;
-    }
-    const jump = Math.hypot(snap.x - last.x, snap.z - last.z);
-    if (jump > TELEPORT_DISTANCE) {
-      // Never interpolate across: drop history and start fresh at the new pose.
-      for (const s of b) t.pool.push(s);
-      b.length = 0;
-      r.teleportSeq = (r.teleportSeq ?? 0) + 1;
-    } else if (snap.t - last.t > STALE_GAP_MS) {
-      // Resumed after standing still: hold the old pose until one patch before this sample.
-      const holdT = snap.t - PATCH_MS;
-      if (holdT > last.t) {
-        const hold = take(t, last);
-        hold.t = holdT;
-        b.push(hold);
-      }
+  if (!last) {
+    const s = take(t, snap);
+    b.push(s);
+    t.confirmedAt = snap.t;
+    return;
+  }
+  if (last.x === snap.x && last.z === snap.z && last.y === snap.y && last.rot === snap.rot) {
+    t.confirmedAt = snap.t;
+    return;
+  }
+  const dist = Math.hypot(snap.x - last.x, snap.z - last.z);
+  if (dist > TELEPORT_DISTANCE) {
+    // Never interpolate across: drop history and start fresh at the new pose.
+    for (const s of b) t.pool.push(s);
+    b.length = 0;
+    r.teleportSeq = (r.teleportSeq ?? 0) + 1;
+    const s = take(t, snap);
+    b.push(s);
+    t.confirmedAt = snap.t;
+    return;
+  }
+  // Stamp = receive time, adjusted (adaptive jitter buffer, never more than MAX_LEAD_MS ahead of it):
+  //  - bunched arrivals (busy main thread → several patches in one batch) are spaced ≥ MIN_SPACING_MS;
+  //  - a segment may not imply moving faster than the remote's gait allows (a hitchy SENDER delivers
+  //    0.5–1.5 m bursts every few hundred ms): its stamp is pushed later instead, so the motion plays
+  //    out at a believable speed. Healthy 15–20 Hz streams never hit either rule.
+  const vmax = (r.anim === 'walk' ? CONFIG.movement.walkSpeed : CONFIG.movement.runSpeed) * MAX_SPEED_FACTOR;
+  const minDur = (dist / vmax) * 1000;
+  const cap = snap.t + MAX_LEAD_MS;
+  let stamp = Math.max(snap.t, Math.min(last.t + Math.max(MIN_SPACING_MS, minDur), cap));
+  if (stamp <= last.t) stamp = last.t + 1;
+  if (t.confirmedAt - last.t >= STILL_CONFIRM_MS || snap.t - Math.max(last.t, t.confirmedAt) > QUIET_GAP_MS) {
+    // Resumed after standing still (identical patches confirmed it for a while, or the sender went
+    // quiet): hold the old pose until the move must have started (distance at gait speed, ≥ one patch)
+    // instead of creeping over the whole idle period. NOT for ordinary uneven gaps (15 Hz moves in
+    // 20 Hz patches, slow senders): those interpolate linearly.
+    const holdT = stamp - Math.max(PATCH_MS, minDur);
+    if (holdT > last.t) {
+      const hold = take(t, last);
+      hold.t = holdT;
+      b.push(hold);
     }
   }
-  b.push(take(t, snap));
-  t.confirmedAt = snap.t;
+  const s = take(t, snap);
+  s.t = stamp;
+  b.push(s);
+  t.confirmedAt = stamp;
   while (b.length > MAX_BUFFER) t.pool.push(b.shift()!);
 }
 

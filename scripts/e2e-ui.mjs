@@ -76,6 +76,9 @@ async function query(page, name, ...args) {
 async function uiDebug(page) {
   return (await snapshot(page))?.ui ?? null;
 }
+async function closeChat(page) {
+  if (await page.$('[data-testid=chat-close]')) await page.click('[data-testid=chat-close]').catch(() => undefined);
+}
 async function closeSheet(page) {
   for (let i = 0; i < 3 && (await page.$('[data-testid=sheet-close]')); i++) {
     await page.click('[data-testid=sheet-close]').catch(() => undefined);
@@ -90,6 +93,7 @@ async function goInteract(page, id, resultSelector, tries = 30) {
   const it = await query(page, 'interactable', id);
   if (!it) throw new Error(`no interactable ${id}`);
   const vp = page.viewportSize();
+  await closeChat(page);
   for (let i = 0; i < tries; i++) {
     await closeSheet(page);
     const ground = await query(page, 'worldToScreen', it.position.x, it.position.z);
@@ -339,7 +343,7 @@ try {
     await closeSheet(a);
     const blocked = `blocked line ${Date.now() % 10000}`;
     await say(blocked);
-    await a.click('[data-testid=nav-chat]');
+    if (!(await a.$('[data-testid=chat]'))) await a.click('[data-testid=nav-chat]');
     await a.click('[data-testid=chat-tab-town]');
     if ((await aGot(blocked)) || (await aShows(blocked))) throw new Error('blocked player’s message reached A');
     await a.click('[data-testid=chat-close]');

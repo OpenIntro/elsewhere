@@ -352,7 +352,10 @@ function insideBox(p, b, margin) {
   const s = Math.sin(b.yaw);
   const lx = dx * c - dz * s;
   const lz = dx * s + dz * c;
-  return Math.abs(lx) < b.width / 2 + margin && Math.abs(lz) < b.depth / 2 + margin;
+  // True distance from the point to the footprint rectangle (0 when inside), so corners are round.
+  const ox = Math.max(0, Math.abs(lx) - b.width / 2);
+  const oz = Math.max(0, Math.abs(lz) - b.depth / 2);
+  return Math.hypot(ox, oz) < margin;
 }
 
 async function clickWorld(page, p) {
@@ -522,9 +525,13 @@ function analyseSeries(series) {
     if ((dx * dir.x + dz * dir.z) / len < -0.01) backwards++;
     const st = Math.hypot(dx, dz);
     maxStep = Math.max(maxStep, st);
-    const dtS = (series[i].t - series[i - 1].t) / 1000;
-    // Speed over windows ≥ 30 ms (timer jitter makes shorter windows meaningless).
-    if (dtS >= 0.03) maxSpeed = Math.max(maxSpeed, st / dtS);
+  }
+  // Peak speed over sliding windows of ≥ 50 ms (shorter windows are dominated by timer jitter; a
+  // one-frame jump still shows up because it dominates the window that contains it).
+  for (let i = 1, j = 0; i < series.length; i++) {
+    while (j + 1 < i && series[i].t - series[j + 1].t >= 50) j++;
+    const dtS = (series[i].t - series[j].t) / 1000;
+    if (dtS >= 0.05) maxSpeed = Math.max(maxSpeed, Math.hypot(series[i].x - series[j].x, series[i].z - series[j].z) / dtS);
   }
   const rate = series.length / ((lastF.t - first.t) / 1000);
   return { len, backwards, maxStep, maxSpeed, rate, n: series.length };
