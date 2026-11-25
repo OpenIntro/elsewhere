@@ -62,7 +62,7 @@ export interface DevOverrides {
   runesLit: boolean | null;
   doorsOpen: boolean | null;
   /** Camera focus + zoom: "x,z,zoom". */
-  cam: { x: number; z: number; zoom: number } | null;
+  cam: { x: number; z: number; zoom: number; yaw?: number } | null;
   weather: WeatherState | null;
   quality: GraphicsQuality | null;
 }
@@ -115,9 +115,11 @@ function parseOverrides(): void {
   const cam = q.get('cam');
   if (cam) {
     if (LOCATION_CAMS[cam]) devOverrides.cam = { ...LOCATION_CAMS[cam]! };
+    const cy = num('camYaw');
+    if (devOverrides.cam && cy !== null) devOverrides.cam.yaw = cy;
     else {
-      const [x, z, zoom] = cam.split(',').map(Number);
-      if (Number.isFinite(x) && Number.isFinite(z)) devOverrides.cam = { x: x!, z: z!, zoom: Number.isFinite(zoom) ? zoom! : 30 };
+      const [x, z, zoom, yaw] = cam.split(',').map(Number);
+      if (Number.isFinite(x) && Number.isFinite(z)) devOverrides.cam = { x: x!, z: z!, zoom: Number.isFinite(zoom) ? zoom! : 30, yaw: Number.isFinite(yaw) ? yaw : undefined };
     }
   }
   const w = q.get('weather');

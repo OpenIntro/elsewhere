@@ -6,7 +6,8 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import { Color, Fog, Matrix4, Vector3, type DirectionalLight, type HemisphereLight, type OrthographicCamera } from 'three';
-import { env } from './env.js';
+import { devOverrides, env } from './env.js';
+import { runtime } from '../state/runtime.js';
 
 const _fwd = new Vector3();
 const _focus = new Vector3();
@@ -39,15 +40,26 @@ export function Lighting({ shadows, mapSize }: { shadows: boolean; mapSize: numb
   }, [mapSize]);
 
   useFrame(() => {
-    // Ground focus = where the view ray through the screen centre meets y≈1.
-    camera.getWorldDirection(_fwd);
-    const t = (1 - camera.position.y) / (_fwd.y || -1);
-    _focus.copy(camera.position).addScaledVector(_fwd, t);
-    env.focus.copy(_focus);
+    // Fit the shadow frustum to what is on screen: the camera focus the player rig
+    // publishes (runtime.view — free camera, 90° rotations and zoom included).
+    // Dev camera overrides fall back to the view ray through the screen centre.
     const zoom = camera.zoom || 1;
-    const halfW = (camera.right - camera.left) / (2 * zoom);
-    const halfH = (camera.top - camera.bottom) / (2 * zoom);
-    const radius = Math.min(110, Math.hypot(halfW, halfH * 1.75) + 3);
+    let halfW: number;
+    let halfH: number;
+    const v = runtime.view;
+    if (devOverrides.cam === null && v.halfWidth > 0) {
+      _focus.set(v.focusX, v.focusY, v.focusZ);
+      halfW = v.halfWidth;
+      halfH = v.halfHeight;
+    } else {
+      camera.getWorldDirection(_fwd);
+      const t = (1 - camera.position.y) / (_fwd.y || -1);
+      _focus.copy(camera.position).addScaledVector(_fwd, t);
+      halfW = (camera.right - camera.left) / (2 * zoom);
+      halfH = ((camera.top - camera.bottom) / (2 * zoom)) * 1.75;
+    }
+    env.focus.copy(_focus);
+    const radius = Math.min(110, Math.hypot(halfW, halfH) + 3);
     env.viewRadius = radius;
     env.cameraZoom = zoom;
     void size;

@@ -9,6 +9,7 @@ import { env, uniforms } from './env.js';
 
 export function Sky({ vignette }: { vignette: boolean }) {
   const size = useThree((s) => s.size);
+  const camera = useThree((s) => s.camera);
   const { geo, sky, vig, res } = useMemo(() => {
     const res = { value: new Vector2(1, 1) };
     const sunScreen = { value: new Vector2(0.1, 0.9) };
@@ -77,9 +78,12 @@ export function Sky({ vignette }: { vignette: boolean }) {
 
   useFrame(() => {
     res.value.set(size.width, size.height);
-    // Sun glow sits on the side the light comes from (east = right in the morning, west = upper-left in the evening).
-    const morning = env.hours < 12;
-    (sky.uniforms.uSun!.value as Vector2).set(morning ? 0.92 : 0.06, morning ? 0.55 : 0.88);
+    // Sun glow sits on the screen side the light comes from (follows camera rotation).
+    const e = camera.matrixWorld.elements;
+    const rx = env.sunDir.x * e[0]! + env.sunDir.y * e[1]! + env.sunDir.z * e[2]!;
+    const uy = env.sunDir.x * e[4]! + env.sunDir.y * e[5]! + env.sunDir.z * e[6]!;
+    const len = Math.hypot(rx, uy) || 1;
+    (sky.uniforms.uSun!.value as Vector2).set(0.5 + (0.48 * rx) / len, 0.55 + (0.4 * uy) / len);
   });
 
   return (

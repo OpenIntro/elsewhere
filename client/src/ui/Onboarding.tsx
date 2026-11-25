@@ -342,13 +342,16 @@ export function Onboarding({ onEnter, onDone }: OnboardingProps) {
             mode={step}
             busy={busy}
             error={error}
-            initial={creds ?? undefined}
+            initial={creds ? { username: creds.username, password: step === 'register' ? creds.password : '' } : undefined}
             onBack={() => {
               setError(null);
               setStep('auth');
             }}
             onSubmit={(username, password) => {
-              if (step === 'login') return void run({ mode: 'login', username, password }, 'login');
+              if (step === 'login') {
+                setCreds({ username, password: '' });
+                return void run({ mode: 'login', username, password }, 'login');
+              }
               setCreds({ username, password });
               setError(null);
               setStep('customize');

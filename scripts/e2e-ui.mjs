@@ -9,7 +9,8 @@
  *  3. Opens every bottom-nav panel (map, things, chat, home, gazette, settings).
  *  4. Settings sliders persist across reload.
  *  5. Chat: client A sends a Town message, client B (`?autojoin=1`) sees it.
- *  6. No console errors / page errors, no horizontal overflow.
+ *  6. Register during onboarding, then log in from a fresh browser.
+ *  7. No console errors / page errors, no horizontal overflow.
  * Exit code 0 = pass. Set SHOTS=dir to save screenshots of each step.
  */
 import { createRequire } from 'node:module';
@@ -197,13 +198,71 @@ try {
   } catch (err) {
     failStep('chat between clients', err);
   }
+
+  // 6. Create an account in onboarding, then log in from a fresh browser.
+  try {
+    // Auth endpoints are rate-limited per IP (CONFIG.rateLimits.auth); the earlier steps used most of the bucket.
+    await new Promise((r) => setTimeout(r, 45_000));
+    const username = `e2e${Date.now() % 1_000_000}`;
+    const password = 'quiet-lantern-42';
+    const ctxR = await newContext({ viewport: { width: 1024, height: 700 } });
+    const r = await ctxR.newPage();
+    watch(r, 'R');
+    await r.goto(base);
+    await r.waitForSelector('[data-testid=auth-choice]', { timeout: T });
+    await r.click('[data-testid=choose-register]');
+    await r.fill('[data-testid=register-form] input[autocomplete=username]', username);
+    await r.fill('[data-testid=register-form] input[type=password]', password);
+    await r.click('[data-testid=register-form] button[type=submit]');
+    await r.waitForSelector('[data-testid=customize]', { timeout: T });
+    await r.click('[data-testid=customize-save]');
+    await r.fill('[data-testid=name-input]', 'Account Fern');
+    await r.click('[data-testid=enter-world]');
+    await r.waitForSelector('[data-testid=hud]', { timeout: T });
+    await r.click('[data-testid=nav-settings]');
+    await r.waitForSelector(`[data-testid=panel-settings] >> text=${username}`, { timeout: 15000 });
+    await r.close({ runBeforeUnload: true });
+
+    const ctxL = await newContext({ viewport: { width: 1024, height: 700 } });
+    const l = await ctxL.newPage();
+    watch(l, 'L');
+    await l.goto(base);
+    await l.waitForSelector('[data-testid=auth-choice]', { timeout: T });
+    await l.click('[data-testid=choose-login]');
+    await l.fill('[data-testid=login-form] input[autocomplete=username]', username);
+    await l.fill('[data-testid=login-form] input[type=password]', 'not-the-password');
+    await l.click('[data-testid=login-form] button[type=submit]');
+    await l.waitForSelector('[data-testid=login-form] .form-error', { timeout: T });
+    // The server rate-limits auth per IP; every e2e client shares localhost, so wait it out if needed.
+    for (let attempt = 0; ; attempt++) {
+      await l.fill('[data-testid=login-form] input[type=password]', password);
+      await l.click('[data-testid=login-form] button[type=submit]');
+      const got = await Promise.race([
+        l.waitForSelector('[data-testid=hud]', { timeout: T }).then(() => 'hud'),
+        l.waitForSelector('[data-testid=login-form] .form-error:has-text("Too many")', { timeout: T }).then(() => 'limited'),
+      ]);
+      if (got === 'hud') break;
+      if (attempt >= 2) throw new Error('login stayed rate-limited');
+      log('auth rate limit hit (shared localhost IP) — waiting 40s');
+      await l.waitForTimeout(40_000);
+    }
+    const s = await waitSnap(l, (x) => x.connection === 'connected', 'L connected');
+    const me = s.players.find((p) => p.id === s.sessionId);
+    if (me?.name !== 'Account Fern') throw new Error(`logged in as ${me?.name}`);
+    await l.waitForSelector('[data-testid=toast]:has-text("Welcome back")', { timeout: 15000 });
+    await l.close({ runBeforeUnload: true });
+    pass('register in onboarding → log in elsewhere (wrong password rejected, character kept)');
+  } catch (err) {
+    failStep('register / login', err);
+  }
 } finally {
   for (const ctx of browser.contexts()) for (const page of ctx.pages()) await page.close({ runBeforeUnload: true }).catch(() => undefined);
   await new Promise((r) => setTimeout(r, 300));
   await browser.close();
 }
 
-const relevant = errors.filter((e) => !/WebGL|GPU stall|GL_|swiftshader/i.test(e));
+// 401/429 resource errors are the browser logging the deliberate wrong-password / rate-limit responses.
+const relevant = errors.filter((e) => !/WebGL|GPU stall|GL_|swiftshader/i.test(e) && !/status of (401|429)/.test(e));
 if (relevant.length) {
   console.error('[e2e] console/page errors:\n  ' + relevant.join('\n  '));
   results.push({ name: 'no console errors', ok: false, detail: `${relevant.length} errors` });

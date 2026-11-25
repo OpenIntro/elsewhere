@@ -13,7 +13,8 @@ import { env, uniforms } from './env.js';
 import { rbox } from './geom.js';
 import { patch } from './materials.js';
 
-export const TILE = { minX: -104, maxX: 100, minZ: -112, maxZ: 92 } as const;
+/** Sea tile: large enough that its edges stay off-screen at max zoom-out (16) from any coast and rotation. */
+export const TILE = { minX: -142, maxX: 138, minZ: -150, maxZ: 130 } as const;
 const TILE_W = TILE.maxX - TILE.minX;
 const TILE_D = TILE.maxZ - TILE.minZ;
 const BASE_DEPTH = 7;
@@ -147,7 +148,7 @@ void main(){
 
 export function Water({ detail = true }: { detail?: boolean }) {
   const { material, geometry, wallMaterial, baseMaterial, seabedMaterial } = useMemo(() => {
-    const depthTex = bakeDepth(512);
+    const depthTex = bakeDepth(768);
     const material = new ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
@@ -172,7 +173,7 @@ export function Water({ detail = true }: { detail?: boolean }) {
     });
     material.uniforms.uDepth!.value = depthTex;
     material.uniforms.uTile!.value = [TILE.minX, TILE.minZ, TILE_W, TILE_D];
-    const geometry = new PlaneGeometry(TILE_W, TILE_D, 160, 160);
+    const geometry = new PlaneGeometry(TILE_W, TILE_D, 180, 180);
     geometry.rotateX(-Math.PI / 2);
     geometry.translate(TILE.minX + TILE_W / 2, WATER_LEVEL, TILE.minZ + TILE_D / 2);
 

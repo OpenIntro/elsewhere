@@ -52,13 +52,17 @@ function EnvironmentController() {
   return null;
 }
 
-const ISO = new Vector3(1, 1, 1).normalize();
+/** Matches the player rig's camera elevation (player/camera.ts ELEVATION = 37°). */
+const DEV_ELEVATION = (37 * Math.PI) / 180;
+const ISO = new Vector3();
 function DevCamera() {
   const camera = useThree((s) => s.camera) as OrthographicCamera;
   useFrame(() => {
     const c = devOverrides.cam;
     if (!c) return;
     const y = 1;
+    const yaw = c.yaw ?? Math.PI / 4;
+    ISO.set(Math.sin(yaw) * Math.cos(DEV_ELEVATION), Math.sin(DEV_ELEVATION), Math.cos(yaw) * Math.cos(DEV_ELEVATION));
     camera.position.set(c.x + ISO.x * 160, y + ISO.y * 160, c.z + ISO.z * 160);
     camera.lookAt(c.x, y, c.z);
     camera.far = 800;
