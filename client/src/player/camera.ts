@@ -17,9 +17,16 @@ import { create } from 'zustand';
 import { clamp } from '@elsewhere/shared';
 import { useSettingsStore } from '../state/settingsStore.js';
 
-export const ZOOM_MIN = 16;
-export const ZOOM_MAX = 90;
-export const ZOOM_DEFAULT = 38;
+/**
+ * Zoom = pixels per metre at the 1440×900 reference viewport (see viewportScaleFor).
+ * Default frames a ~1.6 m character at ≈10% of the viewport height there
+ * (screen height ≈ 0.8 · 1.6 m · zoom); MIN ≈ a 60 m wide overview, MAX ≈ close-up.
+ */
+export const ZOOM_MIN = 24;
+export const ZOOM_MAX = 140;
+export const ZOOM_DEFAULT = 70;
+/** Zoom values persisted by older builds' default framing; treated as "never chose a zoom". */
+const LEGACY_DEFAULT_ZOOMS: readonly number[] = [38];
 /** Multiplicative zoom step for buttons/keys. */
 export const ZOOM_STEP = 1.25;
 /** Camera yaw at rotation index 0: camera sits at +X +Z looking north-west (classic iso). */
@@ -39,9 +46,15 @@ export interface CameraState {
 
 export const useCameraStore = create<CameraState>()(() => ({
   rotation: 0,
-  zoom: clampZoom(useSettingsStore.getState().controls.cameraZoom ?? ZOOM_DEFAULT),
+  zoom: initialZoom(),
   free: false,
 }));
+
+function initialZoom(): number {
+  const saved = useSettingsStore.getState().controls.cameraZoom;
+  if (typeof saved !== 'number' || LEGACY_DEFAULT_ZOOMS.includes(saved)) return ZOOM_DEFAULT;
+  return clampZoom(saved);
+}
 
 export function clampZoom(z: number): number {
   return clamp(Number.isFinite(z) ? z : ZOOM_DEFAULT, ZOOM_MIN, ZOOM_MAX);
@@ -134,6 +147,19 @@ export const cameraControls = {
 
 /** Current focus as last written by the rig (kept here to avoid a runtime import cycle). */
 export const runtimeFocus = { x: 0, z: 0 };
+
+/**
+ * Viewport → zoom multiplier (1 at 1440×900). Fitted so the local character
+ * reads at a similar size everywhere: ≈10% of the height on desktop, ≈11% of
+ * the short side on a landscape phone (844×390 → 0.48) and ≈7.5% of the height
+ * in portrait (390×844 → 0.70, leaving horizontal context). Height dominates;
+ * width contributes a little. 1920×1080 → 1.22, 2560×1440 → 1.61.
+ */
+export function viewportScaleFor(width: number, height: number): number {
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  return clamp(Math.pow(h / 900, 0.725) * Math.pow(w / 1440, 0.238), 0.35, 2.2);
+}
 
 /** Ease-in-out cubic. */
 export function easeInOut(t: number): number {

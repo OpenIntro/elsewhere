@@ -1,7 +1,8 @@
 /** Settings: sound, display, controls, camera, account, character, privacy & safety. */
-import { useId, useState } from 'react';
-import { C2S } from '@elsewhere/shared';
+import { useEffect, useId, useState } from 'react';
+import { API, C2S, type RelationsResponse } from '@elsewhere/shared';
 import { net } from '../../net/index.js';
+import { STORAGE_KEYS, safeStorage } from '../../state/storage.js';
 import { cameraControls, useCameraStore } from '../../player/index.js';
 import { useGameStore } from '../../state/gameStore.js';
 import { useSettingsStore, type GraphicsQuality } from '../../state/settingsStore.js';
@@ -269,25 +270,48 @@ function AccountSection() {
   );
 }
 
+/** Fetch names for the caller's blocked/muted profiles (works for people who are offline). */
+function useRelationNames(): void {
+  const rememberName = useSocialUi((s) => s.rememberName);
+  useEffect(() => {
+    const token = safeStorage.get(STORAGE_KEYS.session);
+    if (!token) return;
+    let alive = true;
+    fetch(API.relations, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? (r.json() as Promise<RelationsResponse>) : null))
+      .then((body) => {
+        if (!alive || !body) return;
+        for (const e of [...body.blocked, ...body.muted]) if (e.name) rememberName(e.profileId, e.name);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [rememberName]);
+}
+
 function PeopleList({ kind }: { kind: 'blocked' | 'muted' }) {
   const ids = useGameStore((s) => s[kind]);
   const players = useGameStore((s) => s.players);
   const names = useSocialUi((s) => s.names);
   if (!ids.length) return <p className="muted small">{kind === 'blocked' ? 'You haven’t blocked anyone.' : 'You haven’t muted anyone.'}</p>;
   return (
-    <ul className="people">
+    <ul className="people" data-testid={`list-${kind}`}>
       {ids.map((pid) => {
         const online = Object.values(players).find((p) => p.profileId === pid);
-        const name = online?.name ?? names[pid] ?? 'Someone who left';
+        const name = online?.name ?? names[pid] ?? 'Someone';
         return (
           <li key={pid} className="people__row">
-            <span>{name}</span>
+            <span>
+              {name}
+              {!online ? <span className="muted"> · not here</span> : null}
+            </span>
             <button
               type="button"
               className="btn btn--quiet btn--sm"
-              disabled={!online}
-              title={online ? undefined : 'Can be undone while they’re in this world'}
-              onClick={() => online && net.send(kind === 'blocked' ? C2S.unblock : C2S.unmute, { target: online.id })}
+              aria-label={`${kind === 'blocked' ? 'Unblock' : 'Unmute'} ${name}`}
+              // By profile id, so it works whether or not they are online.
+              onClick={() => net.send(kind === 'blocked' ? C2S.unblock : C2S.unmute, { profileId: pid })}
             >
               {kind === 'blocked' ? 'Unblock' : 'Unmute'}
             </button>
@@ -299,6 +323,7 @@ function PeopleList({ kind }: { kind: 'blocked' | 'muted' }) {
 }
 
 function PrivacySection() {
+  useRelationNames();
   return (
     <Section title="Privacy & safety" id="set-privacy">
       <h4 className="subhead">Blocked</h4>

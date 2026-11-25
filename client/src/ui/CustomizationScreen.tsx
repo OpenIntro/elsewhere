@@ -177,6 +177,7 @@ export function CustomizationScreen({
     <div className={`customize customize--${layout}`} data-testid="customize">
       <div className="customize__stage">
         <CharacterPreview appearance={appearance} anim={anim} spin={0} className="customize__preview" />
+        <span className="customize__hint" aria-hidden="true">Drag to turn</span>
         <button type="button" className="btn btn--ghost btn--sm customize__random" onClick={randomize} data-testid="randomize">
           <Icon name="dice" size={18} /> Surprise me
         </button>

@@ -15,6 +15,8 @@ export interface MemoryService {
   /** Record + broadcast `{ event, headline }` to everyone in the room. */
   announce(ctx: RoomContext, event: NewWorldEvent, headline: string): Promise<WorldEvent>;
   list(query: WorldMemoryQuery): Promise<WorldEvent[]>;
+  /** Be told about every recorded event (after it is persisted). Returns an unsubscribe function. */
+  subscribe(fn: (event: WorldEvent) => void): () => void;
 }
 
 let lastTs = 0;
@@ -30,11 +32,23 @@ export function eventId(ts: number): string {
 }
 
 export function createMemory(persistence: PersistenceService): MemoryService {
+  const listeners = new Set<(event: WorldEvent) => void>();
   const service: MemoryService = {
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
     async record(e) {
       const ts = e.ts ?? Date.now();
       const event: WorldEvent = { ...e, ts, id: eventId(ts), actors: e.actors.slice(0, 24).map((a) => ({ profileId: a.profileId, name: a.name })) };
       await persistence.events.append(event);
+      for (const fn of listeners) {
+        try {
+          fn(event);
+        } catch (err) {
+          console.error('[memory] listener failed', err);
+        }
+      }
       return event;
     },
     async announce(ctx, e, headline) {

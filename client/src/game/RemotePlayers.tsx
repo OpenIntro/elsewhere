@@ -157,7 +157,9 @@ const RemotePlayer = memo(function RemotePlayer({ id, cached, leavingAt }: { id:
     // Anim: server one-shots / sit win unless clearly moving.
     const serverAnim = cur.anim;
     let next: AnimState;
-    if (seat || serverAnim === 'sit') next = 'sit';
+    // Seated wave/interact: upper-body one-shot over the sit base (Character keeps sitting).
+    if (seat && (serverAnim === 'wave' || serverAnim === 'interact')) next = serverAnim;
+    else if (seat || serverAnim === 'sit') next = 'sit';
     else if (SERVER_ANIMS.includes(serverAnim) && out.speed < 0.8) next = serverAnim;
     else next = locomotion(out.speed, s.anim);
     if (next !== s.anim) {

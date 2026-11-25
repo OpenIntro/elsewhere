@@ -22,6 +22,7 @@ import {
   type ItemId,
   type WorldEvent,
 } from '@elsewhere/shared';
+import type { MemoryService } from '../memory/index.js';
 import type { PersistenceService } from '../persistence/index.js';
 import { TEMPLATES, joinNames, pick, render, type TemplateId } from './templates.js';
 
@@ -41,6 +42,10 @@ export interface GazetteOptions {
   intervalMs: number;
   clock: () => ClockParams;
   now?: () => number;
+  /** Young-world first issue: compile `earlyDelayMs` after `earlyEvents` significant events (needs `memory`). */
+  memory?: MemoryService;
+  earlyEvents?: number;
+  earlyDelayMs?: number;
 }
 
 const CURSOR_KEY = 'gazette:cursor';
@@ -146,6 +151,34 @@ export function createGazette(persistence: PersistenceService, options: GazetteO
   const now = options.now ?? Date.now;
   let timer: NodeJS.Timeout | null = null;
   let compiling: Promise<GazetteIssue | null> | null = null;
+  let earlyTimer: NodeJS.Timeout | null = null;
+  let earlyDone = false;
+  let unsubscribe: (() => void) | null = null;
+  const earlyEvents = options.earlyEvents ?? CONFIG.gazette.earlyIssueSignificantEvents;
+  const earlyDelayMs = options.earlyDelayMs ?? CONFIG.gazette.earlyIssueDelayMs;
+
+  /** Until a first issue exists: once enough significant REAL events are on record, publish soon. */
+  async function checkEarly(): Promise<void> {
+    if (earlyDone || earlyTimer) return;
+    if (await persistence.gazette.latest()) {
+      earlyDone = true;
+      return;
+    }
+    const from = (await persistence.worldState.getKv<number>(CURSOR_KEY)) ?? 0;
+    const significant = (await persistence.events.range(from, now() + 1)).filter((e) => e.significance >= 1).length;
+    if (significant < earlyEvents || earlyTimer) return;
+    earlyTimer = setTimeout(() => {
+      void compileDue()
+        .then((issue) => {
+          if (issue) earlyDone = true;
+        })
+        .catch((err) => console.error('[gazette] early compile failed', err))
+        .finally(() => {
+          earlyTimer = null;
+        });
+    }, earlyDelayMs);
+    earlyTimer.unref();
+  }
 
   async function compileIssue(periodStart: number, periodEnd: number): Promise<GazetteIssue | null> {
     const events = await persistence.events.range(periodStart, periodEnd);
@@ -208,10 +241,20 @@ export function createGazette(persistence: PersistenceService, options: GazetteO
       })().catch(() => undefined);
       timer = setInterval(run, Math.max(10_000, options.intervalMs));
       timer.unref();
+      if (options.memory) {
+        unsubscribe = options.memory.subscribe((e) => {
+          if (!earlyDone && e.significance >= 1) void checkEarly().catch((err) => console.error('[gazette] early check failed', err));
+        });
+        void checkEarly().catch(() => undefined);
+      }
     },
     stop() {
       if (timer) clearInterval(timer);
       timer = null;
+      if (earlyTimer) clearTimeout(earlyTimer);
+      earlyTimer = null;
+      unsubscribe?.();
+      unsubscribe = null;
     },
   };
 }

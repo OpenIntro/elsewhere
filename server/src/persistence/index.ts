@@ -89,6 +89,8 @@ export interface ProfileRepository {
   getByUsername(username: string): Promise<StoredProfile | null>;
   getByExternalId(externalId: string): Promise<StoredProfile | null>;
   save(profile: StoredProfile): Promise<void>;
+  /** Cheap partial update for frequent position persistence. */
+  savePosition(id: string, pos: { x: number; z: number }, lastSeenAt: number): Promise<void>;
   /** Profiles that have ever joined (visits > 0). */
   countResidents(): Promise<number>;
 }
@@ -312,6 +314,9 @@ export function createPersistence(opts: PersistenceOptions = { dataDir: 'memory:
           json(p.stats ?? {}),
         ],
       );
+    },
+    async savePosition(id, pos, lastSeenAt) {
+      await w('UPDATE profiles SET last_position = $2, last_seen_at = $3 WHERE id = $1', [id, json(pos), lastSeenAt]);
     },
     async countResidents() {
       const rows = await q<{ n: unknown }>('SELECT COUNT(*) AS n FROM profiles WHERE visits > 0');

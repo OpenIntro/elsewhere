@@ -1407,3 +1407,10 @@ html[data-motion='reduced'] .placecard, html[data-motion='reduced'] .chat-peek {
 .removed { z-index: 60; background: rgba(16, 12, 10, 0.9); max-width: none; }
 .removed > * { max-width: 440px; }
 .loading__text--small { font-size: 13.5px; color: var(--text-3); }
+
+/* Character previews are drag-to-rotate (characters/CharacterPreview): never block or steal their pointer events. */
+.customize__preview, .customize__preview canvas, .pcard__preview canvas, .name-step__preview canvas { touch-action: none; cursor: grab; }
+.customize__preview:active, .customize__preview canvas:active { cursor: grabbing; }
+.customize__hint { position: absolute; left: 50%; bottom: 70px; translate: -50% 0; font-size: 12px; color: var(--text-3); pointer-events: none; letter-spacing: 0.04em; }
+@media (max-width: 720px) { .customize__hint { display: none; } }
+.sheet--loading { display: grid; place-items: center; min-height: 160px; }

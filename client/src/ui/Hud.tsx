@@ -4,7 +4,7 @@
  * toasts, one-time controls hint, location title card, camera buttons and the
  * panel host.
  */
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { LOCATIONS, worldTimeAt } from '@elsewhere/shared';
 import { cameraControls, pressInteract, useCameraStore, useTouchControlsVisible } from '../player/index.js';
 import { serverNow, useGameStore } from '../state/gameStore.js';
@@ -14,14 +14,25 @@ import { useIsTouch, useTicker } from './hooks.js';
 import { Icon, phaseIcon, type IconName } from './icons.js';
 import { formatWorldClock, phaseLabel } from './lib/format.js';
 import { useChatUi, useUiPrefs } from './localState.js';
-import { CustomizePanel } from './panels/CustomizePanel.js';
-import { GazettePanel } from './panels/GazettePanel.js';
-import { MapPanel } from './panels/MapPanel.js';
 import { PlayerCard } from './panels/PlayerCard.js';
 import { DiscoveryPanel, MailboxPanel, ReadingPanel } from './panels/ReadingPanels.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
 import { HomePanel, InventoryPanel } from './panels/SimplePanels.js';
 import { toasts, useToasts } from './toasts.js';
+import { Spinner } from './primitives.js';
+
+// Heavier, rarely-opened panels are split out of the main bundle.
+const GazettePanel = lazy(() => import('./panels/GazettePanel.js').then((m) => ({ default: m.GazettePanel })));
+const MapPanel = lazy(() => import('./panels/MapPanel.js').then((m) => ({ default: m.MapPanel })));
+const CustomizePanel = lazy(() => import('./panels/CustomizePanel.js').then((m) => ({ default: m.CustomizePanel })));
+
+function PanelLoading() {
+  return (
+    <div className="sheet sheet--side sheet--loading" role="status" aria-label="Loading">
+      <Spinner />
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Top bar
@@ -402,7 +413,10 @@ function PanelHost() {
   }, [panel, narrow]);
 
   if (!panel) return null;
-  const close = closePanel;
+  return <Suspense fallback={<PanelLoading />}>{renderPanel(panel, closePanel)}</Suspense>;
+}
+
+function renderPanel(panel: Panel, close: () => void) {
   switch (panel.kind) {
     case 'sign':
     case 'inspect':

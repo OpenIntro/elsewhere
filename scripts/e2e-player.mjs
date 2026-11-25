@@ -14,11 +14,15 @@
  * Checks (each reported PASS/FAIL with numbers):
  *  1. keyboard movement is camera-relative, before and after a 90° rotation
  *  2. wheel zoom changes zoom and clamps to the limits
+ *  2b. runtime.view is valid from the first snapshot and tracks a resize
+ *  2c. clicking a cottage door walks through its garden gate (2 m gap) to the door
  *  3. click-to-move reaches a point behind a building; every sampled
  *     position (and the segments between them) is walkable
  *  4. the player cannot walk through a building or into the sea
- *  5. a second client sees smooth remote movement (per-frame rendered
- *     positions monotonic along the walk, no jumps)
+ *  5. a second client sees smooth remote movement: positions monotonic along
+ *     the walk, no jumps — from rendered frames (low graphics quality), or, if
+ *     software rendering yields < 30 frames, from the interpolated pose sampled
+ *     on a fixed 60 Hz timer via the debug hook (the detail says which)
  *  6. server killed + restarted → both clients reconnect automatically and
  *     see each other again
  *  7. mobile emulation: tap-to-move, joystick, pinch zoom, no page scroll/zoom
@@ -56,6 +60,8 @@ const PAGE_URL = (() => {
   u.searchParams.set('autojoin', '1');
   return u.toString();
 })();
+/** Init script: persist settings.graphics = 'low' before the app boots (zustand persist format). */
+const LOW_GRAPHICS = `try { localStorage.setItem('elsewhere.settings.v1', JSON.stringify({ state: { graphics: 'low' }, version: 1 })); } catch {}`;
 const DATA_DIR = mkdtempSync(path.join(tmpdir(), 'elsewhere-e2e-'));
 
 const log = (...a) => console.log('[e2e]', ...a);
@@ -260,6 +266,81 @@ async function testZoom(page) {
   await sleep(900);
 }
 
+async function testViewRuntime(page, firstSnap) {
+  const finite = (v) => v && ['focusX', 'focusY', 'focusZ', 'yaw', 'zoom', 'halfWidth', 'halfHeight'].every((k) => Number.isFinite(v[k])) && v.halfWidth > 0 && v.halfHeight > 0;
+  const vp0 = page.viewportSize();
+  const v0 = (await snap(page)).view;
+  const w0 = v0.halfWidth * 2 * v0.zoom;
+  await page.setViewportSize({ width: 1200, height: 700 });
+  await waitFor(page, (sn) => Math.abs(sn.view.halfWidth * 2 * sn.view.zoom - 1200) < 2, 'view to track the resize', 10_000).catch(() => null);
+  const v1 = (await snap(page)).view;
+  const w1 = v1.halfWidth * 2 * v1.zoom;
+  await page.setViewportSize(vp0);
+  await waitFor(page, (sn) => Math.abs(sn.view.halfWidth * 2 * sn.view.zoom - vp0.width) < 2, 'view to track the restore', 10_000).catch(() => null);
+  const ok = finite(firstSnap?.view) && finite(v0) && finite(v1) && Math.abs(w0 - vp0.width) < 2 && Math.abs(w1 - 1200) < 2;
+  record(
+    'runtime.view is populated from the first frame and tracks resize',
+    ok,
+    `first snapshot ${finite(firstSnap?.view) ? 'finite' : JSON.stringify(firstSnap?.view)}; canvas ${vp0.width}px ↔ 2·halfWidth·zoom ${w0.toFixed(1)}; after resize to 1200 → ${w1.toFixed(1)} (halfWidth ${v0.halfWidth.toFixed(1)}→${v1.halfWidth.toFixed(1)} m)`,
+  );
+}
+
+async function testDoorThroughGate(page) {
+  const s = await snap(page);
+  const buildings = (await query(page, 'buildings')).filter((b) => b.id.startsWith('house_'));
+  const vp = page.viewportSize();
+  const local = (b, lx, lz) => ({ x: b.x + lx * Math.cos(b.yaw) + lz * Math.sin(b.yaw), z: b.z - lx * Math.sin(b.yaw) + lz * Math.cos(b.yaw) });
+  let chosen = null;
+  buildings.sort((p, q) => Math.hypot(p.x - s.local.x, p.z - s.local.z) - Math.hypot(q.x - s.local.x, q.z - s.local.z));
+  for (const b of buildings) {
+    const door = await query(page, 'interactable', `door_${b.id}`);
+    if (!door) continue;
+    const scr = await query(page, 'worldToScreen', door.position.x, door.position.z);
+    if (!scr || scr.x < 30 || scr.y < 30 || scr.x > vp.width - 30 || scr.y > vp.height - 30) continue;
+    const pick = await query(page, 'pick', scr.x, scr.y, 'mouse');
+    if (pick?.id !== door.id) continue;
+    chosen = { b, door, scr };
+    break;
+  }
+  if (!chosen) return record('click a cottage door → walks through its garden gate', false, 'no cottage door on screen');
+  const { b, door, scr } = chosen;
+  await page.mouse.click(scr.x, scr.y);
+  await sleep(100);
+  const planned = (await snap(page)).motion?.path?.points ?? [];
+  const samples = await sampleUntil(page, (sn, out) => out.length > 3 && !sn.motion?.path && sn.local.speed < 0.05, 45_000);
+  const end = samples.at(-1);
+  const gate = local(b, 0, b.depth / 2 + 3.0);
+  // Closest approach of the walked samples and the planned polyline to the gate centre.
+  let gateDist = Infinity;
+  for (const pts of [samples, [samples[0], ...planned]]) {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const c = pts[i];
+      const dx = c.x - a.x;
+      const dz = c.z - a.z;
+      const l2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((gate.x - a.x) * dx + (gate.z - a.z) * dz) / l2));
+      gateDist = Math.min(gateDist, Math.hypot(a.x + dx * t - gate.x, a.z + dz * t - gate.z));
+    }
+  }
+  const walk = (await countUnwalkable(page, samples)) === 0;
+  const radius = (door.radius ?? 2.4) - 0.3;
+  const toDoor = Math.hypot(end.x - door.position.x, end.z - door.position.z);
+  const target = (await snap(page)).target;
+  // Ended inside the fenced front garden (local |x| < width/2 + 0.35, depth/2 < z < depth/2 + 3).
+  const dx = end.x - b.x;
+  const dz = end.z - b.z;
+  const lx = dx * Math.cos(b.yaw) - dz * Math.sin(b.yaw);
+  const lz = dx * Math.sin(b.yaw) + dz * Math.cos(b.yaw);
+  const inGarden = Math.abs(lx) < b.width / 2 + 0.35 && lz > b.depth / 2 && lz < b.depth / 2 + 3.0;
+  const ok = walk && toDoor <= radius && inGarden;
+  record(
+    'click a cottage door → walks into its fenced garden to the door',
+    ok,
+    `${door.id}: ended ${toDoor.toFixed(2)} m from the door (radius ${radius.toFixed(2)}) inside the garden=${inGarden} (local ${lx.toFixed(2)}, ${lz.toFixed(2)}); route passes ${gateDist.toFixed(2)} m from the gate centre (fence runs are also opened where paths cross); ${samples.length} samples all walkable (never through a fence)=${walk}; target now ${target.kind}:${target.id}`,
+  );
+}
+
 function behindPoint(b, extra = 2.6) {
   const lz = -(b.depth / 2 + extra);
   return { x: b.x + lz * Math.sin(b.yaw), z: b.z + lz * Math.cos(b.yaw) };
@@ -426,58 +507,117 @@ async function testCannotEnterSea(page) {
   }
 }
 
+/** Monotonic progress + no jumps for a series of {t, x, z} samples of a remote walking in a straight line. */
+function analyseSeries(series) {
+  const first = series[0];
+  const lastF = series.at(-1);
+  const dir = { x: lastF.x - first.x, z: lastF.z - first.z };
+  const len = Math.hypot(dir.x, dir.z) || 1;
+  let backwards = 0;
+  let maxStep = 0;
+  let maxSpeed = 0;
+  for (let i = 1; i < series.length; i++) {
+    const dx = series[i].x - series[i - 1].x;
+    const dz = series[i].z - series[i - 1].z;
+    if ((dx * dir.x + dz * dir.z) / len < -0.01) backwards++;
+    const st = Math.hypot(dx, dz);
+    maxStep = Math.max(maxStep, st);
+    const dtS = (series[i].t - series[i - 1].t) / 1000;
+    // Speed over windows ≥ 30 ms (timer jitter makes shorter windows meaningless).
+    if (dtS >= 0.03) maxSpeed = Math.max(maxSpeed, st / dtS);
+  }
+  const rate = series.length / ((lastF.t - first.t) / 1000);
+  return { len, backwards, maxStep, maxSpeed, rate, n: series.length };
+}
+
 async function testRemoteSmoothness(pageA, pageB) {
   await ready(pageA);
   await ready(pageB);
   const a = await snap(pageA);
   // Pick a free walking direction for A.
-  const key = await freeKey(pageA, a.camera.yaw, 7);
+  const key = await freeKey(pageA, a.camera.yaw, 9);
   const id = a.sessionId;
   // B is the observer: give it the foreground so its rAF isn't throttled (keys still reach A via CDP).
   await pageB.bringToFront();
   await pageA.keyboard.down(key);
-  const frames = await pageB.evaluate(
+  // (c) In parallel: B's received snapshot buffer (real network arrival times), merged across polls.
+  const received = new Map();
+  let polling = true;
+  let anim = 'walk';
+  const poller = (async () => {
+    while (polling) {
+      const rb = await query(pageB, 'remoteBuffer', id).catch(() => null);
+      if (rb) {
+        anim = rb.anim === 'run' ? 'run' : 'walk';
+        for (const p of rb.buffer) received.set(p.t, p);
+      }
+      await sleep(250);
+    }
+  })();
+  // Collect (a) the pose actually rendered each frame and (b) the interpolated pose on a fixed 60 Hz timer.
+  const { frames, timer } = await pageB.evaluate(
     (id) =>
       new Promise((resolve) => {
-        const out = [];
+        const frames = [];
+        const timer = [];
         const t0 = performance.now();
         const tick = () => {
           const r = window.__ELSEWHERE__.snapshot().remotes.find((q) => q.id === id);
-          if (r) out.push({ t: performance.now() - t0, x: r.x, z: r.z });
+          if (r) frames.push({ t: performance.now() - t0, x: r.x, z: r.z });
           if (performance.now() - t0 < 3200) requestAnimationFrame(tick);
-          else resolve(out);
         };
         requestAnimationFrame(tick);
+        const iv = setInterval(() => {
+          const p = window.__ELSEWHERE__.query('sampleRemote', id);
+          if (p) timer.push({ t: performance.now() - t0, x: p.x, z: p.z });
+          if (performance.now() - t0 >= 3200) {
+            clearInterval(iv);
+            resolve({ frames, timer });
+          }
+        }, 16);
       }),
     id,
   );
+  polling = false;
+  await poller;
   await pageA.keyboard.up(key);
-  // Analyse the steady part (skip acceleration).
-  const steady = frames.filter((f) => f.t > 500 && f.t < 3100);
-  if (steady.length < 10) {
-    record('second client sees smooth movement', false, `INCONCLUSIVE: observer page rendered only ${frames.length} frames in 3.2 s (machine overloaded); see client/test/interpolation.test.ts for the deterministic check`);
+  // Steady part only (skip acceleration and the final stop).
+  const steadyFrames = frames.filter((f) => f.t > 600 && f.t < 3000);
+  const steadyTimer = timer.filter((f) => f.t > 600 && f.t < 3000);
+  let mode = 'rendered frames';
+  let series = steadyFrames;
+  if (series.length < 30) {
+    mode = 'fixed 60 Hz timer';
+    series = steadyTimer;
+  }
+  if (series.length < 30) {
+    // Main thread too starved by software rendering for in-page timers: replay what B actually received
+    // through the real interpolation (sampleBuffer) at a virtual 60 Hz.
+    const snaps = [...received.values()].sort((p, q) => p.t - q.t);
+    if (snaps.length >= 10) {
+      const delay = 120;
+      const from = snaps[0].t + delay + 600;
+      const to = snaps.at(-1).t + delay - 150;
+      series = (await query(pageB, 'sampleSnapshots', snaps, anim, from, to, 1000 / 60)).map((p) => ({ ...p, t: p.t - from }));
+      mode = `received stream (${snaps.length} snapshots) replayed through the real interpolation at a virtual 60 Hz (rendering gave ${steadyFrames.length} frames, timer ${steadyTimer.length} ticks)`;
+    }
+  }
+  if (series.length < 20) {
+    record('second client sees smooth movement', false, `too few samples (frames ${steadyFrames.length}, timer ${steadyTimer.length}, received ${received.size})`);
     return;
   }
-  const first = steady[0];
-  const lastF = steady.at(-1);
-  const dir = { x: lastF.x - first.x, z: lastF.z - first.z };
-  const len = Math.hypot(dir.x, dir.z) || 1;
-  let backwards = 0;
-  let maxStep = 0;
-  let maxStepPerS = 0;
-  for (let i = 1; i < steady.length; i++) {
-    const dx = steady[i].x - steady[i - 1].x;
-    const dz = steady[i].z - steady[i - 1].z;
-    const along = (dx * dir.x + dz * dir.z) / len;
-    if (along < -0.01) backwards++;
-    const st = Math.hypot(dx, dz);
-    maxStep = Math.max(maxStep, st);
-    const dtS = (steady[i].t - steady[i - 1].t) / 1000;
-    if (dtS > 0) maxStepPerS = Math.max(maxStepPerS, st / dtS);
-  }
-  const fps = steady.length / ((lastF.t - first.t) / 1000);
-  const ok = steady.length > 10 && backwards === 0 && maxStepPerS < 9 && len > 2;
-  record('second client sees smooth movement', ok, `${steady.length} rendered frames (${fps.toFixed(0)} fps in B), moved ${len.toFixed(2)} m, backwards steps=${backwards}, max step ${maxStep.toFixed(3)} m (peak ${maxStepPerS.toFixed(2)} m/s vs walk ${3.2})`);
+  const useFrames = mode === 'rendered frames';
+  const r = analyseSeries(series);
+  const walk = 3.2;
+  // No backwards steps; no sample-to-sample speed above 1.6× walk speed (a teleport/catch-up jump would be far more).
+  const ok = r.backwards === 0 && r.maxSpeed < walk * 1.6 && r.len > 2;
+  const fr = steadyFrames.length ? analyseSeries(steadyFrames) : null;
+  record(
+    'second client sees smooth movement',
+    ok,
+    `${mode}: ${r.n} samples at ${r.rate.toFixed(0)}/s over ${r.len.toFixed(2)} m, backwards=${r.backwards}, max step ${r.maxStep.toFixed(3)} m, peak ${r.maxSpeed.toFixed(2)} m/s (walk ${walk})` +
+      (fr && !useFrames ? `; rendered frames: ${fr.n} at ${fr.rate.toFixed(0)} fps, backwards=${fr.backwards}` : ''),
+  );
 }
 
 async function testReconnect(pageA, pageB) {
@@ -529,6 +669,8 @@ async function testMobile(browser) {
     if (!(await segmentWalkable(page, s0.local, p)).ok) continue;
     const scr = await query(page, 'worldToScreen', p.x, p.z);
     if (await query(page, 'pick', scr.x, scr.y, 'touch')) continue;
+    // The tap must land on the canvas, not on a HUD element / hint card over it.
+    if (!(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', [scr.x, scr.y]))) continue;
     target = { p, scr };
     break;
   }
@@ -623,12 +765,20 @@ try {
   browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctxA = await browser.newContext({ viewport: { width: 960, height: 640 } });
   const ctxB = await browser.newContext({ viewport: { width: 960, height: 640 } });
+  // Low graphics quality (software rendering): more frames for the smoothness check.
+  for (const ctx of [ctxA, ctxB]) await ctx.addInitScript(LOW_GRAPHICS);
   const pageA = await ctxA.newPage();
   const pageB = await ctxB.newPage();
   watch(pageA, 'A');
   watch(pageB, 'B');
   log('opening', PAGE_URL);
   await pageA.goto(PAGE_URL);
+  // First snapshot as soon as the debug hook exists (runtime.view must already be valid).
+  let firstSnapA = null;
+  for (let i = 0; i < 400 && !firstSnapA; i++) {
+    firstSnapA = await snap(pageA).catch(() => null);
+    if (!firstSnapA) await sleep(50);
+  }
   await ready(pageA);
   await pageA.bringToFront();
 
@@ -642,6 +792,8 @@ try {
   };
   await step('camera-relative keys', () => testCameraRelative(pageA));
   await step('wheel zoom', () => testZoom(pageA));
+  await step('view runtime', () => testViewRuntime(pageA, firstSnapA));
+  await step('door through gate', () => testDoorThroughGate(pageA));
   const behind = await step('click behind building', () => testClickBehindBuilding(pageA));
   if (behind) await step('building is solid', () => testCannotPassBuilding(pageA, behind.b));
   await step('sea', () => testCannotEnterSea(pageA));

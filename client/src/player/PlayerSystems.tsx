@@ -6,9 +6,10 @@
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
-import { BUILDINGS, INTERACTABLES, groundHeight, isGroundWalkable, isWalkable } from '@elsewhere/shared';
-import { registerDebugQuery, registerDebugSection } from '../net/index.js';
-import { runtime } from '../state/runtime.js';
+import { Box3, Vector3 } from 'three';
+import { BUILDINGS, CONFIG, INTERACTABLES, type AnimState, groundHeight, isGroundWalkable, isWalkable } from '@elsewhere/shared';
+import { registerDebugQuery, registerDebugSection, sampleBuffer, sampleRemote } from '../net/index.js';
+import { runtime, type PoseSnapshot, type RemoteRuntime } from '../state/runtime.js';
 import { useUiStore } from '../state/uiStore.js';
 import { ELEVATION, ZOOM_MAX, ZOOM_MIN, cameraControls, cameraRuntime, useCameraStore } from './camera.js';
 import { installInput, installPointer } from './input.js';
@@ -38,6 +39,7 @@ function frameStats() {
 export function PlayerSystems() {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
+  const scene = useThree((s) => s.scene);
   view3d.camera = camera;
 
   useEffect(() => {
@@ -99,6 +101,37 @@ export function PlayerSystems() {
     registerDebugQuery('groundFromScreen', (x: number, y: number) => groundFromScreen(x, y, { x: 0, z: 0 }));
     registerDebugQuery('isWalkable', (x: number, z: number) => isWalkable({ x, z }));
     registerDebugQuery('interactable', (id: string) => INTERACTABLES.find((i) => i.id === id) ?? null);
+    // On-screen height of the local character (px) vs the canvas height — used to tune default framing.
+    registerDebugQuery('localScreenHeight', () => {
+      const obj = scene.getObjectByName('local-player');
+      if (!obj) return null;
+      const box = new Box3().setFromObject(obj);
+      const c = box.getCenter(new Vector3());
+      const top = worldToScreen(c.x, box.max.y, c.z, { x: 0, y: 0 });
+      const bottom = worldToScreen(c.x, box.min.y, c.z, { x: 0, y: 0 });
+      if (!top || !bottom) return null;
+      const h = el.clientHeight;
+      return { px: bottom.y - top.y, worldHeight: box.max.y - box.min.y, viewport: { w: el.clientWidth, h }, fraction: (bottom.y - top.y) / h, zoom: cameraRuntime.zoom, viewportScale: cameraRuntime.viewportScale };
+    });
+    // Interpolated pose of a remote right now (what the renderer would draw this instant) — lets tests
+    // sample motion smoothness on a fixed timer even when software rendering produces few frames.
+    registerDebugQuery('sampleRemote', (id: string) => {
+      const out = { x: 0, y: 0, z: 0, rot: 0 };
+      return sampleRemote(id, out, performance.now()) ? out : null;
+    });
+    // Copy of a remote's received snapshot buffer (receive-time stamped) — lets tests rebuild the
+    // received stream and evaluate the real interpolation at a virtual 60 Hz, independent of rendering.
+    registerDebugQuery('remoteBuffer', (id: string) => {
+      const r = runtime.remotes.get(id);
+      return r ? { anim: r.anim, teleportSeq: r.teleportSeq ?? 0, buffer: r.buffer.map((p) => ({ ...p })) } : null;
+    });
+    registerDebugQuery('sampleSnapshots', (snaps: PoseSnapshot[], anim: AnimState, from: number, to: number, stepMs: number) => {
+      const r: RemoteRuntime = { buffer: snaps, anim };
+      const out: { t: number; x: number; z: number }[] = [];
+      const pose = { x: 0, y: 0, z: 0, rot: 0 };
+      for (let t = from; t <= to; t += stepMs) if (sampleBuffer(r, t - CONFIG.network.interpolationDelayMs, pose)) out.push({ t, x: pose.x, z: pose.z });
+      return out;
+    });
     registerDebugQuery('groundWalkable', (x: number, z: number) => isGroundWalkable({ x, z }));
     registerDebugQuery('buildings', () => BUILDINGS.map((b) => ({ id: b.id, x: b.position.x, z: b.position.z, yaw: b.yaw, width: b.width, depth: b.depth })));
     registerDebugQuery('pick', (x: number, y: number, type?: string) => {
@@ -113,7 +146,7 @@ export function PlayerSystems() {
       offGrid();
       if (view3d.canvas === el) view3d.canvas = null;
     };
-  }, [gl]);
+  }, [gl, scene]);
 
   const acc = useRef(0);
   useFrame((_, dt) => {

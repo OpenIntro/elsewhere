@@ -9,11 +9,16 @@
  *   FOUNTAIN_STAGES=2,4 FOUNTAIN_STAGE_DISTINCT=2,3 \
  *   npx tsx --conditions=source server/src/index.ts
  *
- *   node scripts/server-integration.mjs [url] [--save state.json]
- *   node scripts/server-integration.mjs [url] --verify-restart state.json
+ *   npx tsx --conditions=source scripts/server-integration.mjs [url] [--save state.json]
+ *   npx tsx --conditions=source scripts/server-integration.mjs [url] --verify-restart state.json
+ *   … --position-save pos.json   (then kill -9 the server, restart it)   … --position-verify pos.json
  *
- * Requires shared/dist (npm run typecheck or npm run build -w shared) for the
- * collision helpers used by the path-finding walker.
+ * Run it with the `source` condition (as above) so it uses the SAME live
+ * shared/src world layout as a `tsx` dev server. Plain `node` also works but
+ * then reads shared/dist, which must be fresh (npm run build -w shared): the
+ * script compares a layout fingerprint with GET /api/world and refuses to run
+ * on a mismatch (a stale dist once sent the walker to an old portal-arch anchor
+ * 5.5 m from the current one → spurious `too_far`).
  *
  * Phase 1 demonstrates: global chat delivered; proximity delivered in range and
  * NOT out of range; whisper private; blocked sender not delivered; seat
@@ -24,7 +29,7 @@
  */
 import fs from 'node:fs';
 import { Client } from '@colyseus/sdk';
-import { C2S, CONFIG, ROOM_NAME, S2C, getInteractable, isWalkable } from '@elsewhere/shared';
+import { C2S, COLLIDERS, CONFIG, INTERACTABLES, ROOM_NAME, S2C, getInteractable, isWalkable } from '@elsewhere/shared';
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -35,6 +40,8 @@ const url = args.find((a) => /^https?:/.test(a)) ?? process.env.IT_URL ?? 'http:
 const adminToken = process.env.ADMIN_TOKEN ?? 'integration-admin-token';
 const savePath = flag('--save');
 const verifyPath = flag('--verify-restart');
+const posSavePath = flag('--position-save');
+const posVerifyPath = flag('--position-verify');
 
 let failures = 0;
 const log = (...a) => console.log('[it]', ...a);
@@ -118,18 +125,18 @@ class Player {
   send(type, payload) {
     this.room.send(type, payload);
   }
-  async interact(id, action, retry = true) {
+  async interact(id, action) {
     this.clear(S2C.interactResult);
     this.send(C2S.interact, action === undefined ? { id } : { id, action });
     const r = await this.next(S2C.interactResult, (x) => x.id === id, 3000);
-    if (retry && r?.error === 'too_far') {
-      // The walker's view can lag the server by a patch; step closer once and retry.
-      log(`   (${this.name}: ${id} too far, stepping closer)`);
-      await this.walkToInteractable(id, 0.8);
-      return this.interact(id, action, false);
+    if (r?.error === 'too_far') {
+      const me = this.me();
+      const it = getInteractable(id);
+      log(`   !! ${this.name}: ${id} too_far; synced pos (${me.x.toFixed(2)}, ${me.z.toFixed(2)}), script target (${it.position.x.toFixed(2)}, ${it.position.z.toFixed(2)})`);
     }
     return r;
   }
+
   /** Walk (server-validated moves) until within `range` of the target point. */
   async walkTo(target, range = 1.2) {
     const me = this.me();
@@ -217,7 +224,19 @@ const chatTexts = (p, channel) => p.got(S2C.chat, (m) => !channel || m.channel =
 // ---------------------------------------------------------------------------
 
 async function phaseOne() {
+  const runStart = Date.now();
   const world = await rest('/api/world');
+  // Same world layout as the server? (A stale shared/dist here would send the walker to old anchors.)
+  {
+    const r = (n) => Math.round(n * 1000) / 1000;
+    const src = JSON.stringify([INTERACTABLES.map((i) => [i.id, r(i.position.x), r(i.position.z), i.radius ?? null]), COLLIDERS.length]);
+    let h = 0x811c9dc5;
+    for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 0x01000193);
+    const mine = (h >>> 0).toString(16);
+    if (mine !== world.worldDataHash) throw new Error(`world data mismatch: script ${mine} vs server ${world.worldDataHash} — rebuild shared (npm run build -w shared) or restart the server`);
+    log(`world data hash ${mine} matches the server`);
+  }
+  const freshWorld = (await rest('/api/gazette?limit=1')).issues.length === 0 && world.fountainStage === 0;
   const fountainRule = world.rules.find((r) => r.id === 'fountain');
   log('server rules:', JSON.stringify(fountainRule.stages), 'fountain stage now', world.fountainStage, 'portal awakenings', world.portalAwakenings);
   if (fountainRule.stages[world.fountainStage]?.distinct > 2) throw new Error('Start the server with FOUNTAIN_STAGES=2,4 FOUNTAIN_STAGE_DISTINCT=2,3 (see header)');
@@ -320,18 +339,31 @@ async function phaseOne() {
   check((await A.next(S2C.error, (e) => e.code === 'blocked'))?.code === 'blocked', 'whisper to a blocker is refused');
 
   log('8. gazette compiled from these real events');
+  if (freshWorld) {
+    // Young world: the first issue is compiled automatically soon after a few significant events
+    // (CONFIG.gazette.earlyIssueSignificantEvents / earlyIssueDelayMs) — no admin action needed.
+    const deadline = runStart + 120_000;
+    let auto = [];
+    while (Date.now() < deadline && !auto.length) {
+      auto = (await rest('/api/gazette?limit=5')).issues;
+      if (!auto.length) await sleep(1000);
+    }
+    check(auto.length > 0, `young world published its first issue automatically (${auto[0] ? Math.round((auto[0].publishedAt - runStart) / 1000) + ' s after the first join' : 'none'})`);
+  }
   const { issue } = await rest('/api/admin/gazette/compile', { method: 'POST', token: adminToken, body: {} });
-  check(!!issue, 'admin compile produced an issue');
+  const issues = (await rest('/api/gazette?limit=10')).issues.filter((i) => i.publishedAt >= runStart);
+  check(issues.length > 0, `issues published during this run: ${issues.map((i) => i.id).join(', ')}`);
   const memory = await rest('/api/memory?limit=200');
   const realIds = new Set(memory.events.map((e) => e.id));
-  const allIds = issue ? issue.articles.flatMap((a) => a.eventIds) : [];
+  const articles = issues.flatMap((i) => i.articles);
+  const allIds = articles.flatMap((a) => a.eventIds);
   check(allIds.length > 0 && allIds.every((id) => realIds.has(id)), 'every article eventId is a real World Memory event');
-  const tpl = issue ? issue.articles.map((a) => a.templateId) : [];
-  check(tpl.includes('fountain_transformed'), 'issue reports the fountain transformation', tpl);
-  check(tpl.some((t) => t.startsWith('portal_awakened')), 'issue reports the portal awakening', tpl);
-  const body = issue ? issue.articles.map((a) => `${a.headline}: ${a.body}`).join('\n') : '';
+  const tpl = articles.map((a) => a.templateId);
+  check(tpl.includes('fountain_transformed'), 'gazette reports the fountain transformation', tpl);
+  check(tpl.some((t) => t.startsWith('portal_awakened')), 'gazette reports the portal awakening', tpl);
+  const body = articles.map((a) => `${a.headline}: ${a.body}`).join('\n');
   check(/Alder/.test(body) && /Birch/.test(body), 'articles name the real participants');
-  if (issue) log(`   ${issue.title}\n   ` + body.split('\n').join('\n   '));
+  for (const i of [...issues].reverse()) log(`   ${i.title}\n   ` + i.articles.map((a) => `${a.headline}: ${a.body}`).join('\n   '));
 
   const me = await rest('/api/profile', { token: A.token });
   const state = {
@@ -344,7 +376,7 @@ async function phaseOne() {
     bellRings: A.obj('bell_town_hall').value,
     eventCount: memory.events.length,
     latestEventId: memory.events[0]?.id,
-    gazetteIssueId: issue?.id,
+    gazetteIssueId: issues[0]?.id ?? issue?.id,
     clockEpoch: A.room.state.clockEpoch,
     dayLengthMs: A.room.state.dayLengthMs,
     serverTime: Date.now(),
@@ -381,8 +413,34 @@ async function phaseTwo(file) {
   await A.leave();
 }
 
+/** Hard-kill check, part 1: walk somewhere, stand still ≥5 s, write where we stand. Then `kill -9` the server. */
+async function positionSave(file) {
+  const P = await new Player('Wren').connect();
+  const start = { x: P.me().x, z: P.me().z };
+  await P.walkToInteractable('sign_welcome');
+  const at = { x: P.me().x, z: P.me().z };
+  log(`walked from (${start.x.toFixed(2)}, ${start.z.toFixed(2)}) to (${at.x.toFixed(2)}, ${at.z.toFixed(2)}) — ${Math.hypot(at.x - start.x, at.z - start.z).toFixed(1)} m; standing still 6 s`);
+  await sleep(6000);
+  fs.writeFileSync(file, JSON.stringify({ token: P.token, profileId: P.profileId, at, savedAt: Date.now() }));
+  check(true, `position recorded → ${file}; now kill -9 the server (do NOT leave cleanly)`);
+  // Intentionally no leave(): the process exits with the socket open, like a crash on the server side.
+}
+
+/** Hard-kill check, part 2 (after restart): rejoin by token and compare. */
+async function positionVerify(file) {
+  const before = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const P = await new Player('Wren').connect(before.token);
+  const d = Math.hypot(P.me().x - before.at.x, P.me().z - before.at.z);
+  log(`before kill (${before.at.x.toFixed(2)}, ${before.at.z.toFixed(2)}) → after restart (${P.me().x.toFixed(2)}, ${P.me().z.toFixed(2)})`);
+  check(P.welcome.profile.profileId === before.profileId, 'same profile after kill -9');
+  check(d <= 2, `resumed within 2 m of the pre-kill position (Δ ${d.toFixed(2)} m)`);
+  await P.leave();
+}
+
 try {
-  if (verifyPath) await phaseTwo(verifyPath);
+  if (posSavePath) await positionSave(posSavePath);
+  else if (posVerifyPath) await positionVerify(posVerifyPath);
+  else if (verifyPath) await phaseTwo(verifyPath);
   else await phaseOne();
 } catch (err) {
   failures++;

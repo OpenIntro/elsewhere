@@ -54,6 +54,7 @@ export function installDebugHook(net: NetClient): void {
         players,
         local: { ready: lp.ready, x: lp.x, z: lp.z, rot: lp.rot, anim: lp.anim, speed: lp.speed ?? 0 },
         net: { ...net.stats, reconnectAttempt: useGameStore.getState().reconnectAttempt ?? 0 },
+        view: { ...runtime.view },
       };
       for (const [k, fn] of extras) {
         try {

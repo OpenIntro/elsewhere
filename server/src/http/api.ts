@@ -11,11 +11,12 @@ import {
   type HealthResponse,
   type MemoryListResponse,
   type ProfileResponse,
+  type RelationsResponse,
   type SessionResponse,
   type WorldEventKind,
   type LocationId,
 } from '@elsewhere/shared';
-import { sanitizeAppearance, validateDisplayName } from '@elsewhere/shared';
+import { COLLIDERS, INTERACTABLES, sanitizeAppearance, validateDisplayName } from '@elsewhere/shared';
 import { toProfileSummary } from '../auth/index.js';
 import { ENV } from '../env.js';
 import { RateLimiter } from '../moderation/rateLimit.js';
@@ -67,6 +68,19 @@ const limit = (action: 'rest' | 'auth') => (req: Request, res: Response, next: N
   next();
 };
 
+/**
+ * Fingerprint of the shared world layout the server is running (interactable
+ * anchors + collider count). Test clients compare it with their own copy of
+ * @elsewhere/shared to catch a stale build before blaming the server.
+ */
+export function worldDataHash(): string {
+  const r = (n: number) => Math.round(n * 1000) / 1000;
+  const src = JSON.stringify([INTERACTABLES.map((i) => [i.id, r(i.position.x), r(i.position.z), i.radius ?? null]), COLLIDERS.length]);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16);
+}
+
 function intParam(v: unknown, fallback: number): number {
   const n = typeof v === 'string' ? Number.parseInt(v, 10) : NaN;
   return Number.isFinite(n) ? n : fallback;
@@ -106,6 +120,7 @@ export function createApiRouter(): Router {
     }),
   );
 
+  r.get(API.relations, route(async (req): Promise<RelationsResponse> => services().moderation.listRelations((await requireProfile(req)).id)));
   r.get(API.profile, route(async (req): Promise<ProfileResponse> => ({ profile: toProfileSummary(await requireProfile(req)) })));
   r.put(
     API.profile,
@@ -153,6 +168,7 @@ export function createApiRouter(): Router {
         fountainStage: f.fountainStage,
         fountainContributors: f.fountainContributors,
         portalAwakenings: f.portalAwakenings,
+        worldDataHash: worldDataHash(),
         ...s.collective.describe(),
       };
     }),

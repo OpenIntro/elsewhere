@@ -1,6 +1,6 @@
 /** Inventory (real held item + collection + discoveries) and the Home "not yet" card. */
-import { C2S, DISCOVERIES, ITEMS, type ItemId } from '@elsewhere/shared';
-import { net } from '../../net/index.js';
+import { DISCOVERIES, ITEMS, type ItemId } from '@elsewhere/shared';
+import { actions } from '../../net/index.js';
 import { useGameStore } from '../../state/gameStore.js';
 import { Icon, ItemGlyph } from '../icons.js';
 import { Empty, Sheet } from '../primitives.js';
@@ -25,7 +25,7 @@ export function InventoryPanel({ onClose }: { onClose(): void }) {
               <strong>{heldDef.name}</strong>
               <span>{heldDef.description}</span>
             </div>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => net.send(C2S.dropItem, {})}>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => actions.dropItem()}>
               <Icon name="drop" size={16} /> Set down
             </button>
           </div>

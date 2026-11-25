@@ -26,6 +26,7 @@ import { runtime } from '../state/runtime.js';
 import { useUiStore } from '../state/uiStore.js';
 import { cameraControls, useCameraStore } from './camera.js';
 import { onAction } from './input.js';
+import { interactErrorNotice } from './interactionMessages.js';
 import { cancelPath, hasPath, walkToInteract } from './navigation.js';
 
 /** Players closer than this can be targeted. */
@@ -240,28 +241,17 @@ export function installInteraction(): () => void {
     net.on(S2C.interactResult, (r) => {
       const ui = useUiStore.getState();
       if (!r.ok) {
-        switch (r.error) {
-          case 'too_far':
-            // Prediction said we were in range; walk a little closer and try once more.
-            if (!lastInteract.retried && getInteractable(r.id)) {
-              lastInteract.retried = true;
-              const res = walkToInteract(r.id);
-              if (res === 'now') setTimeout(() => actions.interact(r.id), 300);
-            }
-            return;
-          case 'occupied':
-            ui.notify('info', 'Someone is already there.', 2500);
-            return;
-          case 'cooldown':
-          case 'rate_limited':
-            return;
-          case 'not_implemented':
-            ui.notify('info', 'Nothing happens… yet.', 2200);
-            return;
-          default:
-            if (r.error) ui.notify('warning', `Can't do that right now.`, 2500);
-            return;
+        const it = getInteractable(r.id);
+        if (r.error === 'too_far' && !lastInteract.retried && it) {
+          // Prediction said we were in range; walk a little closer and try once more (quietly).
+          lastInteract.retried = true;
+          const res = walkToInteract(r.id);
+          if (res === 'now') setTimeout(() => actions.interact(r.id), 300);
+          return;
         }
+        const notice = interactErrorNotice(r.error, it?.kind, it?.name);
+        if (notice) ui.notify(notice.level, notice.text, notice.ttlMs);
+        return;
       }
       if (!r.ui) return;
       switch (r.ui.panel) {

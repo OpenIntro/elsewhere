@@ -63,6 +63,24 @@ const MOVE_BUDGET_CAP = CONFIG.movement.runSpeed * 0.6 + CONFIG.movement.distanc
 const AUTOSAVE_MS = 60_000;
 /** Join-time bookkeeping (memory, collective) waits this long so the first state sync is not delayed. */
 export const JOIN_SETTLE_MS = 1500;
+/** Moved players' positions are persisted this often (a hard kill loses at most this much movement). */
+export const POSITION_SAVE_MS = 2000;
+/** A client's resume hint is only used within this distance of the saved position. */
+const RESUME_HINT_MAX_M = 3;
+
+/**
+ * Where a returning player appears. The SAVED position is authoritative; the
+ * client's `resume` hint (untrusted) is only a tie-breaker when it is close to
+ * the saved spot and walkable.
+ */
+export function resumePosition(saved: { x: number; z: number } | null | undefined, hint?: unknown): { x: number; z: number } | null {
+  if (!saved || !isFiniteNumber(saved.x) || !isFiniteNumber(saved.z)) return null;
+  const h = hint as { x?: unknown; z?: unknown } | undefined;
+  if (h && isFiniteNumber(h.x) && isFiniteNumber(h.z) && Math.hypot(h.x - saved.x, h.z - saved.z) <= RESUME_HINT_MAX_M && isWalkable({ x: h.x, z: h.z })) {
+    return { x: h.x, z: h.z };
+  }
+  return isWalkable(saved) ? { x: saved.x, z: saved.z } : findNearestWalkable(saved, CONFIG.movement.playerRadius, 4);
+}
 /** A join after this much absence is remembered as a return. */
 const RETURN_AFTER_MS = 60 * 60_000;
 /** Close code sent on admin kick / ban (4000-4999 are application codes). */
@@ -79,6 +97,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   private joinCounter = 0;
   private joinedAt = new Map<string, number>();
   private kicked = new Set<string>();
+  /** Sessions that moved since the last position flush. */
+  private dirtyPos = new Set<string>();
   private animTimers = new Map<string, TimerHandle>();
 
   override async onCreate(): Promise<void> {
@@ -104,6 +124,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       }
     }, 1000 / CONFIG.network.tickRateHz);
     this.clock.setInterval(() => void this.saveAllProfiles(), AUTOSAVE_MS);
+    this.clock.setInterval(() => void this.flushPositions(), POSITION_SAVE_MS);
 
     for (const h of this.svc.hooks) await h.onRoomCreate?.(this.ctx);
     roomRegistry.add(this.ctx);
@@ -130,7 +151,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     return { profile };
   }
 
-  override async onJoin(client: Client, _options: unknown, auth?: ClientAuth): Promise<void> {
+  override async onJoin(client: Client, options: Partial<JoinOptions> | undefined, auth?: ClientAuth): Promise<void> {
     const profile = (client.auth as ClientAuth | undefined)?.profile ?? auth?.profile;
     if (!profile) throw new Error('unauthorized');
     const firstVisit = profile.visits === 0;
@@ -145,9 +166,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
     const spawn = pickSpawnPoint(this.joinCounter++);
     // Returning players resume where they left (if that spot is still walkable).
-    const last = profile.lastPosition;
-    const resumed = last && isFiniteNumber(last.x) && isFiniteNumber(last.z) ? (isWalkable(last) ? last : findNearestWalkable(last, CONFIG.movement.playerRadius, 4)) : null;
-    const pos = resumed ?? findNearestWalkable(spawn.position) ?? spawn.position;
+    const pos = resumePosition(profile.lastPosition, options?.resume) ?? findNearestWalkable(spawn.position) ?? spawn.position;
     const player = new PlayerState({
       id: client.sessionId,
       profileId: profile.id,
@@ -166,6 +185,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     for (const h of this.svc.hooks) await h.onPlayerPreJoin?.(this.ctx, client.sessionId);
     const facts = this.svc.collective.facts();
     const portal = this.state.objects.get('portal_arch');
+    const relations = await this.svc.moderation.listRelations(profile.id);
     this.sendTo(client.sessionId, S2C.welcome, {
       sessionId: client.sessionId,
       serverTime: Date.now(),
@@ -174,6 +194,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       profile: toProfileSummary(profile),
       blocked: [...profile.blocked],
       muted: [...profile.muted],
+      blockedProfiles: relations.blocked,
+      mutedProfiles: relations.muted,
       recentChat: this.svc.chat.recent(profile.id, this.roomId),
       world: {
         fountainStage: facts.fountainStage,
@@ -254,6 +276,28 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     } catch (err) {
       console.error('[WorldRoom] profile save failed', profile.id, err);
     }
+  }
+
+  /** Cheap, frequent position persistence (survives a hard kill): one UPDATE per moved player. */
+  private async flushPositions(): Promise<void> {
+    if (!this.dirtyPos.size) return;
+    const sids = [...this.dirtyPos];
+    this.dirtyPos.clear();
+    const t = Date.now();
+    await Promise.all(
+      sids.map(async (sid) => {
+        const profile = this.profiles.get(sid);
+        const p = this.state.players.get(sid);
+        if (!profile || !p) return;
+        profile.lastPosition = { x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 };
+        profile.lastSeenAt = t;
+        try {
+          await this.svc.persistence.profiles.savePosition(profile.id, profile.lastPosition, t);
+        } catch (err) {
+          console.error('[WorldRoom] position save failed', profile.id, err);
+        }
+      }),
+    );
   }
 
   private async saveAllProfiles(): Promise<void> {
@@ -365,6 +409,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     if (!((p.anim === 'dance' || p.anim === 'wave') && anim === 'idle')) p.anim = anim;
     const loc = locationAt(resolved)?.id ?? '';
     if (p.location !== loc) p.location = loc;
+    this.dirtyPos.add(sid);
 
     if (dist(resolved, claimed) > CONFIG.movement.correctionThreshold) {
       this.sendTo(sid, S2C.correction, { x: p.x, z: p.z, y: p.y, seq, reason });
@@ -401,6 +446,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     }
     const range = (target.radius ?? CONFIG.interaction.radius) + CONFIG.interaction.serverSlack;
     if (dist({ x: p.x, z: p.z }, target.position) > range) {
+      if (process.env.ELSEWHERE_DEBUG) console.log(`[WorldRoom] too_far ${p.name} ${target.id} player=(${p.x.toFixed(2)},${p.z.toFixed(2)}) target=(${target.position.x.toFixed(2)},${target.position.z.toFixed(2)}) d=${dist({ x: p.x, z: p.z }, target.position).toFixed(2)} range=${range.toFixed(2)}`);
       this.sendTo(sid, S2C.interactResult, { id: target.id, ok: false, error: 'too_far' });
       return;
     }

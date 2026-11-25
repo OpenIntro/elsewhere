@@ -51,4 +51,30 @@ describe('gazette', { timeout: 60_000 }, () => {
     expect(await g.compileDue()).toBeNull();
     await p.close();
   });
+
+  it('young world: the first issue appears soon after a few significant real events (not after a full interval), only once', async () => {
+    const p = createPersistence({ dataDir: 'memory://' });
+    await p.init();
+    const m = createMemory(p);
+    const g = createGazette(p, { intervalMs: 6 * 3_600_000, clock, memory: m, earlyEvents: 3, earlyDelayMs: 20 });
+    g.start();
+    const wait = () => new Promise((r) => setTimeout(r, 150));
+    await m.record({ kind: 'player_first_visit', actors: [{ profileId: 'a', name: 'Alice' }], significance: 1 });
+    await m.record({ kind: 'bell_rung', actors: [{ profileId: 'a', name: 'Alice' }], significance: 0 });
+    await m.record({ kind: 'player_first_visit', actors: [{ profileId: 'b', name: 'Bob' }], significance: 1 });
+    await wait();
+    expect(await g.list(5)).toEqual([]); // 2 significant events: not yet
+    const f = await m.record({ kind: 'fountain_transformed', actors: [{ profileId: 'a', name: 'Alice' }, { profileId: 'b', name: 'Bob' }], significance: 3, data: { stage: 1, contributions: 2, distinct: 2 } });
+    await wait();
+    const issues = await g.list(5);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.stats.eventsRecorded).toBe(4);
+    expect(issues[0]!.articles.some((a) => a.eventIds.includes(f.id))).toBe(true);
+    // After the first issue the normal cadence applies: no more early issues.
+    for (let i = 0; i < 4; i++) await m.record({ kind: 'player_first_visit', actors: [{ profileId: `x${i}`, name: `X${i}` }], significance: 1 });
+    await wait();
+    expect(await g.list(5)).toHaveLength(1);
+    g.stop();
+    await p.close();
+  });
 });

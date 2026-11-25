@@ -138,4 +138,35 @@ describe('chat + moderation', { timeout: 60_000 }, () => {
     expect(await w2.persistence.sanctions.active(w.clock.t, pid)).toEqual([]);
     await w.close();
   });
+
+  it('block/unblock/mute/unmute by profileId work for offline players; lists carry names', async () => {
+    const w = await makeWorld();
+    const a = await w.join('Alice', 0, 10);
+    let b = await w.join('Bob', 1, 10);
+    const bobProfile = w.ctx.getProfile(b)!;
+    await w.moderation.block(w.ctx, a, { target: b }); // by session id still works
+    await w.moderation.mute(w.ctx, a, { target: b });
+    await w.leave(b); // Bob goes offline
+    const alice = w.ctx.getProfile(a)!.id;
+    expect(await w.moderation.listRelations(alice)).toEqual({ blocked: [{ profileId: bobProfile.id, name: 'Bob' }], muted: [{ profileId: bobProfile.id, name: 'Bob' }] });
+    w.clearSent();
+    await w.moderation.unblock(w.ctx, a, { profileId: bobProfile.id });
+    await w.moderation.unmute(w.ctx, a, { profileId: bobProfile.id });
+    expect(w.received(a, 'moderation')).toEqual([
+      { action: 'unblocked', targetProfileId: bobProfile.id, targetName: 'Bob' },
+      { action: 'unmuted', targetProfileId: bobProfile.id, targetName: 'Bob' },
+    ]);
+    expect(await w.persistence.relations.list(alice)).toEqual({ blocked: [], muted: [] });
+    // Blocking an offline profile by id also works; unknown ids are rejected.
+    await w.moderation.block(w.ctx, a, { profileId: bobProfile.id });
+    expect((await w.moderation.listRelations(alice)).blocked).toEqual([{ profileId: bobProfile.id, name: 'Bob' }]);
+    await w.moderation.block(w.ctx, a, { profileId: 'g_nobody' });
+    expect(w.received(a, 'error').at(-1)).toMatchObject({ code: 'not_found' });
+    await w.moderation.unblock(w.ctx, a, { profileId: bobProfile.id });
+    // Bob returns: his chat reaches Alice again.
+    b = await w.join('Bob', 1, 10, (await w.persistence.profiles.get(bobProfile.id))!);
+    w.chat.handleChat(w.ctx, b, { channel: 'global', text: 'back again' });
+    expect(texts(w.received(a, 'chat'))).toContain('back again');
+    await w.close();
+  });
 });

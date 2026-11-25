@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { randomAppearance, randomDisplayName } from '@elsewhere/shared';
 import { audio } from './audio/index.js';
 import { AudioDirector } from './audio/AudioDirector.js';
@@ -6,7 +6,7 @@ import { GameCanvas } from './game/GameCanvas.js';
 import { installDebugHook, net } from './net/index.js';
 import { useGameStore } from './state/gameStore.js';
 import { useUiStore } from './state/uiStore.js';
-import { Chat, Hud, Onboarding, Wordmark, enter, hasSavedSession, installUiBridge, resumeSession, toasts, useUiGlobals, type EnterRequest } from './ui/index.js';
+import { Chat, Hud, Wordmark, enter, hasSavedSession, installUiBridge, resumeSession, toasts, useUiGlobals, type EnterRequest } from './ui/index.js';
 
 /**
  * App phases (useUiStore.phase):
@@ -17,6 +17,9 @@ import { Chat, Hud, Onboarding, Wordmark, enter, hasSavedSession, installUiBridg
  *   playing    → HUD + chat over the world.
  */
 let flowStarted = false;
+
+// Only first-time visitors need onboarding (and its customization screen): load it on demand.
+const Onboarding = lazy(() => import('./ui/Onboarding.js').then((m) => ({ default: m.Onboarding })));
 
 /** Shown once the arrival veil has lifted. */
 function welcomeBack(name: string): void {
@@ -134,7 +137,9 @@ export function App() {
           {kicked ? <Removed reason={kicked.reason} /> : null}
         </>
       ) : phase === 'onboarding' ? (
-        <Onboarding onEnter={onEnter} />
+        <Suspense fallback={<Loading error={null} onRetry={() => undefined} />}>
+          <Onboarding onEnter={onEnter} />
+        </Suspense>
       ) : (
         <Loading
           error={resumeError}

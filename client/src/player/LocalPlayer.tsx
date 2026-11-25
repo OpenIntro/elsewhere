@@ -130,6 +130,8 @@ function locomotionFor(speed: number, prev: LocomotionAnim): LocomotionAnim {
 }
 
 const ONE_SHOTS: readonly AnimState[] = ['wave', 'dance', 'interact'];
+/** One-shots that layer over the seated pose (the Character keeps the sit base for these). */
+const SEATED_ONE_SHOTS: readonly AnimState[] = ['wave', 'interact'];
 
 export function LocalPlayer() {
   const sessionId = useGameStore((s) => s.sessionId);
@@ -374,9 +376,10 @@ export function LocalPlayer() {
       g.rotation.y = lp.rot;
     }
 
-    // Display anim: seat › moving › server one-shot (wave/dance) › idle.
+    // Display anim: seat (a seated wave/interact plays as the upper-body one-shot over the sit base,
+    // see characters/animation.ts) › moving › server one-shot (wave/dance) › idle.
     const serverAnim = info?.anim ?? 'idle';
-    const display: AnimState = seat ? 'sit' : speed > 0.3 ? lp.anim : ONE_SHOTS.includes(serverAnim) ? serverAnim : lp.anim;
+    const display: AnimState = seat ? (SEATED_ONE_SHOTS.includes(serverAnim) ? serverAnim : 'sit') : speed > 0.3 ? lp.anim : ONE_SHOTS.includes(serverAnim) ? serverAnim : lp.anim;
     if (display !== animRef.current) {
       animRef.current = display;
       setAnim(display);

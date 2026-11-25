@@ -129,6 +129,7 @@ export async function logout(): Promise<void> {
     /* ignore: we forget the token locally either way */
   }
   safeStorage.remove(STORAGE_KEYS.session);
+  safeStorage.remove('elsewhere.chat.v1');
   setAuthToken(null);
   await net.disconnect().catch(() => undefined);
   location.reload();

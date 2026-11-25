@@ -51,6 +51,8 @@ export const ENV = {
   /** Trust X-Forwarded-For (behind a reverse proxy) for per-IP rate limits. */
   trustProxy: process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true',
   gazetteIntervalMs: num('GAZETTE_INTERVAL_MINUTES', CONFIG.gazette.issueIntervalMs / 60_000) * 60_000,
+  gazetteEarlyEvents: Math.max(1, Math.round(num('GAZETTE_EARLY_EVENTS', CONFIG.gazette.earlyIssueSignificantEvents))),
+  gazetteEarlyDelayMs: Math.max(0, num('GAZETTE_EARLY_DELAY_SECONDS', CONFIG.gazette.earlyIssueDelayMs / 1000)) * 1000,
   /** Collective Reality threshold overrides (testing / small communities). */
   collective: {
     fountainStages: numList('FOUNTAIN_STAGES', CONFIG.collective.fountainStages),

@@ -4,9 +4,10 @@
  * Chat messages are de-duplicated by id so it is safe if net/ also pushes them.
  */
 import { C2S, S2C, type ChatMessage, type C2SType } from '@elsewhere/shared';
-import { net } from '../net/index.js';
+import { net, registerDebugSection } from '../net/index.js';
 import { useGameStore } from '../state/gameStore.js';
 import { useUiStore } from '../state/uiStore.js';
+import { STORAGE_KEYS, safeStorage } from '../state/storage.js';
 import { useChatUi, useSocialUi } from './localState.js';
 import { toasts } from './toasts.js';
 
@@ -45,19 +46,69 @@ function friendlyError(code: string, inResponseTo?: C2SType): string | null {
   return null;
 }
 
+/** Recent public chat kept across reloads (whispers are never written to disk). */
+const CHAT_CACHE_KEY = 'elsewhere.chat.v1';
+const CHAT_CACHE_PER_CHANNEL = 20;
+
+export function clearChatCache(): void {
+  safeStorage.remove(CHAT_CACHE_KEY);
+}
+
+function restoreChat(): void {
+  if (!safeStorage.get(STORAGE_KEYS.session)) return clearChatCache();
+  try {
+    const saved = JSON.parse(safeStorage.get(CHAT_CACHE_KEY) ?? '[]') as ChatMessage[];
+    if (!Array.isArray(saved)) return;
+    for (const m of saved.sort((a, b) => a.ts - b.ts)) {
+      if (m && typeof m.id === 'string' && (m.channel === 'global' || m.channel === 'proximity')) pushChatOnce(m);
+    }
+    const last = saved.reduce((t, m) => Math.max(t, m.ts ?? 0), 0);
+    if (last) for (const k of ['town', 'nearby']) useChatUi.getState().markRead(k, last);
+  } catch {
+    clearChatCache();
+  }
+}
+
+function persistChat(log: readonly ChatMessage[]): void {
+  const keep = (ch: ChatMessage['channel']) => log.filter((m) => m.channel === ch && !m.id.startsWith('local-')).slice(-CHAT_CACHE_PER_CHANNEL);
+  safeStorage.set(CHAT_CACHE_KEY, JSON.stringify([...keep('global'), ...keep('proximity')]));
+}
+
+/** Raw S2C.chat as received (before any client-side mute/block hiding) — exposed read-only to tests. */
+const rawChat: { id: string; channel: string; fromProfileId: string; text: string }[] = [];
+
 export function installUiBridge(): () => void {
   const offs: (() => void)[] = [];
+  registerDebugSection('ui', () => {
+    const ui = useUiStore.getState();
+    return { phase: ui.phase, panel: ui.panel?.kind ?? null, chatOpen: ui.chatOpen, rawChat: rawChat.slice(-30) };
+  });
+  restoreChat();
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  offs.push(
+    useUiStore.subscribe((s, prev) => {
+      if (s.chatLog === prev.chatLog) return;
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => persistChat(useUiStore.getState().chatLog), 800);
+    }),
+    () => {
+      if (saveTimer) clearTimeout(saveTimer);
+    },
+  );
   const game = useGameStore.getState;
   const social = useSocialUi.getState;
 
   offs.push(
     net.on(S2C.welcome, (w) => {
+      for (const r of [...(w.blockedProfiles ?? []), ...(w.mutedProfiles ?? [])]) if (r.name) social().rememberName(r.profileId, r.name);
       for (const m of w.recentChat ?? []) pushChatOnce(m);
       // History you arrive to isn't "unread".
       const last = (w.recentChat ?? []).reduce((t, m) => Math.max(t, m.ts), 0);
       if (last) for (const k of ['town', 'nearby']) useChatUi.getState().markRead(k, last);
     }),
     net.on(S2C.chat, (m) => {
+      rawChat.push({ id: m.id, channel: m.channel, fromProfileId: m.fromProfileId, text: m.text });
+      if (rawChat.length > 60) rawChat.splice(0, rawChat.length - 60);
       pushChatOnce(m);
       if (m.fromProfileId && m.fromName) social().rememberName(m.fromProfileId, m.fromName);
       const ui = useUiStore.getState();

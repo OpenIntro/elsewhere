@@ -46,6 +46,9 @@ export async function initServices(opts: InitOptions = {}): Promise<ServerServic
   const interactions = createInteractions({ persistence, memory, collective, moderation });
   const gazette = createGazette(persistence, {
     intervalMs: ENV.gazetteIntervalMs,
+    memory,
+    earlyEvents: ENV.gazetteEarlyEvents,
+    earlyDelayMs: ENV.gazetteEarlyDelayMs,
     clock: () => ({ epochMs: collective.facts().clockEpochMs, dayLengthMs: ENV.dayLengthMs, startTimeOfDay: CONFIG.clock.startTimeOfDay }),
   });
   gazette.start();

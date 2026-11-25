@@ -10,11 +10,11 @@
  */
 import { OrthographicCamera } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import type { OrthographicCamera as ThreeOrtho } from 'three';
 import { WORLD_BOUNDS, clamp, groundHeight } from '@elsewhere/shared';
 import { runtime } from '../state/runtime.js';
-import { ELEVATION, ROTATE_MS, cameraRuntime, easeInOut, runtimeFocus, useCameraStore } from './camera.js';
+import { ELEVATION, ROTATE_MS, cameraRuntime, easeInOut, runtimeFocus, useCameraStore, viewportScaleFor } from './camera.js';
 
 /** Distance from focus to camera (orthographic: only affects clipping). */
 const DISTANCE = 70;
@@ -27,6 +27,24 @@ export function CameraRig() {
   const cam = useRef<ThreeOrtho>(null);
   const size = useThree((s) => s.size);
   const focus = useRef({ x: 0, y: 0, z: 0, lx: 0, lz: 0, init: false });
+
+  // runtime.view must be valid before the first frame and immediately after a resize
+  // (shadow / culling consumers may run before this rig's useFrame in a frame).
+  useLayoutEffect(() => {
+    const v = runtime.view;
+    cameraRuntime.viewportScale = viewportScaleFor(size.width, size.height);
+    const zoom = cameraRuntime.zoom * cameraRuntime.viewportScale;
+    v.zoom = zoom;
+    v.halfWidth = size.width / 2 / zoom;
+    v.halfHeight = size.height / 2 / zoom / Math.sin(ELEVATION);
+    v.yaw = cameraRuntime.yaw;
+    const lp = runtime.localPlayer;
+    if (!focus.current.init && lp.ready) {
+      v.focusX = lp.x;
+      v.focusY = lp.y;
+      v.focusZ = lp.z;
+    }
+  }, [size.width, size.height]);
 
   useFrame((_, rawDt) => {
     const c = cam.current;
@@ -44,8 +62,7 @@ export function CameraRig() {
     // Zoom: ease in log space so zooming feels uniform at every level.
     const zk = 1 - Math.exp(-dt * 12);
     cameraRuntime.zoom = Math.exp(Math.log(cameraRuntime.zoom) + (Math.log(cs.zoom) - Math.log(cameraRuntime.zoom)) * zk);
-    const minDim = Math.max(1, Math.min(size.width, size.height));
-    cameraRuntime.viewportScale = clamp(minDim / 760, 0.55, 1.35);
+    cameraRuntime.viewportScale = viewportScaleFor(size.width, size.height);
     const zoom = cameraRuntime.zoom * cameraRuntime.viewportScale;
     const halfW = size.width / 2 / zoom;
     const halfH = size.height / 2 / zoom / Math.sin(ELEVATION);

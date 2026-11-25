@@ -1,7 +1,7 @@
 /** Interaction result panels: signs, inspect text, discoveries, mailbox notes. */
 import { useEffect, useId, useState } from 'react';
-import { C2S, CONFIG, getInteractable } from '@elsewhere/shared';
-import { net } from '../../net/index.js';
+import { CONFIG, getInteractable } from '@elsewhere/shared';
+import { actions } from '../../net/index.js';
 import { useGameStore } from '../../state/gameStore.js';
 import { useSocialUi } from '../localState.js';
 import { Empty, Sheet, Spinner } from '../primitives.js';
@@ -42,7 +42,7 @@ export function MailboxPanel({ mailboxId, canSend, onClose }: { mailboxId: strin
 
   useEffect(() => {
     setWaiting(true);
-    net.send(C2S.mailRead, { mailboxId });
+    actions.mailRead(mailboxId);
     const t = setTimeout(() => setWaiting(false), 4000);
     return () => clearTimeout(t);
   }, [mailboxId]);
@@ -55,10 +55,10 @@ export function MailboxPanel({ mailboxId, canSend, onClose }: { mailboxId: strin
     e.preventDefault();
     const t = text.trim();
     if (!t) return;
-    net.send(C2S.mailSend, { mailboxId, text: t });
+    actions.mailSend(mailboxId, t);
     setText('');
     setSentAt(Date.now());
-    setTimeout(() => net.send(C2S.mailRead, { mailboxId }), 600);
+    setTimeout(() => actions.mailRead(mailboxId), 600);
   };
 
   const notes = box?.notes ?? [];

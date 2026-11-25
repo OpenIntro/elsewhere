@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILDINGS, CONFIG, buildingLocal, createCollisionWorld, isWalkable, type Collider, type CollisionWorld, type Vec2 } from '@elsewhere/shared';
+import { BUILDINGS, CONFIG, FENCES, INTERACTABLES, buildingLocal, createCollisionWorld, isWalkable, type Collider, type CollisionWorld, type Vec2 } from '@elsewhere/shared';
 import { NavGrid, findPath, pathLength } from '../src/player/pathfinding.js';
 
 const R = CONFIG.movement.playerRadius;
@@ -113,5 +113,42 @@ describe('pathfinding (real island)', () => {
     expect(res.exact).toBe(false);
     expect(isWalkable(res.goal)).toBe(true);
     assertWalkable(from, res.points);
+  });
+
+  it('reaches every building door from the plaza (cottages through their garden gates)', () => {
+    const from = { x: 0, z: -9 };
+    const failures: string[] = [];
+    for (const b of BUILDINGS) {
+      const door = INTERACTABLES.find((i) => i.id === b.doorId);
+      expect(door, `${b.id} door`).toBeDefined();
+      const radius = (door!.radius ?? CONFIG.interaction.radius) - 0.35;
+      const res = findPath(grid, from, door!.position);
+      if (!res) {
+        failures.push(`${b.id}: no path`);
+        continue;
+      }
+      const end = res.points.at(-1) ?? from;
+      const d = Math.hypot(end.x - door!.position.x, end.z - door!.position.z);
+      if (d > radius) failures.push(`${b.id}: path ends ${d.toFixed(2)} m from the door (needs <= ${radius.toFixed(2)})`);
+      assertWalkable(from, res.points);
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('treats 2 m fence gate gaps as passable (grid cells in the gate are walkable)', () => {
+    let gates = 0;
+    for (const b of BUILDINGS) {
+      if (!FENCES.some((f) => f.buildingId === b.id)) continue;
+      gates++;
+      // Gate centre on the front fence line (decor.ts: front run at local z = depth/2 + 3, gap |x| < 1).
+      const mid = buildingLocal(b, 0, b.depth / 2 + 3.0);
+      expect(isWalkable(mid), `${b.id} gate centre walkable`).toBe(true);
+      expect(grid.walkableAt(mid.x, mid.z), `${b.id} gate centre on the nav grid`).toBe(true);
+      // Walking straight through the gate (outside → inside the garden) is possible on the grid.
+      const outside = buildingLocal(b, 0, b.depth / 2 + 4.5);
+      const inside = buildingLocal(b, 0, b.depth / 2 + 1.5);
+      if (isWalkable(outside) && isWalkable(inside)) expect(grid.lineOfSight(outside.x, outside.z, inside.x, inside.z), `${b.id} straight through the gate`).toBe(true);
+    }
+    expect(gates).toBeGreaterThan(0);
   });
 });

@@ -12,7 +12,7 @@
  *    automatic temporary chat mute (CONFIG.moderation).
  */
 import { randomUUID } from 'node:crypto';
-import { CONFIG, type ChatMessage, type ReportPayload, type ReportReason, type TargetPayload } from '@elsewhere/shared';
+import { CONFIG, type ChatMessage, type RelationEntry, type ReportPayload, type ReportReason, type TargetPayload } from '@elsewhere/shared';
 import type { PersistenceService, SanctionKind, StoredSanction } from '../persistence/index.js';
 import { roomRegistry, type RoomContext, type RoomHooks } from '../rooms/RoomContext.js';
 import { RateLimiter } from './rateLimit.js';
@@ -62,6 +62,8 @@ export interface ModerationService extends RoomHooks {
   /** WorldRoom calls this on every rate-limit rejection; repeated abuse → automatic chat mute. */
   noteRateLimited(ctx: RoomContext, sessionId: string, action: string): void;
   sanction(input: SanctionInput): Promise<StoredSanction>;
+  /** The owner's blocked / muted profiles with current display names. */
+  listRelations(ownerProfileId: string): Promise<{ blocked: RelationEntry[]; muted: RelationEntry[] }>;
   revokeSanction(id: string): Promise<boolean>;
 }
 
@@ -86,24 +88,51 @@ export function createModeration(persistence: PersistenceService, options: Moder
     return r;
   };
 
-  function resolveTarget(ctx: RoomContext, sessionId: string, payload: TargetPayload, type: 'block' | 'unblock' | 'mute' | 'unmute' | 'report') {
+  /**
+   * Resolve `{ profileId }` (works for offline players) or `{ target: sessionId }` (players in this room).
+   * Unblock/unmute of a profile id that is on the caller's list always resolves, even if the profile is gone.
+   */
+  async function resolveTarget(ctx: RoomContext, sessionId: string, payload: TargetPayload, type: 'block' | 'unblock' | 'mute' | 'unmute' | 'report') {
     const me = ctx.getProfile(sessionId);
-    const target = typeof payload.target === 'string' ? ctx.getPlayer(payload.target) : undefined;
     if (!me) return null;
-    if (!target) {
-      ctx.error(sessionId, 'not_found', 'That player is not here', type);
+    let targetProfileId: string | undefined;
+    let targetName = '';
+    const pid = typeof payload.profileId === 'string' && payload.profileId.length > 0 && payload.profileId.length <= 80 ? payload.profileId : undefined;
+    if (pid) {
+      const online = ctx.sessionForProfile(pid);
+      const live = online ? ctx.getPlayer(online) : undefined;
+      if (live) {
+        targetProfileId = pid;
+        targetName = live.name;
+      } else {
+        const stored = await persistence.profiles.get(pid);
+        const listed = (type === 'unblock' && me.blocked.includes(pid)) || (type === 'unmute' && me.muted.includes(pid));
+        if (stored || listed) {
+          targetProfileId = pid;
+          targetName = stored?.displayName ?? '';
+        }
+      }
+    } else if (typeof payload.target === 'string') {
+      const target = ctx.getPlayer(payload.target);
+      if (target) {
+        targetProfileId = target.profileId;
+        targetName = target.name;
+      }
+    }
+    if (!targetProfileId) {
+      ctx.error(sessionId, 'not_found', pid ? 'No such player' : 'That player is not here', type);
       return null;
     }
-    if (target.profileId === me.id) {
+    if (targetProfileId === me.id) {
       ctx.error(sessionId, 'bad_request', 'You cannot do that to yourself', type);
       return null;
     }
-    return { me, targetProfileId: target.profileId, targetName: target.name };
+    return { me, targetProfileId, targetName };
   }
 
   async function setRelation(ctx: RoomContext, sessionId: string, payload: TargetPayload, kind: 'block' | 'mute', on: boolean): Promise<void> {
     const type = on ? kind : kind === 'block' ? 'unblock' : 'unmute';
-    const r = resolveTarget(ctx, sessionId, payload, type);
+    const r = await resolveTarget(ctx, sessionId, payload, type);
     if (!r) return;
     const cache = relFor(r.me.id);
     const set = kind === 'block' ? cache.blocked : cache.muted;
@@ -159,7 +188,7 @@ export function createModeration(persistence: PersistenceService, options: Moder
     unmute: (ctx, sid, p) => setRelation(ctx, sid, p, 'mute', false),
 
     async report(ctx, sessionId, payload) {
-      const r = resolveTarget(ctx, sessionId, payload, 'report');
+      const r = await resolveTarget(ctx, sessionId, payload as TargetPayload, 'report');
       if (!r) return;
       const reason: ReportReason = REPORT_REASONS.includes(payload.reason) ? payload.reason : 'other';
       const details = sanitizeText(payload.details).slice(0, 500);
@@ -231,6 +260,14 @@ export function createModeration(persistence: PersistenceService, options: Moder
         }
       }
       return s;
+    },
+
+    async listRelations(owner) {
+      const r = await persistence.relations.list(owner);
+      const names = new Map<string, string>();
+      for (const id of new Set([...r.blocked, ...r.muted])) names.set(id, (await persistence.profiles.get(id))?.displayName ?? '');
+      const entry = (profileId: string): RelationEntry => ({ profileId, name: names.get(profileId) ?? '' });
+      return { blocked: r.blocked.map(entry), muted: r.muted.map(entry) };
     },
 
     async revokeSanction(id) {

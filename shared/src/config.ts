@@ -163,6 +163,13 @@ export const CONFIG = {
     maxArticlesPerIssue: 8,
     /** An issue needs at least this many events in its period; otherwise no issue is published. */
     minEventsForIssue: 1,
+    /**
+     * Young world: until the FIRST issue exists, it is compiled earlyIssueDelayMs after this many
+     * significant (significance >= 1) real events have been recorded, instead of waiting a full
+     * interval. Server overrides: GAZETTE_EARLY_EVENTS, GAZETTE_EARLY_DELAY_SECONDS.
+     */
+    earlyIssueSignificantEvents: 3,
+    earlyIssueDelayMs: 60_000,
   },
 
   profile: {

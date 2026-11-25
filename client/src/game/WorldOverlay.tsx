@@ -25,6 +25,7 @@ import { CLOTHING_COLORS, CONFIG, colorHex } from '@elsewhere/shared';
 import { useGameStore } from '../state/gameStore.js';
 import { runtime } from '../state/runtime.js';
 import { useSettingsStore } from '../state/settingsStore.js';
+import { ZOOM_DEFAULT, cameraRuntime } from '../player/camera.js';
 import { perfAdd, perfFrame } from './perf.js';
 import { REACTION_MS, bubbles, installSocialFeed, pruneSocial, reactions } from './social.js';
 
@@ -243,9 +244,10 @@ export function WorldOverlay() {
     const view = runtime.view;
     const refX = view.free ? view.focusX : lp.x;
     const refZ = view.free ? view.focusZ : lp.z;
-    const zoom = view.zoom;
-    const scale = Math.min(1.08, Math.max(0.72, zoom / 38));
-    const farOut = zoom < 20;
+    // Label size follows the user's zoom relative to the default framing (not the viewport scale).
+    const rel = cameraRuntime.zoom / ZOOM_DEFAULT;
+    const scale = Math.min(1.08, Math.max(0.72, 0.55 + rel * 0.45));
+    const farOut = rel < 0.5;
     const nameRange = farOut ? 10 : Math.min(34, Math.max(12, view.halfWidth * 0.95));
     const vec = v.current;
     const order = st.order;

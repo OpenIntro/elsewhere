@@ -69,6 +69,84 @@ async function noOverflow(page, where) {
   const [sw, iw] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
   if (sw > iw) throw new Error(`horizontal overflow at ${where}: ${sw} > ${iw}`);
 }
+
+async function query(page, name, ...args) {
+  return page.evaluate(([n, a]) => window.__ELSEWHERE__?.query(n, ...a) ?? null, [name, args]);
+}
+async function uiDebug(page) {
+  return (await snapshot(page))?.ui ?? null;
+}
+async function closeSheet(page) {
+  for (let i = 0; i < 3 && (await page.$('[data-testid=sheet-close]')); i++) {
+    await page.click('[data-testid=sheet-close]').catch(() => undefined);
+    await page.waitForTimeout(200);
+  }
+}
+/**
+ * Real input: click the interactable in the 3D view (the player walks there and
+ * interacts). If it is off-screen, click the ground toward it first.
+ */
+async function goInteract(page, id, resultSelector, tries = 30) {
+  const it = await query(page, 'interactable', id);
+  if (!it) throw new Error(`no interactable ${id}`);
+  const vp = page.viewportSize();
+  for (let i = 0; i < tries; i++) {
+    await closeSheet(page);
+    const ground = await query(page, 'worldToScreen', it.position.x, it.position.z);
+    const inView = ground && ground.x > 50 && ground.x < vp.width - 50 && ground.y > 110 && ground.y < vp.height - 130;
+    if (inView) {
+      for (const dy of [0, 8, 16, 24, 32, 40]) {
+        const pk = await query(page, 'pick', ground.x, ground.y - dy, 'mouse');
+        if (pk?.kind === 'interactable' && pk.id === id) {
+          await page.mouse.click(ground.x, ground.y - dy);
+          try {
+            if (typeof resultSelector === 'function') await resultSelector();
+            else await page.waitForSelector(resultSelector, { timeout: 15000 });
+            return;
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+    // Walk toward it: click the ground part-way from me to the target.
+    const s = await snapshot(page);
+    const me = await query(page, 'worldToScreen', s.local.x, s.local.z);
+    if (!me || !ground) throw new Error('cannot project positions');
+    const dx = ground.x - me.x;
+    const dy = ground.y - me.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const step = Math.min(len, Math.min(vp.width, vp.height) * 0.3);
+    const tx = Math.max(60, Math.min(vp.width - 60, me.x + (dx / len) * step));
+    const ty = Math.max(120, Math.min(vp.height - 140, me.y + (dy / len) * step));
+    await page.mouse.click(tx, ty);
+    await page.waitForTimeout(1600);
+  }
+  throw new Error(`could not reach/interact with ${id}`);
+}
+/** Click another player in the 3D view (opens the player card through the player menu). */
+async function clickPlayer(page, sessionId) {
+  for (let i = 0; i < 20; i++) {
+    const s = await snapshot(page);
+    const p = s.players.find((q) => q.id === sessionId);
+    if (p) {
+      const at = await query(page, 'worldToScreen', p.x, p.z);
+      if (at) {
+        for (const dy of [30, 40, 20, 50, 12]) {
+          const pk = await query(page, 'pick', at.x, at.y - dy, 'mouse');
+          if (pk?.kind === 'player' && pk.id === sessionId) {
+            await page.mouse.click(at.x, at.y - dy);
+            await page.waitForSelector('[data-testid=player-card]', { timeout: 10000 });
+            return;
+          }
+        }
+      }
+    }
+    await page.waitForTimeout(500);
+  }
+  throw new Error('could not click the other player');
+}
+
 async function shot(page, name) {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
@@ -197,6 +275,147 @@ try {
     await b.close({ runBeforeUnload: true });
   } catch (err) {
     failStep('chat between clients', err);
+  }
+
+  // 5b. Social + world interactions with a second client (real input in the 3D view).
+  try {
+    const ctxB = await newContext({ viewport: { width: 960, height: 640 } });
+    const b = await ctxB.newPage();
+    watch(b, 'B2');
+    await b.goto(withQuery(base, { autojoin: '1' }));
+    await b.waitForSelector('[data-testid=hud]', { timeout: T });
+    const sb = await waitSnap(b, (x) => x.connection === 'connected' && x.players.length >= 2, 'B2 connected');
+    const sa = await waitSnap(a, (x) => x.players.some((p) => p.id === sb.sessionId), 'A sees B2');
+    const bProfile = await b.evaluate(() => window.__ELSEWHERE__.snapshot().players.find((p) => p.id === window.__ELSEWHERE__.snapshot().sessionId)?.name);
+    await closeSheet(a);
+
+    // Player card from the world → wave + greet.
+    await clickPlayer(a, sb.sessionId);
+    await a.click('[data-testid=pc-wave]');
+    await a.click('[data-testid=player-card] .action:has-text("Greet")');
+    await shot(a, 'e2e-06-playercard');
+    pass('open another player’s card by clicking them → wave, greet', bProfile ?? '');
+
+    // Report → sent state (server ack).
+    await a.click('[data-testid=pc-report]');
+    await a.click('[data-testid=report-form] .radio:has-text("Spam")');
+    await a.fill('[data-testid=report-form] textarea', 'e2e test report — please ignore');
+    await a.click('[data-testid=report-submit]');
+    await a.waitForSelector('[data-testid=report-sent]', { timeout: 15000 });
+    pass('report submitted → “Report received”');
+    await closeSheet(a);
+
+    const say = async (text) => {
+      if (!(await b.$('[data-testid=chat]'))) await b.click('[data-testid=nav-chat]');
+      await b.click('[data-testid=chat-tab-town]');
+      await b.fill('[data-testid=chat-input]', text);
+      await b.press('[data-testid=chat-input]', 'Enter');
+      await b.waitForSelector(`[data-testid=chat-log] >> text=${text}`, { timeout: 10000 });
+      await b.waitForTimeout(1500);
+    };
+    const aGot = async (text) => (await uiDebug(a))?.rawChat?.some((m) => m.text === text) ?? false;
+    const aShows = async (text) => !!(await a.$(`[data-testid=chat-log] >> text=${text}`));
+
+    // Mute: server stops delivering B's lines to A.
+    await clickPlayer(a, sb.sessionId);
+    await a.click('[data-testid=player-card] .action:has-text("Mute")');
+    await a.waitForSelector('[data-testid=player-card] .action:has-text("Unmute")', { timeout: 10000 });
+    await closeSheet(a);
+    const muted = `muted line ${Date.now() % 10000}`;
+    await say(muted);
+    if (await aGot(muted)) throw new Error('server delivered a muted player’s message');
+    // Unmute from Settings (by profile id).
+    await a.click('[data-testid=nav-settings]');
+    await a.click('[data-testid=list-muted] button:has-text("Unmute")');
+    await a.waitForSelector('[data-testid=list-muted]', { state: 'detached', timeout: 10000 });
+    await closeSheet(a);
+    pass('mute → server stops delivering; unmute from Settings list');
+
+    // Block (with confirmation): not delivered, not shown.
+    await clickPlayer(a, sb.sessionId);
+    await a.click('[data-testid=player-card] .action:has-text("Block")');
+    await a.click('[data-testid=confirm-block]');
+    await a.waitForSelector('[data-testid=player-card] .action:has-text("Unblock")', { timeout: 10000 });
+    await closeSheet(a);
+    const blocked = `blocked line ${Date.now() % 10000}`;
+    await say(blocked);
+    await a.click('[data-testid=nav-chat]');
+    await a.click('[data-testid=chat-tab-town]');
+    if ((await aGot(blocked)) || (await aShows(blocked))) throw new Error('blocked player’s message reached A');
+    await a.click('[data-testid=chat-close]');
+    await a.click('[data-testid=nav-settings]');
+    await shot(a, 'e2e-07-blocked-list');
+    await a.click('[data-testid=list-blocked] button:has-text("Unblock")');
+    await a.waitForSelector('[data-testid=list-blocked]', { state: 'detached', timeout: 10000 });
+    await closeSheet(a);
+    const after = `after unblock ${Date.now() % 10000}`;
+    await say(after);
+    if (!(await aGot(after))) throw new Error('message not delivered after unblock');
+    pass('block (confirmed) → not delivered or shown; unblock from Settings → delivered again');
+
+    // World interactions (A walks there by clicking in the world).
+    await goInteract(a, 'sign_welcome', '[data-testid=panel-sign]');
+    await shot(a, 'e2e-08-sign');
+    pass('sign → reading panel');
+    await goInteract(a, 'fountain', '[data-testid=panel-inspect], [data-testid=panel-discovery]');
+    await shot(a, 'e2e-09-fountain');
+    pass('fountain → inspect panel');
+
+    // Mailbox: A leaves a note, B reads it.
+    const note = `Hello from the e2e test ${Date.now() % 100000}`;
+    await goInteract(a, 'mailbox_post_office', '[data-testid=panel-mailbox]');
+    await a.fill('[data-testid=panel-mailbox] textarea', note);
+    await a.click('[data-testid=panel-mailbox] button[type=submit]');
+    await a.waitForSelector(`[data-testid=panel-mailbox] >> text=${note}`, { timeout: 15000 });
+    await closeSheet(b);
+    await b.click('[data-testid=chat-close]').catch(() => undefined);
+    await goInteract(b, 'mailbox_post_office', '[data-testid=panel-mailbox]');
+    await b.waitForSelector(`[data-testid=panel-mailbox] >> text=${note}`, { timeout: 15000 });
+    await shot(b, 'e2e-10-mailbox-b');
+    pass('mailbox: A leaves a note → B reads it');
+
+    // Pick up an item → Things → set it down.
+    await goInteract(a, 'pickup_apple', async () => {
+      // Done when Things shows the apple in hand.
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        await a.waitForTimeout(1200);
+        await a.click('[data-testid=nav-inventory]');
+        const ok = await a.waitForSelector('[data-testid=panel-inventory] .item--held >> text=Apple', { timeout: 1500 }).then(() => true, () => false);
+        if (ok) return;
+        await closeSheet(a);
+      }
+      throw new Error('apple not in hand');
+    });
+    await shot(a, 'e2e-11-things-apple');
+    await a.click('[data-testid=panel-inventory] button:has-text("Set down")');
+    await a.waitForSelector('[data-testid=panel-inventory] >> text=Your hands are empty', { timeout: 15000 });
+    await closeSheet(a);
+    pass('pick up apple → shown in Things → set down');
+
+    // Town Hall archive → town history.
+    await goInteract(a, 'archive_town_hall', '[data-testid=memory-timeline]');
+    await shot(a, 'e2e-12-archive');
+    pass('Town Hall archive → town history timeline');
+    await closeSheet(a);
+
+    // A real Gazette issue (needs the admin token of the server under test).
+    const adminToken = process.env.E2E_ADMIN_TOKEN;
+    if (adminToken) {
+      const res = await fetch(new URL('/api/admin/gazette/compile', base), { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ periodStart: Date.now() - 6 * 3600_000 }) });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.issue) throw new Error(`gazette compile failed: ${res.status} ${JSON.stringify(body)?.slice(0, 200)}`);
+      await a.click('[data-testid=nav-gazette]');
+      await a.waitForSelector('[data-testid=gazette-issue] .article__headline', { timeout: 15000 });
+      await shot(a, 'e2e-13-gazette');
+      pass('real Gazette issue rendered', `No. ${body.issue.issueNumber}, ${body.issue.articles.length} articles`);
+      await closeSheet(a);
+    } else {
+      log('SKIP gazette issue: set E2E_ADMIN_TOKEN to compile one on the server under test');
+    }
+    await b.close({ runBeforeUnload: true });
+  } catch (err) {
+    failStep('social + world interactions', err);
   }
 
   // 6. Create an account in onboarding, then log in from a fresh browser.

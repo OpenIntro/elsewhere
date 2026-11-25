@@ -5,8 +5,8 @@
  * Enter opens/sends, Esc closes. Names open the player card.
  */
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { C2S, CONFIG, EMOTES, REACTIONS, type ChatMessage, type EmoteId } from '@elsewhere/shared';
-import { net } from '../net/index.js';
+import { CONFIG, EMOTES, REACTIONS, type ChatMessage, type EmoteId } from '@elsewhere/shared';
+import { actions } from '../net/index.js';
 import { useGameStore } from '../state/gameStore.js';
 import { useUiStore } from '../state/uiStore.js';
 import { CHAT_TABS, conversations, inTab, unreadFor, visibleMessages, type ChatTab } from './lib/chatModel.js';
@@ -90,7 +90,7 @@ function QuickBar({ onClose }: { onClose(): void }) {
             className="quickbar__emoji"
             aria-label={`React ${r}`}
             onClick={() => {
-              net.send(C2S.reaction, { emoji: r });
+              actions.reaction(r);
               onClose();
             }}
           >
@@ -105,7 +105,7 @@ function QuickBar({ onClose }: { onClose(): void }) {
             type="button"
             className="btn btn--ghost btn--sm"
             onClick={() => {
-              net.send(C2S.emote, { emote: e });
+              actions.emote(e);
               onClose();
             }}
           >
@@ -230,7 +230,7 @@ export function Chat() {
     if (v) typingTimer.current = setTimeout(() => setTyping(false), 3500);
     if (typingRef.current === v) return;
     typingRef.current = v;
-    if (connected) net.send(C2S.typing, { typing: v });
+    if (connected) actions.typing(v);
   };
   useEffect(() => () => setTyping(false), []);
 
@@ -260,9 +260,9 @@ export function Chat() {
     if ([...t].length > CONFIG.chat.maxMessageLength) return;
     if (tab === 'whispers') {
       if (!peer || !peerPlayer) return;
-      net.send(C2S.whisper, { to: peer, text: t });
+      actions.whisper(peer, t);
     } else {
-      net.send(C2S.chat, { channel: tab === 'nearby' ? 'proximity' : 'global', text: t });
+      actions.chat(t, tab === 'nearby' ? 'proximity' : 'global');
     }
     setText('');
     setMq(null);

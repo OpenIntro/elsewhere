@@ -1,7 +1,7 @@
 /** In-game appearance + name editing (Settings → Edit character). Sends C2S.updateProfile and waits for the server's answer. */
 import { useEffect, useRef, useState } from 'react';
 import { C2S, DEFAULT_APPEARANCE, S2C, appearanceEquals, type Appearance } from '@elsewhere/shared';
-import { net } from '../../net/index.js';
+import { actions, net } from '../../net/index.js';
 import { useGameStore } from '../../state/gameStore.js';
 import { CustomizationScreen } from '../CustomizationScreen.js';
 import { Sheet } from '../primitives.js';
@@ -53,7 +53,7 @@ export function CustomizePanel({ onClose }: { onClose(): void }) {
         setError(`Saving too often — try again in ${Math.ceil(r.retryInMs / 1000)}s.`);
       }),
     );
-    net.send(C2S.updateProfile, payload);
+    actions.updateProfile(payload);
   };
 
   return (

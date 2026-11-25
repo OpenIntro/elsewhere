@@ -216,8 +216,21 @@ export interface UpdateProfilePayload {
   appearance?: Appearance;
 }
 export interface TargetPayload {
-  /** Target sessionId. Server maps to profileId so blocks persist. */
-  target: string;
+  /** Target sessionId (player currently in the room). Server maps it to a profileId so blocks persist. */
+  target?: string;
+  /**
+   * Target profile id — works for players who are offline / not in this room
+   * (e.g. unblock from a list after a reload). Either `target` or `profileId` is required;
+   * `profileId` wins when both are given.
+   */
+  profileId?: string;
+}
+
+/** A blocked/muted profile as listed for its owner. */
+export interface RelationEntry {
+  profileId: string;
+  /** Current display name ("" if the profile no longer exists). */
+  name: string;
 }
 export interface ReportPayload {
   target: string;
@@ -296,6 +309,9 @@ export interface WelcomePayload {
   /** Profile ids this player has blocked / muted (client hides their chat). */
   blocked: string[];
   muted: string[];
+  /** Same lists with display names, for a manage-blocks UI (also GET API.relations). */
+  blockedProfiles?: RelationEntry[];
+  mutedProfiles?: RelationEntry[];
   /** Recent global/system chat so the log is not empty on join. */
   recentChat: ChatMessage[];
   /** Persistent collective facts. */
@@ -492,7 +508,15 @@ export const API = {
   adminGazetteCompile: '/api/admin/gazette/compile',
   /** Admin GET — players currently online. */
   adminPlayers: '/api/admin/players',
+  /** GET (auth): the caller's blocked + muted profiles with names → RelationsResponse. */
+  relations: '/api/profile/relations',
 } as const;
+
+/** GET API.relations */
+export interface RelationsResponse {
+  blocked: RelationEntry[];
+  muted: RelationEntry[];
+}
 
 /** All REST errors use this body with an appropriate HTTP status. */
 export interface ApiError {

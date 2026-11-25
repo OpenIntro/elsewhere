@@ -12,6 +12,7 @@ import { CustomizationScreen, NAME_ERRORS } from './CustomizationScreen.js';
 import { useReducedMotion } from './hooks.js';
 import { Icon } from './icons.js';
 import { Spinner } from './primitives.js';
+import { Wordmark } from './Wordmark.js';
 import { CREDENTIAL_ERRORS, FlowError, validateCredentials, type EnterRequest } from './session.js';
 
 export interface OnboardingResult {
@@ -29,18 +30,6 @@ type Step = 'intro' | 'auth' | 'login' | 'register' | 'customize' | 'name' | 'en
 
 export const TAGLINE = 'Somewhere between a game and a place.';
 
-export function Wordmark({ animate = false, className = '' }: { animate?: boolean; className?: string }) {
-  const letters = 'Elsewhere'.split('');
-  return (
-    <h1 className={`wordmark ${animate ? 'wordmark--animate' : ''} ${className}`} aria-label="Elsewhere">
-      {letters.map((l, i) => (
-        <span key={i} aria-hidden="true" style={{ '--i': i } as React.CSSProperties}>
-          {l}
-        </span>
-      ))}
-    </h1>
-  );
-}
 
 function Intro({ showChoices, children, onSkip }: { showChoices: boolean; children: React.ReactNode; onSkip(): void }) {
   return (

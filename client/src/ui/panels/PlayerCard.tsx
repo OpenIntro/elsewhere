@@ -3,9 +3,9 @@
  * greet, whisper, mute, block with confirmation, report with reason + note).
  */
 import { useEffect, useId, useState } from 'react';
-import { C2S, LOCATIONS, type ReportReason } from '@elsewhere/shared';
+import { LOCATIONS, type ReportReason } from '@elsewhere/shared';
 import { CharacterPreview } from '../../characters/index.js';
-import { net } from '../../net/index.js';
+import { actions } from '../../net/index.js';
 import { useGameStore } from '../../state/gameStore.js';
 import { useUiStore } from '../../state/uiStore.js';
 import { useChatUi, useSocialUi } from '../localState.js';
@@ -70,7 +70,7 @@ function ReportForm({ sessionId, profileId, name, onBack }: { sessionId: string;
       .slice(-5)
       .map((m) => m.id);
     setReport(profileId, 'sending');
-    net.send(C2S.report, { target: sessionId, reason, ...(details.trim() ? { details: details.trim().slice(0, DETAILS_MAX) } : {}), ...(messageIds.length ? { messageIds } : {}) });
+    actions.report(sessionId, reason, details.trim().slice(0, DETAILS_MAX) || undefined, messageIds);
   };
 
   return (
@@ -184,21 +184,21 @@ export function PlayerCard({ sessionId, startWithReport = false, onClose }: { se
           </div>
           {isMe ? (
             <div className="actions">
-              <Action icon="wave" label="Wave" onClick={() => net.send(C2S.emote, { emote: 'wave' })} />
-              <Action icon="dance" label="Dance" onClick={() => net.send(C2S.emote, { emote: 'dance' })} />
+              <Action icon="wave" label="Wave" onClick={() => actions.emote('wave')} />
+              <Action icon="dance" label="Dance" onClick={() => actions.emote('dance')} />
               <Action icon="user" label="Edit look" onClick={() => useUiStore.getState().openPanel({ kind: 'customize' })} />
             </div>
           ) : (
             <>
               <div className="actions">
-                <Action icon="wave" label="Wave" onClick={() => net.send(C2S.emote, { emote: 'wave' })} testId="pc-wave" />
-                <Action icon="dance" label="Dance together" onClick={() => net.send(C2S.emote, { emote: 'dance' })} />
-                <Action icon="smile" label="Greet" onClick={() => net.send(C2S.reaction, { emoji: '👋', target: sessionId })} />
+                <Action icon="wave" label="Wave" onClick={() => actions.emote('wave')} testId="pc-wave" />
+                <Action icon="dance" label="Dance together" onClick={() => actions.emote('dance')} />
+                <Action icon="smile" label="Greet" onClick={() => actions.reaction('👋', sessionId)} />
                 <Action icon="whisper" label="Whisper" onClick={whisper} testId="pc-whisper" />
               </div>
               <div className="actions actions--quiet">
-                <Action icon="mute" label={muted ? 'Unmute' : 'Mute'} pressed={muted} onClick={() => net.send(muted ? C2S.unmute : C2S.mute, { target: sessionId })} />
-                <Action icon="block" label={blocked ? 'Unblock' : 'Block'} pressed={blocked} tone="danger" onClick={() => (blocked ? net.send(C2S.unblock, { target: sessionId }) : setView('block'))} />
+                <Action icon="mute" label={muted ? 'Unmute' : 'Mute'} pressed={muted} onClick={() => (muted ? actions.unmute(sessionId) : actions.mute(sessionId))} />
+                <Action icon="block" label={blocked ? 'Unblock' : 'Block'} pressed={blocked} tone="danger" onClick={() => (blocked ? actions.unblock(sessionId) : setView('block'))} />
                 <Action icon="flag" label="Report" tone="danger" onClick={() => setView('report')} testId="pc-report" />
               </div>
             </>
@@ -218,7 +218,7 @@ export function PlayerCard({ sessionId, startWithReport = false, onClose }: { se
               className="btn btn--danger btn--sm"
               data-testid="confirm-block"
               onClick={() => {
-                net.send(C2S.block, { target: sessionId });
+                actions.block(sessionId);
                 setView('main');
               }}
             >
