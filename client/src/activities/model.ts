@@ -77,3 +77,18 @@ export function leftTime(until: number, now = serverNow()): string {
   if (h < 48) return `${h} h left`;
   return `${Math.round(h / 24)} days left`;
 }
+
+/** A station's prompt label given live state (e.g. a lit hearth is warmed at, not lit again). */
+export function liveStationLabel(s: Pick<GameState, 'activities'>, interactableId: string, fallback: string): string {
+  const st = getStation(interactableId);
+  if (!st) return fallback;
+  if (st.kind === 'hearth') {
+    const a = s.activities[ACTIVITY_KEYS.hearth(st.interiorId)];
+    return a?.active && a.value > serverNow() ? 'Warm your hands' : fallback;
+  }
+  if (st.kind === 'kettle') {
+    const a = s.activities[ACTIVITY_KEYS.kettle(st.interiorId)];
+    return a?.active ? 'Check the kettle' : fallback;
+  }
+  return fallback;
+}

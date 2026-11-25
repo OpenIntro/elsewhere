@@ -7,6 +7,7 @@ import { GameCanvas } from './game/GameCanvas.js';
 import { installDebugHook, net } from './net/index.js';
 import { useGameStore } from './state/gameStore.js';
 import { useUiStore } from './state/uiStore.js';
+import { installActivityClient } from './activities/index.js';
 import { Chat, Hud, Wordmark, enter, hasSavedSession, installUiBridge, resumeSession, toasts, useUiGlobals, type EnterRequest } from './ui/index.js';
 
 /**
@@ -105,6 +106,7 @@ export function App() {
     const offBridge = installUiBridge();
     const offBuild = installBuildSync();
     const offBuildInput = installBuildInput();
+    const offActivities = installActivityClient();
     startFlow(setResumeError);
     const unlock = () => audio.unlock();
     // Leave consented on page close so the server removes us now instead of holding a reconnection seat.
@@ -113,6 +115,7 @@ export function App() {
     window.addEventListener('keydown', unlock, { once: true });
     window.addEventListener('pagehide', leave);
     return () => {
+      offActivities();
       offBridge();
       offBuild();
       offBuildInput();

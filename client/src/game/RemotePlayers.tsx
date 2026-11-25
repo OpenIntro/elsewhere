@@ -16,6 +16,7 @@ import { useFrame } from '@react-three/fiber';
 import { memo, useEffect, useRef, useState } from 'react';
 import type { Group } from 'three';
 import { CONFIG, angleDelta, getSeat, groundHeight, type AnimState } from '@elsewhere/shared';
+import { standHeight } from '../build/surface.js';
 import { Character } from '../characters/index.js';
 import { sampleRemote } from '../net/index.js';
 import { useGameStore, type PlayerInfo } from '../state/gameStore.js';
@@ -101,7 +102,7 @@ const RemotePlayer = memo(function RemotePlayer({ id, cached, leavingAt }: { id:
       s.seatBlend += ((seat ? 1 : 0) - s.seatBlend) * (1 - Math.exp(-dt * 9));
       if (snap) s.seatBlend = seat ? 1 : 0;
       let tx = p.x;
-      let ty = p.y;
+      let ty = standHeight(p.x, p.z, p.y);
       let tz = p.z;
       let trot = p.rot;
       if (seat) {
@@ -113,7 +114,7 @@ const RemotePlayer = memo(function RemotePlayer({ id, cached, leavingAt }: { id:
         trot = seat.yaw;
       } else if (s.seatBlend > 0.01) {
         // Standing up: the interpolated pose already moves to the exit point; just ease height.
-        ty = p.y;
+        ty = standHeight(p.x, p.z, p.y);
       }
       if (snap) {
         out.x = tx;

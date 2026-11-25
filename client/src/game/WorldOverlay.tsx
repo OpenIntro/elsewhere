@@ -28,6 +28,7 @@ import { runtime } from '../state/runtime.js';
 import { useSettingsStore } from '../state/settingsStore.js';
 import { ZOOM_DEFAULT, cameraRuntime } from '../player/camera.js';
 import { isHiddenIndoors } from '../world/cutaway.js';
+import { devOverrides } from '../world/env.js';
 import { perfAdd, perfFrame } from './perf.js';
 import { REACTION_MS, bubbles, installSocialFeed, pruneSocial, reactions } from './social.js';
 
@@ -245,8 +246,10 @@ export function WorldOverlay() {
     const showNames = useSettingsStore.getState().controls.showNames;
     const lp = runtime.localPlayer;
     const view = runtime.view;
-    const refX = view.free ? view.focusX : lp.x;
-    const refZ = view.free ? view.focusZ : lp.z;
+    // Dev camera override (?cam=, screenshots): distances are measured from what is on screen.
+    const dev = devOverrides.cam;
+    const refX = dev ? dev.x : view.free ? view.focusX : lp.x;
+    const refZ = dev ? dev.z : view.free ? view.focusZ : lp.z;
     // Label size follows the user's zoom relative to the default framing (not the viewport scale).
     const rel = cameraRuntime.zoom / ZOOM_DEFAULT;
     const scale = Math.min(1.08, Math.max(0.72, 0.55 + rel * 0.45));

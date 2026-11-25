@@ -7,7 +7,7 @@
  *   import { actions } from '../net/index.js';
  *   actions.chat('hello');  actions.whisper(sessionId, 'psst');  actions.emote('wave');
  */
-import { C2S, CONFIG, isEmote, isReaction, type Appearance, type EmoteId, type ReactionEmoji, type ReportReason } from '@elsewhere/shared';
+import { C2S, CONFIG, PIANO_NOTES, isEmote, isReaction, type ActivityPayload, type Appearance, type EmoteId, type ReactionEmoji, type ReportReason } from '@elsewhere/shared';
 import { net } from './connection.js';
 
 let lastTyping: boolean | null = null;
@@ -81,6 +81,19 @@ export const actions = {
   },
   unmute(target: string): boolean {
     return net.send(C2S.unmute, { target });
+  },
+  /** Building activity action (order, sip, take, pin, remove, report, vote, sign, status). */
+  activity(payload: ActivityPayload): boolean {
+    const p: ActivityPayload = { station: payload.station, action: payload.action };
+    if (payload.item !== undefined) p.item = payload.item;
+    if (payload.text !== undefined) p.text = payload.text.slice(0, 400);
+    if (payload.option !== undefined) p.option = payload.option;
+    if (payload.entryId !== undefined) p.entryId = payload.entryId;
+    return net.send(C2S.activity, p);
+  },
+  pianoNote(note: number): boolean {
+    if (!Number.isInteger(note) || note < 0 || note >= PIANO_NOTES) return false;
+    return net.send(C2S.pianoNote, { note });
   },
   report(target: string, reason: ReportReason, details?: string, messageIds?: string[]): boolean {
     const payload: { target: string; reason: ReportReason; details?: string; messageIds?: string[] } = { target, reason };

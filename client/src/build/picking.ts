@@ -41,6 +41,12 @@ function cast(clientX: number, clientY: number) {
   return null;
 }
 
+/** Piece under a screen point: id, world hit point and the world-space normal's Y (1 = a top face). */
+export function pickPieceHit(clientX: number, clientY: number): { id: string; point: { x: number; y: number; z: number }; normalY: number } | null {
+  const h = cast(clientX, clientY);
+  return h ? { id: h.id, point: { x: h.point.x, y: h.point.y, z: h.point.z }, normalY: h.normalY } : null;
+}
+
 /** Piece id under a screen point (nearest to the camera), or null. */
 export function pickPiece(clientX: number, clientY: number): string | null {
   return cast(clientX, clientY)?.id ?? null;

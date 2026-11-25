@@ -4,7 +4,7 @@
  * you are looking. Hidden things are never marked; The Unknown stays in fog.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BUILDINGS, CREEK_POINTS, DECKS, FOUNTAIN, LOCATIONS, PATHS, TREES, islandOutline, type Location, type LocationId } from '@elsewhere/shared';
+import { ACTIVITY_KEYS, BUILDINGS, CREEK_POINTS, DECKS, FOUNTAIN, INTERIORS, LOCATIONS, PATHS, TREES, islandOutline, type Location, type LocationId } from '@elsewhere/shared';
 import { useCameraStore, BASE_YAW } from '../../player/index.js';
 import { useGameStore } from '../../state/gameStore.js';
 import { runtime } from '../../state/runtime.js';
@@ -58,6 +58,22 @@ export function MapPanel({ onClose }: { onClose(): void }) {
   const showOthers = useUiPrefs((s) => s.mapShowOthers);
   const setPrefs = useUiPrefs((s) => s.set);
   const players = useGameStore((s) => s.players);
+  const activities = useGameStore((s) => s.activities);
+  /** Real players inside each place's buildings right now (server presence counts; null = no walk-in building). */
+  const insideAt = (id: LocationId): number | null => {
+    const its = INTERIORS.filter((i) => i.locationId === id);
+    if (!its.length) return null;
+    let n = 0;
+    let known = false;
+    for (const i of its) {
+      const a = activities[ACTIVITY_KEYS.building(i.id)];
+      if (a) {
+        known = true;
+        n += Math.max(0, Math.round(a.value));
+      }
+    }
+    return known ? n : null;
+  };
   const myLocation = useGameStore((s) => (s.sessionId ? s.players[s.sessionId]?.location : ''));
   const { me, others } = useLivePositions(showOthers);
   const [selected, setSelected] = useState<Location | null>(null);
@@ -188,6 +204,11 @@ export function MapPanel({ onClose }: { onClose(): void }) {
             <button key={l.id} type="button" role="listitem" className={`place-chip${selected?.id === l.id ? ' is-on' : ''}${l.id === myLocation ? ' is-here' : ''}${l.id === 'the_unknown' ? ' is-unknown' : ''}`} onClick={() => setSelected(selected?.id === l.id ? null : l)}>
               {l.id === myLocation ? <Icon name="pin" size={14} /> : null}
               {l.name}
+              {insideAt(l.id) !== null ? (
+                <span className="map__presence" title="Real players inside right now" data-testid={`presence-${l.id}`}>
+                  · {insideAt(l.id)} in
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -195,6 +216,7 @@ export function MapPanel({ onClose }: { onClose(): void }) {
           {selected ? (
             <>
               <strong>{selected.name}.</strong> {selected.id === 'the_unknown' ? 'Few go there. Fewer say what they found.' : selected.description}
+              {insideAt(selected.id) !== null ? ` ${insideAt(selected.id) === 0 ? 'Nobody is inside right now.' : `${insideAt(selected.id)} ${insideAt(selected.id) === 1 ? 'person is' : 'people are'} inside right now.`}` : ''}
             </>
           ) : here ? (
             <>

@@ -9,6 +9,15 @@ as distinct players touch it, a dormant arch that wakes only when several player
 Town Hall archive of world events, and a Gazette compiled from those events. There are no bots,
 no simulated players and no invented activity; if nobody did anything, the Gazette says so.
 
+Things go on inside the buildings (see [Building activities](#building-activities)): order a
+drink from the barista and sip it, play the café piano for everyone in the room, take the stage,
+take a free curiosity from the store, pin a notice and vote in the town poll at the Town Hall,
+build the town's next project together at the Workshop (finished projects change the island for
+good), light a hearth and sign the guest book in the homes, mend nets at the boathouse. The four
+public buildings have **keepers** — a barista, a shopkeeper, an archivist and a tinkerer — who are
+characters of the island, never players: they wear a "keeper" tag, are never counted online, never
+chat and never appear in the Gazette or World Memory.
+
 Stack: TypeScript everywhere, npm workspaces (`shared/`, `server/`, `client/`). Server: Node 22,
 Express 5, Colyseus 0.18, Postgres SQL (embedded PGlite by default, `pg` for Postgres/Supabase).
 Client: Vite, React 19, three.js via @react-three/fiber, zustand. Architecture details:
@@ -85,6 +94,17 @@ All are optional in development. Source of truth: `server/src/env.ts` (server) a
 | `PORTAL_AWAKE_MS` | `600000` | How long the portal stays awake. |
 | `BELL_CHORUS_PLAYERS` | `3` | Distinct players ringing the bell within 8 s for its other voice (min 2). |
 | `GATHERING_THRESHOLD` | `6` | Players in one place that count as a gathering (min 2). |
+| `DRINK_MINUTES` | `4` | Café: how long a drink lasts in hand (it also runs out after 6 sips). |
+| `STORE_TAKES_PER_DAY` | `1` | General Store: free curiosities one player may take per world-day. |
+| `NOTICE_MAX_PER_PLAYER` | `2` | Town Hall: notices one player may have up at once. |
+| `NOTICE_EXPIRY_HOURS` | `72` | Town Hall: how long a notice stays up (real hours). |
+| `POLL_PERIOD_DAYS` | `1` | World-days per town-poll question (the result is recorded when the period ends, if anyone voted). |
+| `WORKSHOP_STAGE_CONTRIBUTIONS` | `6,10,14` | Workshop town project: pieces of work needed for each stage (one entry per stage; the last stage finishes the project). |
+| `WORKSHOP_STAGE_DISTINCT` | `2,3,4` | Minimum DIFFERENT players for each stage. |
+| `WORKSHOP_DAILY_CONTRIBUTIONS` | `3` | Pieces of work one player may do per world-day. |
+| `HEARTH_MINUTES` | `20` | Homes: how long a lit hearth burns (real minutes). |
+| `NET_SECTIONS` | `5` | Boathouse: sections per net (one mend per player per world-day). |
+| `BUILD_*` | see `CONFIG.building` | Player building (feature paused; `BUILD_ENABLED`, `BUILD_RANGE`, `BUILD_MAX_PER_PLAYER`, `BUILD_MAX_PER_WORLD`, `BUILD_RATE_CAPACITY`, `BUILD_RATE_PER_SECOND`). |
 | `ELSEWHERE_DEBUG` | (unset) | `1`: extra server diagnostics (e.g. logs refused out-of-range interactions). |
 | `VITE_SERVER_PORT` | `PORT`, then `2567` | Dev client only: server port the Vite client connects to. Read from the shell, not from `.env`. |
 
@@ -157,6 +177,7 @@ The server is a single process on a single port.
 | `npm run typecheck` | builds shared type declarations, then `tsc --noEmit` per workspace |
 | `npm test` | vitest: `shared/test`, `server/test`, `client/test` |
 | `npm run build && npm run e2e:acceptance` | MVP acceptance: spawns its own production server (port `ACCEPT_PORT`, default 2620, fresh temp data dir, lowered fountain/Gazette thresholds), one desktop (1440x900) and one emulated phone (Pixel 7, touch) browser through the real onboarding; 17 named checks incl. restart persistence, audio and zero console errors; graphics set to "low" for headless speed; screenshots to `docs/screenshots/acceptance/` |
+| `npm run build && npm run e2e:activities` | building activities: own production server (port `ACT_PORT`, default 2633, fresh temp data dir, **lowered** `WORKSHOP_STAGE_CONTRIBUTIONS=2,2 WORKSHOP_STAGE_DISTINCT=2,2`), a desktop and a phone browser through the real UI; 12 named checks — same keeper state on both, hearth, guest book, notice board, town poll (real tally 2), barista drink seen in hand by the other, piano notes received + played by the other's audio graph, the town project finished by both (stage advance + lanterns outside), online count stays 2 with keepers on duty, everything still there after a server restart, zero console errors. Screenshots with `ACT_SHOTS=<dir>` |
 | `npm run build && npm run e2e:interiors` | walk-in interiors: own production server (port `INT_PORT`, default 2631), a desktop and a phone browser; 9 named checks — click-to-move into the Café through its door, keyboard walking in and out, cutaway open inside / closed outside, name tags + speech bubble + interaction prompt indoors, an indoor chair seen seated by the other client, walls hold, zero console errors |
 | `node scripts/interior-screenshots.mjs [devUrl]` | every interior day/night on desktop and phone + exteriors at night + the four camera rotations → `docs/screenshots/interiors/` (dev client; uses `?inside=`) |
 | `node scripts/smoke-two-clients.mjs [url]` | two browsers join and see each other move |
@@ -184,7 +205,49 @@ Browser scripts need Playwright with Chromium available to `require('playwright'
 | Drag on the world | pan the camera |
 | Touch | virtual joystick, round interact button, on-screen rotate/zoom buttons |
 | Drag the character preview | rotate it (customization screen) |
+| Click / tap a keeper, or E near their counter | talk to the keeper: a short line about the island today + the building's menu (order a drink, today's curiosities, the poll, the town project) |
+| Piano panel | click / tap the keys; on a keyboard the Z…M row plays the low octave and Q…I the high one (movement keys are paused while the piano is open) |
+| Sip chip (bottom of the screen) | sip the drink in your hand |
 | Walk through a door | enter a building: its roof and the walls between you and the camera fade away (dollhouse cutaway, any camera rotation); walk out and they come back. Clicking a spot inside a building from outside walks you in through the door |
+
+## Building activities
+
+Rules are data in `shared/src/activities.ts`; the server (`server/src/activities/`) validates every
+action (range, same side of the wall, rate limits, per-day limits, moderation) and syncs the result
+to everyone (`state.activities`, `state.keepers`). Everything you see is either a real player's
+action or clearly the world itself (keepers, a kettle coming to the boil, a hearth burning down).
+
+| Building | Activity | Synced live | Persisted |
+|---|---|---|---|
+| Café | Keeper **Mara** (barista), 06:30–22:00 | position, task, gesture, on duty | — (simulated from the clock) |
+| Café | Order a drink (coffee, tea, cocoa, today's special); sip it; it runs out | the cup in your hand (held item) | no (a drink is transient) |
+| Café | Piano (on-screen keys / keyboard) | every note to everyone in or near the café (spatial) | — (a World Memory line, throttled) |
+| Café | Stage | soft spotlight on whoever stands on it; their chat carries through the café | — |
+| Café | Today's special on the chalkboard | changes with the world day | derived from the day |
+| General Store | Keeper **Odile** (shopkeeper), 08:00–19:00 | as above | — |
+| General Store | Three free curiosities a day ("on the house, for now"), one per player per world-day, into your things | the table | your collection + the daily limit |
+| General Store | Try-on mirror (opens the appearance screen) | your appearance | your profile |
+| Town Hall | Keeper **Ferris** (archivist), 08:00–20:00 | as above | — |
+| Town Hall | Notice board: pin (≤160 chars, filtered), 2 up per player, expire after 72 h, owner/admin removal, reportable | the board | yes (`activity_notes`) |
+| Town Hall | Town poll: one question per world-day, one vote per profile, real tallies ("no votes yet") | tallies | yes (`poll_votes`); the result goes to World Memory + Gazette when the period ends (only if anyone voted) |
+| Town Hall | Lectern | spotlight; chat carries through the hall | — |
+| Workshop | Keeper **Bram** (tinkerer), 07:00–19:00 | as above | — |
+| Workshop | Town project (lumber rack / anvil / kiln): each stage needs N pieces of work by M different players; 3 a day per player | the project on the sawhorses, stage by stage | yes; finished projects change the island for good: lanterns across the Town Square → a weather vane on the General Store → bunting along the dock |
+| House 1 & 2 | Light the hearth (burns 20 min; fire, window glow at night, chimney smoke) | lit / burning down | yes |
+| House 1 & 2 | Put the kettle on (boils, whistles, steams) | kettle state | no |
+| House 1 & 2 | Guest book (≤120 chars, filtered, once per player per day per book, owner removal, reportable) | the book | yes |
+| Boathouse | Mend the nets (one section per player per day; a full net is recorded) | mended sections | yes |
+| Boathouse | Tide log (like a guest book) | the log | yes |
+| Everywhere | Presence: real players inside each building, on the door prompt and the map (0 shown as "nobody inside") | counts | — |
+
+Ambient world behaviour: espresso steam while the barista works, steam over cups in hand,
+flickering hearths, wall clocks showing the world time, OPEN / CLOSED signs and keepers on duty by
+the shared clock (closed buildings stay enterable, just quiet). Sounds (piano, cups, saw / anvil /
+kiln, hearth, kettle, pins, pages, ballots, nets) go through the procedural audio system: positional,
+muffled through walls, on the effects volume.
+
+Admin: `GET /api/admin/notes?board=&limit=` and `DELETE /api/admin/notes/:id` (notices, guest-book
+and tide-log entries). Reports of entries land in the normal reports list with the entry as evidence.
 
 ## Moderation and admin
 
@@ -201,6 +264,7 @@ With `ADMIN_TOKEN` set, send `Authorization: Bearer <ADMIN_TOKEN>` (or `X-Admin-
 | `POST /api/admin/kick` `{profileId? , sessionId?, reason?}` | disconnect a player now |
 | `GET /api/admin/players` | who is online |
 | `POST /api/admin/gazette/compile` `{periodStart?, periodEnd?}` | compile a Gazette issue now (from real events only) |
+| `GET /api/admin/notes?board=&limit=` / `DELETE /api/admin/notes/:id` | notices, guest-book and tide-log entries (moderation) |
 
 There is no admin UI; these are REST endpoints.
 
@@ -226,8 +290,10 @@ Labelled "Planned" / "Not yet" in the UI (Home panel), not implemented:
   into already; houses 3-5 are marked "a future home").
 - Decorating (furniture, plants, objects).
 - Shops and trading between players (the General Store's till).
-- A gentle currency earned by being around (economy).
-- Weather beyond clear/haze/fog (rain and snow are typed but not rendered), NPCs.
+- A gentle currency earned by being around (economy). Until then the store's curiosities and the
+  café's drinks are free ("on the house, for now").
+- Weather beyond clear/haze/fog (rain and snow are typed but not rendered). Keepers are the only
+  world characters; they do not wander the island or hold conversations.
 
 ## Not verified / known limitations
 

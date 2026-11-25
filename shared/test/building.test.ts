@@ -4,6 +4,7 @@ import {
   CONFIG,
   PIECES,
   PIECE_KINDS,
+  PROTECTED_ZONES,
   PieceIndex,
   autoLevel,
   buildableAt,
@@ -18,6 +19,8 @@ import {
   resolveMovement,
   snapToGrid,
   validatePlacement,
+  walkSurfaceAt,
+  zoneContains,
   type PieceLike,
   type PlacementContext,
   type PlaceRequest,
@@ -83,6 +86,25 @@ describe('protected zones (buildableAt)', () => {
     expect(buildableAt({ x: 0, z: 70 }).code).toBe('out_of_bounds');
     expect(buildableAt({ x: 500, z: 0 }).code).toBe('out_of_bounds');
     expect(buildableAt(SITE).code).toBe('ok');
+  });
+});
+
+describe('protected zones come from the official world export', () => {
+  it('refuses every building footprint and door apron of PROTECTED_ZONES (and a margin around them)', () => {
+    for (const z of PROTECTED_ZONES) {
+      const r = buildableAt(z.center);
+      expect(r.code, z.id).toBe('protected');
+      if (z.kind === 'door_apron') expect(r.label, z.id).toMatch(/doorway$/);
+      // 0.5 m outside the zone's edge is still inside the building margin.
+      const edge = { x: z.center.x + Math.sin(z.yaw) * (z.halfDepth + 0.5), z: z.center.z + Math.cos(z.yaw) * (z.halfDepth + 0.5) };
+      expect(zoneContains(z, edge)).toBe(false);
+      expect(buildableAt(edge).code, `${z.id} margin`).not.toBe('ok');
+    }
+  });
+  it('a whole piece is refused when any part of it touches a protected zone', () => {
+    const door = PROTECTED_ZONES.find((z) => z.kind === 'door_apron')!;
+    const v = validatePlacement(req('floor', Math.round(door.center.x), Math.round(door.center.z)), ctx(new PieceIndex()));
+    expect(v.ok).toBe(false);
   });
 });
 
@@ -206,6 +228,19 @@ describe('stacking and support', () => {
     expect(snapToGrid('chair', { x: 3.4, z: -1.6 }, 0)).toEqual({ x: 3.5, z: -1.5 });
     expect(snapToGrid('steps', { x: 3.2, z: 1.2 }, 0)).toEqual({ x: 3, z: 1.5 });
     expect(snapToGrid('steps', { x: 3.2, z: 1.2 }, 1)).toEqual({ x: 3.5, z: 1 });
+  });
+});
+
+describe('walk surface', () => {
+  it('lifts feet onto ground floors and steps, not onto upper floors or rugs', () => {
+    const ix = new PieceIndex();
+    const f = put(ix, req('floor', SITE.x, SITE.z));
+    expect(walkSurfaceAt(ix, { x: SITE.x + 0.5, z: SITE.z - 0.5 })).toBeCloseTo(f.y + PIECES.floor.h, 5);
+    expect(walkSurfaceAt(ix, { x: SITE.x + 3, z: SITE.z })).toBeNull();
+    const st = put(ix, req('steps', SITE.x + 4, SITE.z + 0.5));
+    // rot 0: the upper tread is the back half (local -Z).
+    expect(walkSurfaceAt(ix, { x: SITE.x + 4, z: SITE.z + 0.3 })).toBeCloseTo(st.y + 0.36, 5);
+    expect(walkSurfaceAt(ix, { x: SITE.x + 4, z: SITE.z + 0.8 })).toBeCloseTo(st.y + 0.2, 5);
   });
 });
 

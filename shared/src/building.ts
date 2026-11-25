@@ -14,11 +14,12 @@
  *  - Overlap: pieces on the same level conflict when their footprints overlap
  *    and their layers clash (see LAYER_CLASH): a rug may lie on a floor, a
  *    table on a rug, but two walls may not cross.
- *  - Where: `buildableAt()` — the ONE function that knows the protected
- *    zones (buildings + door aprons, paths, the Town Square, interactables,
- *    spawn points, landmarks, decks, water, off-island). It is derived from
- *    the current world exports; swap its body for an official
- *    footprint/apron export when one exists.
+ *  - Where: `buildableAt()` / `isBuildable()` — the ONE function that knows
+ *    the protected zones: building footprints + door aprons (the official
+ *    PROTECTED_ZONES / protectedZoneAt from world/interiors.ts, grown by
+ *    PROTECTED_MARGINS.building), paths, the Town Square, a radius around
+ *    every interactable (seats included) and spawn point, landmarks, decks,
+ *    water and off-island.
  *  - Collision: only ground-level (level 0) solid pieces block movement; their
  *    colliders (`pieceColliders`) go into the shared dynamic collider layer
  *    (collision.ts) on both server and client. Doorways and gates are two
@@ -27,9 +28,10 @@
 import { CONFIG } from './config.js';
 import { defaultCollisionWorld, penetration, type CollisionWorld } from './collision.js';
 import { distanceToPolyline, rotateOffset, type Vec2 } from './math.js';
-import { BUILDINGS, buildingLocal, doorPosition } from './world/buildings.js';
+import { BUILDINGS } from './world/buildings.js';
 import type { BoxCollider, Collider } from './world/colliders.js';
 import { INTERACTABLES } from './world/interactables.js';
+import { protectedZoneAt } from './world/interiors.js';
 import { LOCATIONS } from './world/locations.js';
 import { DECKS, PATHS, deckAt } from './world/paths.js';
 import { SPAWN_POINTS } from './world/spawn.js';
@@ -384,36 +386,29 @@ interface Zones {
 
 /** Clearances (metres) around protected things. */
 export const PROTECTED_MARGINS = {
+  /** Around every building footprint and door apron (PROTECTED_ZONES from world/interiors.ts). */
   building: 1.0,
-  doorApronWidth: 4,
-  doorApronDepth: 4.5,
   path: 0.7,
   interactable: 2.2,
   spawn: 3,
   landmark: 2.5,
+  deck: 1,
 } as const;
 
 let zones: Zones | null = null;
+const buildingName = new Map(BUILDINGS.map((b) => [b.id, b.name]));
 /**
- * Protected zones derived from the current world exports (BUILDINGS, PATHS,
- * DECKS, INTERACTABLES, SPAWN_POINTS, LOCATIONS, structures). When the world
- * data exports official building footprints + door aprons, replace the
- * building/door part of this function with it — nothing else depends on how
- * zones are derived.
+ * Protected zones other than buildings: decks, the Town Square, The Unknown,
+ * every interactable (incl. seats, signs, mailboxes), spawn points,
+ * landmarks and paths. Buildings + door aprons come from the official
+ * `protectedZoneAt` export (world/interiors.ts) in `buildableAt`.
  */
 function protectedZones(): Zones {
   if (zones) return zones;
   const M = PROTECTED_MARGINS;
   const circles: CircleZone[] = [];
   const boxes: BoxZone[] = [];
-  for (const b of BUILDINGS) {
-    boxes.push({ x: b.position.x, z: b.position.z, hw: b.width / 2 + M.building, hd: b.depth / 2 + M.building, yaw: b.yaw, label: b.name });
-    const door = doorPosition(b);
-    const apron = buildingLocal(b, 0, b.depth / 2 + M.doorApronDepth / 2);
-    void door;
-    boxes.push({ x: apron.x, z: apron.z, hw: M.doorApronWidth / 2, hd: M.doorApronDepth / 2, yaw: b.yaw, label: `the ${b.name} doorway` });
-  }
-  for (const d of DECKS) boxes.push({ x: d.center.x, z: d.center.z, hw: d.halfWidth + 1, hd: d.halfLength + 1, yaw: d.yaw, label: d.name });
+  for (const d of DECKS) boxes.push({ x: d.center.x, z: d.center.z, hw: d.halfWidth + M.deck, hd: d.halfLength + M.deck, yaw: d.yaw, label: d.name });
   const square = LOCATIONS.find((l) => l.id === 'town_square');
   if (square) circles.push({ x: square.center.x, z: square.center.z, r: square.radius, label: square.name });
   const unknown = LOCATIONS.find((l) => l.id === 'the_unknown');
@@ -436,6 +431,11 @@ export function buildableAt(p: Vec2): BuildableResult {
   if (p.x < WORLD_BOUNDS.minX || p.x > WORLD_BOUNDS.maxX || p.z < WORLD_BOUNDS.minZ || p.z > WORLD_BOUNDS.maxZ || !isOnIsland(p.x, p.z, 0.5)) return { code: 'out_of_bounds' };
   if (deckAt(p)) return { code: 'protected', label: 'the dock' };
   if (terrainHeight(p.x, p.z) <= WALKABLE_MIN_HEIGHT + 0.08) return { code: 'water' };
+  const pz = protectedZoneAt(p, PROTECTED_MARGINS.building);
+  if (pz) {
+    const name = buildingName.get(pz.buildingId) ?? 'a building';
+    return { code: 'protected', label: pz.kind === 'door_apron' ? `the ${name} doorway` : name };
+  }
   const z = protectedZones();
   for (const c of z.circles) {
     const dx = p.x - c.x;
@@ -840,3 +840,33 @@ export interface PieceRecord extends PieceLike {
   text?: string;
   createdAt?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Walk surface (characters standing on a ground-level floor or step)
+// ---------------------------------------------------------------------------
+
+/**
+ * Height of the top of the ground-level floor tile or step a character at `p`
+ * stands on, or null when none. Purely visual (floors and steps do not block
+ * and do not change the server's movement rules): renderers lift feet onto
+ * the boards instead of sinking them into the slab.
+ */
+export function walkSurfaceAt<P extends PieceLike>(index: PieceIndex<P>, p: Vec2): number | null {
+  let top: number | null = null;
+  for (const q of index.query({ minX: p.x, maxX: p.x, minZ: p.z, maxZ: p.z }, 0.01)) {
+    if (q.level !== 0 || (q.kind !== 'floor' && q.kind !== 'steps')) continue;
+    if (!rectContains(footprint(q.kind, q.x, q.z, q.rot), p, -0.01)) continue;
+    let h = q.y + PIECES[q.kind].h;
+    if (q.kind === 'steps') {
+      // Lower tread over the whole step, upper tread over the back half (local -Z).
+      const yaw = yawOfRot(q.rot);
+      const lz = (p.x - q.x) * Math.sin(yaw) + (p.z - q.z) * Math.cos(yaw);
+      h = q.y + (lz < 0.03 ? STEP_UPPER : STEP_LOWER);
+    }
+    if (top === null || h > top) top = h;
+  }
+  return top;
+}
+/** Tread heights of the `steps` piece (must match the renderer). */
+export const STEP_LOWER = 0.2;
+export const STEP_UPPER = 0.36;

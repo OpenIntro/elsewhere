@@ -2,9 +2,11 @@
  * Materials for player-built pieces: the world's matte clay and window glass,
  * plus a per-instance dithered fade (instanced attribute `aFade`, 0 = solid,
  * 1 = gone) so upper storeys and roofs can step aside for the local player
- * without transparency sorting. Shadows are unaffected (default depth material).
+ * without transparency sorting. The shadow pass honours the fade too
+ * (`pieceDepthMaterial`), so a faded roof lets the sun into the room, like
+ * the interiors' cutaway.
  */
-import { Color, MeshBasicMaterial, MeshStandardMaterial, type WebGLProgramParametersWithUniforms } from 'three';
+import { Color, MeshBasicMaterial, MeshDepthMaterial, MeshStandardMaterial, RGBADepthPacking, type WebGLProgramParametersWithUniforms } from 'three';
 import { patch, windowMaterial } from '../world/materials.js';
 
 type Shader = WebGLProgramParametersWithUniforms;
@@ -32,6 +34,27 @@ if (vFade > 0.001) {
   };
   return mat;
 }
+
+const FADE_FRAG = `
+if (vFade > 0.001) {
+  // 4x4 ordered dither: screen-door transparency, keeps a faint silhouette.
+  vec2 q = mod(floor(gl_FragCoord.xy), 4.0);
+  float b = mod(q.x * 4.0 + q.y * 7.0 + q.x * q.y * 3.0, 16.0) / 16.0;
+  if (b < vFade * 0.86) discard;
+}`;
+
+/** Shadow-pass depth material for instanced pieces carrying `aFade` (faded pieces stop casting shadows). */
+export const pieceDepthMaterial = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+pieceDepthMaterial.customProgramCacheKey = () => 'build-fade-depth';
+pieceDepthMaterial.onBeforeCompile = (shader) => {
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float aFade; varying float vFade;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFade = aFade;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nvarying float vFade;')
+    // Only (nearly) fully faded pieces (roofs, upper storeys) stop casting: a half-faded wall keeps its shadow.
+    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vFade > 0.9) discard;');
+};
 
 const clay = patch(new MeshStandardMaterial({ vertexColors: true, roughness: 0.84, metalness: 0 }), { paint: 1, rim: 0.22 });
 const clayCompile = clay.onBeforeCompile as unknown as (s: Shader) => void;

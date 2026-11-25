@@ -377,6 +377,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       if (this.state.players.get(sid)?.seat) s.interactions.stand(this.ctx, sid);
       s.building.unstuck(this.ctx, sid);
     });
+    this.on(C2S.buildSync, 'buildSync', (sid) => s.building.sendSnapshot(this.ctx, sid));
   }
 
   private handleMove(sid: string, m: C2SPayloads['move']): void {

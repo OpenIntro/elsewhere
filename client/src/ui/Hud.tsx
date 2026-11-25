@@ -5,7 +5,8 @@
  * panel host.
  */
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { LOCATIONS, worldTimeAt } from '@elsewhere/shared';
+import { LOCATIONS, OPENING_HOURS, getInteractable, worldTimeAt } from '@elsewhere/shared';
+import { DrinkChip, insideCount, isOpen, liveStationLabel } from '../activities/index.js';
 import { BuildNavButton, BuildUi, useBuildStore } from '../build/index.js';
 import { cameraControls, pressInteract, useCameraStore, useTouchControlsVisible } from '../player/index.js';
 import { serverNow, useGameStore } from '../state/gameStore.js';
@@ -26,6 +27,7 @@ import { Spinner } from './primitives.js';
 const GazettePanel = lazy(() => import('./panels/GazettePanel.js').then((m) => ({ default: m.GazettePanel })));
 const MapPanel = lazy(() => import('./panels/MapPanel.js').then((m) => ({ default: m.MapPanel })));
 const CustomizePanel = lazy(() => import('./panels/CustomizePanel.js').then((m) => ({ default: m.CustomizePanel })));
+const ActivityPanel = lazy(() => import('../activities/Panels.js').then((m) => ({ default: m.ActivityPanel })));
 
 function PanelLoading() {
   return (
@@ -214,7 +216,8 @@ function Prompt() {
   const touch = useIsTouch();
   // On touch the player system's thumb action button carries the prompt; don't duplicate it.
   const touchControls = useTouchControlsVisible();
-  const p = prompt ? { label: prompt.label, name: prompt.name } : playerPrompt ? { label: playerPrompt.label, name: playerPrompt.name } : null;
+  const liveLabel = useGameStore((s) => (prompt ? liveStationLabel(s, prompt.interactableId, prompt.label) : ''));
+  const p = prompt ? { label: liveLabel || prompt.label, name: prompt.name } : playerPrompt ? { label: playerPrompt.label, name: playerPrompt.name } : null;
   if (!p || touchControls || (panel && READING_PANELS.has(panel.kind))) return null;
   return (
     <button
@@ -228,7 +231,24 @@ function Prompt() {
       {!touch ? <kbd className="prompt__key">E</kbd> : null}
       <span className="prompt__label">{p.label}</span>
       <span className="prompt__name">{p.name}</span>
+      {prompt ? <DoorPresence interactableId={prompt.interactableId} /> : null}
     </button>
+  );
+}
+
+/** On a walk-in door's prompt: open / closed and how many real players are inside right now (server count; 0 is honest). */
+function DoorPresence({ interactableId }: { interactableId: string }) {
+  const it = getInteractable(interactableId);
+  const buildingId = it?.kind === 'door' ? it.buildingId : '';
+  const n = useGameStore((s) => (buildingId ? insideCount(s, buildingId) : null));
+  const open = useGameStore((s) => (buildingId ? isOpen(s, buildingId) : null));
+  if (!buildingId || n === null) return null;
+  const staffed = buildingId in OPENING_HOURS;
+  return (
+    <span className="prompt__presence" data-testid="door-presence">
+      {staffed ? (open ? 'Open · ' : 'Closed · ') : ''}
+      {n === 0 ? 'nobody inside' : `${n} inside`}
+    </span>
   );
 }
 
@@ -448,6 +468,8 @@ function renderPanel(panel: Panel, close: () => void) {
       return <PlayerCard key={panel.sessionId} sessionId={panel.sessionId} onClose={close} />;
     case 'report':
       return <PlayerCard key={`r-${panel.sessionId}`} sessionId={panel.sessionId} startWithReport onClose={close} />;
+    case 'activity':
+      return <ActivityPanel key={panel.station} station={panel.station} {...(panel.message ? { message: panel.message } : {})} onClose={close} />;
   }
 }
 
@@ -461,6 +483,7 @@ export function Hud() {
       <CameraButtons />
       <ControlsHint />
       <Prompt />
+      <DrinkChip />
       <BottomNav />
       <BuildUi />
       <PanelHost />

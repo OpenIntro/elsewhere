@@ -18,6 +18,7 @@ import { useFrame } from '@react-three/fiber';
 import { useEffect, useRef, useState } from 'react';
 import type { Group } from 'three';
 import { C2S, CONFIG, S2C, angleDelta, getSeat, groundHeight, isWalkable, resolveMovement, type AnimState, type LocomotionAnim } from '@elsewhere/shared';
+import { standHeight } from '../build/surface.js';
 import { Character } from '../characters/index.js';
 import { perfAdd } from '../game/perf.js';
 import { net, registerDebugSection } from '../net/index.js';
@@ -352,7 +353,7 @@ export function LocalPlayer() {
       }
       lp.anim = seat ? 'idle' : locomotionFor(speed, lp.anim);
       ground = groundHeight(lp.x, lp.z);
-      lp.y = ground;
+      lp.y = standHeight(lp.x, lp.z, ground);
       void running;
       maybeSend(lp, live, !!seat, dt);
     }
@@ -363,7 +364,7 @@ export function LocalPlayer() {
     motion.oz *= bk;
     if (Math.abs(motion.ox) < 1e-4) motion.ox = 0;
     if (Math.abs(motion.oz) < 1e-4) motion.oz = 0;
-    const targetY = seat ? ground + seat.height : ground;
+    const targetY = seat ? ground + seat.height : standHeight(lp.x, lp.z, ground);
     if (!motion.ryInit) {
       motion.ry = targetY;
       motion.ryInit = true;

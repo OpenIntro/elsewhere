@@ -230,8 +230,12 @@
   .build-tile { width: 68px; }
   .build-tile__img, .build-tile__img img { width: 48px; height: 48px; }
   .build-bar { flex-wrap: wrap; row-gap: 6px; }
-  .build-actions { margin-left: 0; width: 100%; justify-content: space-between; }
-  .build-act { width: 50px; }
+  .build-actions { margin-left: 0; width: 100%; gap: 0; order: 3; }
+  .build-act { width: 46px; flex: none; }
+  .build-act--quiet { width: 30px; }
+  .build-place { margin-left: 0; padding: 0 14px; }
+  .build-done { margin-left: 6px; padding: 0 13px; }
+  .build-more { margin-right: auto; }
   .build-sign { flex-basis: 100%; order: 2; }
   .build-swatches { order: 1; }
   .build-status { font-size: 12.5px; }

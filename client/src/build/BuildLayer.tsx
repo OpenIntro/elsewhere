@@ -34,7 +34,7 @@ import { registerDebugSection } from '../net/index.js';
 import { runtime } from '../state/runtime.js';
 import { makeBillboards } from '../world/billboard.js';
 import { env } from '../world/env.js';
-import { GHOST_BAD, GHOST_BAD_EMISSIVE, GHOST_OK, GHOST_OK_EMISSIVE, ghostMaterial, lampGlassMaterial, pieceGlassMaterial, pieceMaterial } from './materials.js';
+import { GHOST_BAD, GHOST_BAD_EMISSIVE, GHOST_OK, GHOST_OK_EMISSIVE, ghostMaterial, lampGlassMaterial, pieceDepthMaterial, pieceGlassMaterial, pieceMaterial } from './materials.js';
 import { LAMP_GLOW_Y, SIGN_FACE, templateFor, templateTriangles, type Bucket } from './meshes.js';
 import { pickTargets, type PickTarget } from './picking.js';
 import { pieces, useBuildStore, variantFor } from './store.js';
@@ -66,6 +66,10 @@ function groupKey(p: PieceRecord): string {
 /** Pieces that may hide the player (they fade): anything above the ground, and every roof. */
 function fades(p: PieceRecord): boolean {
   return p.level > 0 || PIECES[p.kind].layer === 'roof' || PIECES[p.kind].layer === 'gable';
+}
+/** Storey-tall ground pieces (walls, doorways, pillars) that thin out when they stand between the camera and the player. */
+function screens(p: PieceRecord): boolean {
+  return p.level === 0 && PIECES[p.kind].structural;
 }
 
 function signTexture(text: string): CanvasTexture {
@@ -113,7 +117,7 @@ export function BuildLayer() {
   const root = useRef<Group>(null);
   const gl = useThree((s) => s.gl);
   const groups = useRef(new Map<string, GroupEntry>());
-  const signs = useRef(new Map<string, { mesh: Mesh; text: string }>());
+  const signs = useRef(new Map<string, { holder: Group; mat: MeshStandardMaterial; text: string }>());
   const seen = useRef(-1);
   const lastFade = useRef(0);
 
@@ -181,6 +185,7 @@ export function BuildLayer() {
       const mesh = new InstancedMesh(cloned, MAT[bucket], capacity);
       mesh.count = 0;
       mesh.castShadow = bucket === 'solid';
+      if (bucket === 'solid') mesh.customDepthMaterial = pieceDepthMaterial;
       mesh.receiveShadow = bucket !== 'glow';
       mesh.name = `build:${key}:${bucket}`;
       meshes.set(bucket, mesh);
@@ -217,7 +222,7 @@ export function BuildLayer() {
     for (const [key, list] of byKey) {
       const g = ensureGroup(key, list[0]!, list.length);
       g.list = list;
-      g.upper = list.some(fades);
+      g.upper = list.some((p) => fades(p) || screens(p));
       g.fade.fill(0);
       for (const [bucket, mesh] of g.meshes) {
         list.forEach((p, i) => {
@@ -247,9 +252,9 @@ export function BuildLayer() {
     for (const [id, s] of signs.current) {
       const p = want.get(id);
       if (p && p.text === s.text) continue;
-      root.current?.remove(s.mesh);
-      (s.mesh.material as MeshBasicMaterial).map?.dispose();
-      (s.mesh.material as Material).dispose();
+      root.current?.remove(s.holder);
+      s.mat.map?.dispose();
+      s.mat.dispose();
       signs.current.delete(id);
     }
     for (const [id, p] of want) {
@@ -267,7 +272,7 @@ export function BuildLayer() {
       holder.add(mesh, back);
       holder.name = `sign:${id}`;
       root.current?.add(holder);
-      signs.current.set(id, { mesh: holder as unknown as Mesh, text: p.text! });
+      signs.current.set(id, { holder, mat, text: p.text! });
     }
   }
 
@@ -287,15 +292,27 @@ export function BuildLayer() {
   function updateFade(dt: number): void {
     const lp = runtime.localPlayer;
     const k = 1 - Math.exp(-dt * 8);
+    // Horizontal direction from the focus towards the camera (camera.ts: camera sits at +(sin yaw, cos yaw)).
+    const cx = Math.sin(runtime.view.yaw);
+    const cz = Math.cos(runtime.view.yaw);
     for (const g of groups.current.values()) {
       if (!g.upper || !g.list.length) continue;
       let changed = false;
       g.list.forEach((p, i) => {
         let target = 0;
-        if (lp.ready && fades(p) && p.y > lp.y + 1.2) {
+        if (lp.ready) {
           const f = footprint(p.kind, p.x, p.z, p.rot);
-          const m = 2.4;
-          if (lp.x > f.minX - m && lp.x < f.maxX + m && lp.z > f.minZ - m && lp.z < f.maxZ + m) target = 1;
+          if (fades(p)) {
+            // Roofs and upper storeys over (or right next to) the player step aside completely.
+            const m = 2.4;
+            if (p.y > lp.y + 1.2 && lp.x > f.minX - m && lp.x < f.maxX + m && lp.z > f.minZ - m && lp.z < f.maxZ + m) target = 1;
+          } else if (screens(p)) {
+            // Tall ground pieces between the camera and the player thin out (like the interiors' cutaway).
+            const qx = Math.max(f.minX, Math.min(f.maxX, lp.x));
+            const qz = Math.max(f.minZ, Math.min(f.maxZ, lp.z));
+            const along = (p.x - lp.x) * cx + (p.z - lp.z) * cz;
+            if (Math.hypot(qx - lp.x, qz - lp.z) < 2.6 && along > 0.15) target = 0.8;
+          }
         }
         const cur = g.fade[i]!;
         const next = Math.abs(target - cur) < 0.01 ? target : cur + (target - cur) * k;

@@ -196,6 +196,8 @@ export function World(_props: WorldProps) {
     markRepresented(built.represented);
     // Dynamic systems draw these by construction (they map over INTERACTABLES by kind).
     markRepresented(INTERACTABLES.filter((i) => i.kind === 'pickup' || i.kind === 'fountain' || i.kind === 'portal').map((i) => i.id));
+    // Stations sit on their furniture (props.ts records them); keepers are drawn by client/src/activities.
+    markRepresented(INTERACTABLES.filter((i) => i.kind === 'station' || i.kind === 'keeper').map((i) => i.id));
   }, []);
 
   return (

@@ -35,6 +35,7 @@ import {
   directDependents,
   findNearestWalkable,
   footprint,
+  isPieceKind,
   locationAt,
   pickSpawnPoint,
   pieceColliders,
@@ -117,8 +118,12 @@ export interface BuildingService extends RoomHooks {
   /** Admin: remove every piece a profile owns (and what rests on them). */
   adminRemoveProfile(profileId: string): Promise<string[]>;
   list(opts?: { ownerId?: string; limit?: number }): PieceRecord[];
+  /** The compact snapshot (cached until the next change). */
   snapshotChunks(): BuildSnapshotPayload[];
-  stats(benchmark?: boolean): BuildStats;
+  /** Send the whole snapshot to one client (join, or C2S.buildSync after a reconnection). */
+  sendSnapshot(ctx: RoomContext, sessionId: string): void;
+  /** Counters and timings; `reset` starts a new measurement window (validation + event-loop histograms). */
+  stats(benchmark?: boolean, reset?: boolean): BuildStats;
 }
 
 export function toView(p: PieceRecord): PieceView {
@@ -149,12 +154,16 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
   const loop = monitorEventLoopDelay({ resolution: 10 });
   loop.enable();
 
+  /** Snapshot chunks, rebuilt lazily after any change (joins never re-encode an unchanged world). */
+  let snapCache: BuildSnapshotPayload[] | null = null;
   const addLive = (p: PieceRecord) => {
+    snapCache = null;
     index.add(p);
     const cols = pieceColliders(p);
     if (cols.length) collision.dynamic.set(p.id, cols);
   };
   const removeLive = (id: string) => {
+    snapCache = null;
     index.remove(id);
     collision.dynamic.remove(id);
   };
@@ -251,7 +260,9 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
     index,
 
     async load() {
+      for (const p of index.all()) collision.dynamic.remove(p.id);
       index.clear();
+      snapCache = null;
       for (const p of await repo.loadAll()) addLive(p);
       placedTotal = Math.max(index.size, (await ws.getKv<number>('build:placedTotal')) ?? 0);
     },
@@ -263,10 +274,15 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
       rooms.delete(ctx);
     },
     onPlayerJoin(ctx, sid) {
+      service.sendSnapshot(ctx, sid);
+    },
+
+    sendSnapshot(ctx, sid) {
       for (const chunk of service.snapshotChunks()) ctx.send(sid, S2C.buildSnapshot, chunk);
     },
 
     snapshotChunks() {
+      if (snapCache) return snapCache;
       const all = [...index.all()];
       const size = CONFIG.building.snapshotChunk;
       const chunks: BuildSnapshotPayload[] = [];
@@ -284,6 +300,7 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
         });
         chunks.push({ reset: i === 0, done: i + size >= all.length, total: all.length, owners, pieces: rows });
       }
+      snapCache = chunks;
       return chunks;
     },
 
@@ -301,8 +318,7 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
 
       // Sign text: sanitized, length-checked, profanity-masked; muted players can't write.
       let text: string | undefined;
-      const isKind = typeof m.kind === 'string' && m.kind in PIECES;
-      if (isKind && PIECES[m.kind].text) {
+      if (isPieceKind(m.kind) && PIECES[m.kind].text) {
         const clean = sanitizeText(m.text);
         if (!clean) return fail('text_required');
         if ([...clean].length > CONFIG.building.signMaxLength) return fail('text_too_long');
@@ -397,7 +413,7 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
       return all.slice(0, Math.max(1, Math.min(5000, o.limit ?? 200)));
     },
 
-    stats(benchmark = false) {
+    stats(benchmark = false, reset = false) {
       const owners = new Set([...index.all()].map((p) => p.ownerId)).size;
       const out: BuildStats = {
         pieces: index.size,
@@ -407,6 +423,10 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
         eventLoopDelayMs: { p50: loop.percentile(50) / 1e6, p99: loop.percentile(99) / 1e6, max: loop.max / 1e6 },
         snapshotBytes: service.snapshotChunks().reduce((n, c) => n + JSON.stringify(c).length, 0),
       };
+      if (reset) {
+        loop.reset();
+        vstats.count = vstats.total = vstats.max = 0;
+      }
       if (benchmark) {
         // Walk a small loop around each of up to 200 pieces: worst-case-ish movement cost next to walls.
         const sample = [...index.all()].filter((p) => p.level === 0).slice(0, 200);

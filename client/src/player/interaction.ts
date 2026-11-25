@@ -16,6 +16,7 @@ import {
   INTERACTABLES,
   S2C,
   getInteractable,
+  getStation,
   groundHeight,
   isSeatInteractable,
   sameSpace,
@@ -49,6 +50,8 @@ export const target: TargetState = { kind: 'none', id: '', x: 0, y: 0, z: 0, hei
 function eligible(it: Interactable): boolean {
   const obj = useGameStore.getState().objects[it.id];
   if (it.kind === 'pickup' && obj && (!obj.active || obj.holder)) return false;
+  // Keepers can be talked to only while on duty (their building is open).
+  if (it.kind === 'keeper' && !useGameStore.getState().keepers[it.keeperId]?.present) return false;
   if (isSeatInteractable(it) && obj) {
     const full = (1 << it.seats.length) - 1;
     if ((obj.value & full) === full) return false;
@@ -272,6 +275,11 @@ export function installInteraction(): () => void {
           break;
         case 'discovery':
           ui.openPanel({ kind: 'discovery', discoveryId: r.ui.discoveryId, name: r.ui.name, text: r.ui.text, firstTime: r.ui.firstTime });
+          break;
+        case 'activity':
+          // The store's try-on mirror is the customisation screen.
+          if (getStation(r.ui.station)?.kind === 'mirror') ui.openPanel({ kind: 'customize' });
+          else ui.openPanel(r.ui.message ? { kind: 'activity', station: r.ui.station, message: r.ui.message } : { kind: 'activity', station: r.ui.station });
           break;
       }
     }),

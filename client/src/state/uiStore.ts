@@ -18,7 +18,9 @@ export type Panel =
   // Bottom-navigation panels (ui worker).
   | { kind: 'map' }
   | { kind: 'inventory' }
-  | { kind: 'home' };
+  | { kind: 'home' }
+  // Building activities (client/src/activities): a station or keeper interactable id.
+  | { kind: 'activity'; station: string; message?: string };
 
 export interface InteractionPrompt {
   interactableId: string;

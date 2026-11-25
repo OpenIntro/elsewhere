@@ -28,6 +28,7 @@ import {
 } from '@elsewhere/shared';
 import { createPersistence } from '../src/persistence/index.js';
 import { RateLimiter } from '../src/moderation/index.js';
+import { buildArticles } from '../src/gazette/index.js';
 import { DAY_MS, makeWorld, type World } from './helpers.js';
 
 const HOUR_MS = DAY_MS / 24;
@@ -413,6 +414,29 @@ describe('building activities', { timeout: 120_000 }, () => {
     expect(w.state.activities.get(ACTIVITY_KEYS.nets)!.value).toBe(0);
     expect(parseActivityData<{ nets: number }>(w.state.activities.get(ACTIVITY_KEYS.nets)!.data, { nets: 0 }).nets).toBe(1);
     expect((await w.memory.list({ kind: 'nets_mended' }))[0]!.actors.length).toBe(2);
+    await w.close();
+  });
+
+  it('Gazette: real activity events become articles that cite their events (and never invent people)', async () => {
+    const w = await makeWorld({ activityTunables: { projectStageContributions: [1, 1, 1], projectStageDistinct: [1, 1, 1] } });
+    const a = await w.join('Alice', at('workshop', 'anvil').x, at('workshop', 'anvil').z);
+    for (let i = 0; i < 3; i++) {
+      w.clock.advance(CONFIG.activities.projectCooldownMs + 10);
+      await w.interact(a, 'station_workshop_anvil');
+    }
+    w.move(a, at('town_hall', 'meeting_table').x, at('town_hall', 'meeting_table').z);
+    await act(w, a, { station: 'station_hall_poll', action: 'vote', option: 0 });
+    tick(w, DAY_MS + 3000, 1000);
+    await new Promise((r) => setTimeout(r, 50));
+    const events = (await w.memory.list({ limit: 100 })).reverse();
+    const arts = buildArticles(events, { epochMs: w.collective.facts().clockEpochMs, dayLengthMs: DAY_MS });
+    const done = arts.find((x) => x.templateId === 'project_completed')!;
+    expect(done.section).toBe('front_page');
+    expect(done.body).toContain('Alice');
+    expect(done.eventIds.length).toBe(1);
+    const poll = arts.find((x) => x.templateId === 'poll_closed')!;
+    expect(poll.body).toContain('1 resident(s) voted');
+    for (const art of arts) for (const k of KEEPERS) expect(art.body).not.toContain(k.name);
     await w.close();
   });
 });

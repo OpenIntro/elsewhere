@@ -93,6 +93,8 @@ export const CONFIG = {
     build: { capacity: 8, refillPerSecond: 2 },
     /** "Unstuck" teleport to the Town Square. */
     unstuck: { capacity: 1, refillPerSecond: 1 / 30 },
+    /** Building: re-request the piece snapshot (after a reconnection). */
+    buildSync: { capacity: 2, refillPerSecond: 1 / 15 },
     /** Building activity actions (order, pin, vote, sign, take…). */
     activity: { capacity: 6, refillPerSecond: 1.5 },
     /** Café piano notes (a quick run of notes is fine; a flood is not). */

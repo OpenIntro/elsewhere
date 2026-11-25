@@ -205,6 +205,8 @@ export const C2S = {
   buildRemove: 'build_remove',
   /** Always-available rescue: teleport to the Town Square (rate limited). */
   unstuck: 'unstuck',
+  /** Building: ask for the full piece snapshot again (after an automatic reconnection). */
+  buildSync: 'build_sync',
   /** A building activity action (order a drink, pin a notice, vote, sign a guest book…). */
   activity: 'activity',
   /** One piano note (café piano; heard by everyone in or near the café). */
@@ -350,6 +352,7 @@ export interface C2SPayloads {
   [C2S.buildPlace]: BuildPlacePayload;
   [C2S.buildRemove]: BuildRemovePayload;
   [C2S.unstuck]: UnstuckPayload;
+  [C2S.buildSync]: Record<string, never>;
   [C2S.activity]: ActivityPayload;
   [C2S.pianoNote]: PianoNotePayload;
 }

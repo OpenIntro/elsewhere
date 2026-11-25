@@ -83,6 +83,20 @@ export function pickAt(clientX: number, clientY: number, pointerType: string): P
       best = { kind: 'interactable', target: it, px: d };
     }
   }
+  // Keepers (world characters): clicking one targets its talk spot across the counter.
+  for (const it of INTERACTABLES) {
+    if (it.kind !== 'keeper') continue;
+    const p = runtime.keepers.get(it.keeperId)?.render;
+    if (!p || !p.visible || isHiddenIndoors(p.x, p.z)) continue;
+    for (const h of [0.9, 1.5]) {
+      if (!worldToScreen(p.x, p.y + h, p.z, scr)) continue;
+      const d = Math.hypot(scr.x - clientX, scr.y - clientY) - 6;
+      if (d < bestD) {
+        bestD = d;
+        best = { kind: 'interactable', target: it, px: d };
+      }
+    }
+  }
   const local = useGameStore.getState().sessionId;
   for (const [id, r] of runtime.remotes) {
     if (id === local) continue;

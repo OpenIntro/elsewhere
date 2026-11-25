@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { CONFIG, PIECES, isWalkable, resolveMovement, type BuildPlacePayload, type BuildResultPayload, type BuildSnapshotPayload, type PieceKind } from '@elsewhere/shared';
+import { CONFIG, PIECES, PROTECTED_ZONES, isWalkable, resolveMovement, type BuildPlacePayload, type BuildResultPayload, type BuildSnapshotPayload, type PieceKind } from '@elsewhere/shared';
 import { newGuestProfile } from '../src/auth/index.js';
 import { buildArticles } from '../src/gazette/index.js';
 import { createPersistence } from '../src/persistence/index.js';
@@ -208,6 +208,37 @@ describe('building service', { timeout: 60_000 }, () => {
     await w.leave(a);
     expect(await place(w, b, 'crate', SITE.x + 2, SITE.z)).toMatchObject({ ok: false, reason: 'blocked' });
     expect((await place(w, b, 'crate', SITE.x + 2, SITE.z + 6)).ok).toBe(true);
+    await w.close();
+  });
+
+  it('a full ban (issued while online) refuses building too', async () => {
+    const w = await makeWorld({ building: { rate: gen } });
+    const a = await w.join('Ash', STAND.x, STAND.z);
+    await w.moderation.sanction({ profileId: w.ctx.getProfile(a)!.id, kind: 'ban', minutes: 60, reason: 'grief', createdBy: 'admin' });
+    expect(await place(w, a, 'crate', SITE.x, SITE.z)).toMatchObject({ ok: false, reason: 'banned' });
+    expect(w.building!.index.size).toBe(0);
+    await w.close();
+  });
+
+  it('refuses water, off-island and door aprons on the server too (shared rulebook)', async () => {
+    const w = await makeWorld({ building: { rate: gen, range: 1000 } });
+    const a = await w.join('Ash', STAND.x, STAND.z);
+    expect(await place(w, a, 'crate', -35, -43.5)).toMatchObject({ ok: false, reason: 'water' });
+    expect(await place(w, a, 'crate', 0, 75)).toMatchObject({ ok: false, reason: 'out_of_bounds' });
+    const apron = PROTECTED_ZONES.find((z) => z.kind === 'door_apron')!;
+    const r = await place(w, a, 'crate', Math.round(apron.center.x * 2) / 2, Math.round(apron.center.z * 2) / 2);
+    expect(r).toMatchObject({ ok: false, reason: 'protected' });
+    expect(r.message).toMatch(/doorway/);
+    await w.close();
+  });
+
+  it('re-sends the snapshot on request (C2S.buildSync after a reconnection)', async () => {
+    const w = await makeWorld({ building: { rate: gen } });
+    const a = await w.join('Ash', STAND.x, STAND.z);
+    expect((await place(w, a, 'crate', SITE.x, SITE.z)).ok).toBe(true);
+    w.building!.sendSnapshot(w.ctx, a);
+    const chunks = w.received(a, 'build_snapshot') as BuildSnapshotPayload[];
+    expect(chunks.at(-1)).toMatchObject({ reset: true, done: true, total: 1 });
     await w.close();
   });
 

@@ -21,7 +21,7 @@ import { useGameStore } from '../state/gameStore.js';
 import { runtime } from '../state/runtime.js';
 import { useUiStore } from '../state/uiStore.js';
 import { toasts } from '../ui/toasts.js';
-import { pickPiece, rayAtHeight, screenRay } from './picking.js';
+import { pickPiece, pickPieceHit, rayAtHeight, screenRay } from './picking.js';
 import { pieces, useBuildStore, variantFor } from './store.js';
 
 let reqSeq = 0;
@@ -115,45 +115,60 @@ export function reaim(): void {
 }
 
 /**
- * Aim from a screen point (mouse hover / tap). Upper storeys first: the camera
- * ray is crossed with the real top heights of nearby pieces (wall tops, upper
- * floors) and the highest storey where the piece is valid wins, so pointing
- * at the top of your walls puts a roof or the next storey there. Otherwise the
- * ground point under the cursor (lowest valid storey).
+ * Aim from a screen point (mouse hover / tap): you build on what you point at.
+ *  1. The top of one of your walls/pillars under the cursor → the next storey
+ *     there; the top of an upper floor → that storey.
+ *  2. Roof pieces (never on the ground): the camera ray is crossed with the
+ *     real top heights of nearby pieces and the highest storey where the roof
+ *     is valid wins, so pointing at the top of your walls puts a roof there.
+ *  3. Otherwise the ground under the cursor (lowest valid storey, so a wall
+ *     aimed at an existing wall climbs onto it); an upper result is re-aimed
+ *     at its own height so the ghost stays under the cursor.
  */
 export function aimFromScreen(clientX: number, clientY: number): void {
   const st = useBuildStore.getState();
+  if (st.mode !== 'place') return;
   const g = groundFromScreen(clientX, clientY);
   const r = screenRay(clientX, clientY);
-  if (r && g && st.mode === 'place') {
+  const ctx = placementContext();
+  const variant = variantFor(st.kind);
+  const valid = (p: Vec2, level: number) => {
+    const s = snapToGrid(st.kind, p, st.rot);
+    return validatePlacement({ kind: st.kind, variant, x: s.x, z: s.z, rot: st.rot, level }, ctx).ok;
+  };
+  const def = PIECES[st.kind];
+  // 1. Pointing at a piece's top face.
+  const hit = r ? pickPieceHit(clientX, clientY) : null;
+  const q = hit ? pieces.index.get(hit.id) : undefined;
+  if (q && hit && hit.normalY > 0.6) {
+    const qd = PIECES[q.kind];
+    const level = qd.structural ? q.level + 1 : q.kind === 'floor' && q.level > 0 ? q.level : -1;
+    if (level >= def.minLevel && level <= def.maxLevel && valid(hit.point, level)) return aimAt(hit.point, level);
+  }
+  // 2. Roofs: the highest storey top under the cursor.
+  if (r && g && def.minLevel >= 1) {
     const heights = new Map<string, { h: number; level: number }>();
-    for (const q of pieces.index.query({ minX: g.x - 14, maxX: g.x + 14, minZ: g.z - 14, maxZ: g.z + 14 })) {
-      const d = PIECES[q.kind];
-      let level = -1;
-      let h = 0;
-      if (d.structural) {
-        level = q.level + 1;
-        h = pieceTop(q);
-      } else if (q.kind === 'floor' && q.level > 0) {
-        level = q.level;
-        h = q.y;
-      }
-      if (level < 1 || level > CONFIG.building.maxLevel) continue;
-      heights.set(`${Math.round(h * 20)}|${level}`, { h, level });
+    for (const p of pieces.index.query({ minX: g.x - 14, maxX: g.x + 14, minZ: g.z - 14, maxZ: g.z + 14 })) {
+      if (!PIECES[p.kind].structural || p.level + 1 > CONFIG.building.maxLevel) continue;
+      const h = pieceTop(p);
+      heights.set(`${Math.round(h * 20)}|${p.level + 1}`, { h, level: p.level + 1 });
     }
-    const ctx = placementContext();
     let best: { p: Vec2; level: number } | null = null;
     for (const { h, level } of heights.values()) {
       if (best && level <= best.level) continue;
       const p = rayAtHeight(r, h);
-      if (!p) continue;
-      const s = snapToGrid(st.kind, p, st.rot);
-      const v = validatePlacement({ kind: st.kind, variant: variantFor(st.kind), x: s.x, z: s.z, rot: st.rot, level }, ctx);
-      if (v.ok) best = { p, level };
+      if (p && valid(p, level)) best = { p, level };
     }
     if (best) return aimAt(best.p, best.level);
   }
-  if (g) aimAt(g);
+  if (!g) return;
+  // 3. The ground under the cursor (climbs onto your own pieces there).
+  aimAt(g);
+  const gh = useBuildStore.getState().ghost;
+  if (r && gh?.ok && gh.level > 0 && Number.isFinite(gh.y)) {
+    const p = rayAtHeight(r, gh.y);
+    if (p && valid(p, gh.level)) aimAt(p, gh.level);
+  }
 }
 
 /** Confirm the ghost (click / Place button). */

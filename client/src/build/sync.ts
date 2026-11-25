@@ -7,6 +7,7 @@
  * debug section.
  */
 import {
+  C2S,
   CONFIG,
   PIECES,
   PIECE_KINDS,
@@ -118,6 +119,11 @@ export function installBuildSync(): () => void {
   const offs = [
     net.onLifecycle((e) => {
       if (e === 'joined') useBuildStore.getState().set({ synced: false, pending: 0 });
+      // Same session after an automatic reconnection: deltas sent while we were away are lost, so ask again.
+      if (e === 'resumed') {
+        useBuildStore.getState().set({ pending: 0 });
+        net.send(C2S.buildSync, {});
+      }
     }),
     net.on(S2C.buildSnapshot, (s) => {
       if (s.reset || !incoming) {
