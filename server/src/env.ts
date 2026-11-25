@@ -1,9 +1,15 @@
 /** Server environment configuration (read once at boot). See .env.example. */
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG, DEFAULT_PORT } from '@elsewhere/shared';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+// Optional repo-root `.env` (see .env.example). Real environment variables always win
+// (process.loadEnvFile never overrides them). Skipped under vitest so tests stay hermetic.
+const envFile = path.resolve(here, '..', '..', '.env');
+if (!process.env.VITEST && fs.existsSync(envFile)) process.loadEnvFile(envFile);
 
 function num(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -34,11 +40,11 @@ export const ENV = {
   port: num('PORT', DEFAULT_PORT),
   isProduction,
   /** Local persistence directory (gitignored). PGlite lives in `${dataDir}/pglite`. */
-  dataDir: path.resolve(process.env.DATA_DIR ?? path.join(here, '..', 'data')),
+  dataDir: path.resolve(str('DATA_DIR') ?? path.join(here, '..', 'data')),
   /** Real Postgres / Supabase connection string. When unset, embedded PGlite is used. */
   databaseUrl: str('DATABASE_URL'),
   /** Built client to serve (server/dist -> ../../client/dist, server/src -> same). */
-  clientDist: path.resolve(process.env.CLIENT_DIST ?? path.join(here, '..', '..', 'client', 'dist')),
+  clientDist: path.resolve(str('CLIENT_DIST') ?? path.join(here, '..', '..', 'client', 'dist')),
   dayLengthMs: Math.max(1, num('DAY_LENGTH_MINUTES', CONFIG.clock.dayLengthMinutes)) * 60_000,
   /** Token signing secret (HMAC over opaque tokens). Required in production. */
   sessionSecret: process.env.SESSION_SECRET || INSECURE_SECRET,

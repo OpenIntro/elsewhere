@@ -88,6 +88,18 @@ export function installUiBridge(): () => void {
       .map((o) => ({ id: o.id, available: o.active && !o.holder }));
     return { phase: ui.phase, panel: ui.panel?.kind ?? null, chatOpen: ui.chatOpen, held, pickups, rawChat: rawChat.slice(-30) };
   });
+  // Read-only view of synced shared objects + collective world state as this client holds them (tests).
+  registerDebugSection('world', () => {
+    const g = useGameStore.getState();
+    const pick = (id: string) => {
+      const o = g.objects[id];
+      return o ? { active: o.active, value: o.value, holder: o.holder } : null;
+    };
+    const objects: Record<string, unknown> = {};
+    for (const id of Object.keys(g.objects)) if (/^(fountain|portal_|rune_|bell_)/.test(id)) objects[id] = pick(id);
+    const me = g.sessionId ? g.players[g.sessionId] : undefined;
+    return { ...g.world, objects, self: me ? { profileId: me.profileId, name: me.name, appearance: me.appearance } : null };
+  });
   restoreChat();
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   offs.push(

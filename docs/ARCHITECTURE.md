@@ -6,7 +6,7 @@ Browser-based persistent multiplayer isometric social world. npm-workspaces mono
 shared/   pure TS contracts + logic (no DOM, no Node). Imported by client AND server.
 server/   Node: Express + Colyseus 0.18. One port serves client build, REST, websocket.
 client/   Vite + React 19 + three + @react-three/fiber 9 + drei 10 + zustand 5.
-scripts/  smoke-two-clients.mjs (Playwright, global install)
+scripts/  e2e/smoke/integration/load scripts (Playwright for browser ones), see README "Testing"
 docs/     this file
 ```
 
@@ -21,10 +21,11 @@ docs/     this file
 | `npm run typecheck` | builds shared d.ts, then `tsc --noEmit` per workspace |
 | `npm test` | vitest (`shared/test`, `server/test`, `client/test`) |
 | `node scripts/smoke-two-clients.mjs [url]` | real two-browser sync check against a running server (default `http://localhost:2567`) |
+| `npm run e2e:acceptance` | MVP acceptance: own production server + desktop and phone browsers through real onboarding (needs `npm run build`) |
 
 `@elsewhere/shared` exports a custom `source` condition → `src/*.ts`. Vite, vitest and `tsx` (dev) resolve it, so dev/test never need a shared build. `tsc` for the server (and `node` in production) use `dist/` — that is why `build`/`typecheck` build shared first.
 
-Env (see `.env.example`): `PORT`, `DATA_DIR`, `SESSION_SECRET`, `DAY_LENGTH_MINUTES`, `VITE_SERVER_PORT`, `CLIENT_DIST`.
+Env (full table in README.md; `.env.example`; parsed in `server/src/env.ts`, which also loads a repo-root `.env` without overriding real env vars): `PORT`, `NODE_ENV`, `SESSION_SECRET` (required, ≥ 32 chars, in production), `ADMIN_TOKEN`, `DATABASE_URL`, `DATA_DIR`, `CLIENT_DIST`, `TRUST_PROXY`, `SUPABASE_JWT_SECRET`, `SUPABASE_URL`, `DAY_LENGTH_MINUTES`, `GAZETTE_INTERVAL_MINUTES`, `GAZETTE_EARLY_EVENTS`, `GAZETTE_EARLY_DELAY_SECONDS`, `FOUNTAIN_STAGES`, `FOUNTAIN_STAGE_DISTINCT`, `PORTAL_RUNES_REQUIRED`, `PORTAL_WINDOW_MS`, `PORTAL_AWAKE_MS`, `BELL_CHORUS_PLAYERS`, `GATHERING_THRESHOLD`, `ELSEWHERE_DEBUG`; dev client only: `VITE_SERVER_PORT` (from the shell).
 
 ## Ownership map
 
@@ -90,11 +91,11 @@ Server checks: `npx vitest run server`; `npx tsx --conditions=source scripts/ser
 
 - **Stores** (`state/`): `useGameStore` (connection, session/profile, roster `players` *without positions*, `objects`, `clock`, collective `world`, block/mute lists), `useUiStore` (phase, open `panel`, interaction `prompt`, notifications, `textInputFocused`, chat log), `useSettingsStore` (master + music/sfx/ambience volumes, graphics, controls; persisted to localStorage via try/catch storage).
 - **Per-frame data never goes through React state**: `state/runtime.ts` holds `runtime.localPlayer` (predicted pose) and `runtime.remotes` (snapshot buffers). Read them in `useFrame`.
-- **net/**: `net.connect({name, appearance})` (REST guest session → `joinOrCreate`; idempotent), `net.send(C2S.x, payload)` (typed), `net.on(S2C.x, handler)` (typed bus; every S2C type is registered), `rest.*` typed REST, `sampleRemote(id, out)` interpolation (render `interpolationDelayMs` in the past), `installDebugHook` → `window.__ELSEWHERE__.snapshot()` (read-only; used by the smoke test — keep it).
+- **net/**: `net.connect({name, appearance})` (REST guest session → `joinOrCreate`; idempotent), `net.send(C2S.x, payload)` (typed), `net.on(S2C.x, handler)` (typed bus; every S2C type is registered), `rest.*` typed REST, `sampleRemote(id, out)` interpolation (render `interpolationDelayMs` in the past), `installDebugHook` → `window.__ELSEWHERE__.snapshot()` (read-only; used by the smoke/e2e tests — keep it; the `world` section exposes synced fountain/portal/rune/bell objects and the local profile's name + appearance). `CharacterPreview` writes its rendered yaw to `data-yaw` on `[data-testid=character-preview]` for the drag-to-rotate check.
 - **player/**: `LocalPlayer` (prediction with shared `resolveMovement`, sends `move` at `sendRateHz`, `stand` when moving while seated), `CameraRig` (orthographic iso, offset (30,30,30)), `input.ts` (`sampleInput`, `screenToWorld`, `setTouchMove`, `pressInteract`, `onInteractPressed`), `interaction.ts` (nearest interactable → `ui.prompt`, E → `C2S.interact`, results → panels).
 - **world/**: `<World />` — renders shared world data (incl. solid `FENCES`/`DECOR`) + lighting from the clock + synced object visuals. Quality profile (`world/env.ts` `QUALITY`) drives shadows/shadow-map size (it owns `gl.shadowMap.enabled` and recompiles on change), point-light budget, density and terrain resolution. `World` also sets the renderer's tone mapping (ACES, exposure 1) and caps the pixel ratio per quality via `setDpr` (1 / 1.5 / 2), overriding the Canvas `dpr`. Dev-only overrides: `?time=&fountain=&portal=&runes=&doors=&weather=&quality=&cam=` and `window.__ELSEWHERE_WORLD__` (info/bench/breakdown/coverage); screenshots via `scripts/world-screenshots.mjs`.
 - **characters/**: `<Character appearance anim animSeq held highlighted castShadow />` renders at origin (feet y=0, facing +Z); parent group moves it. `<CharacterPreview appearance anim spin />` is its own Canvas.
-- **ui/**: `Hud`, `Chat`, `Onboarding({onDone})`, `CustomizationScreen({initial,onSave,onCancel})`. `App` currently auto-joins as a random guest; the ui worker inserts onboarding before `net.connect`.
+- **ui/**: `Hud`, `Chat`, `Onboarding({onDone})`, `CustomizationScreen({initial,onSave,onCancel})`. `App` resumes a saved session or runs onboarding before `net.connect`; `?autojoin=1` (tests) joins at once as a random guest.
 - **audio/**: `audio.unlock()`, `playSfx(SfxName, position?)`, `setAmbience(AmbienceKey|null)`, `playMusic(track)`, `setListener`, `gainFor(channel)`. Procedural only.
 
 ## Data flow

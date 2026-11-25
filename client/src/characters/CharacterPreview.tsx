@@ -68,8 +68,9 @@ function Framing({ height }: { height: number }) {
   return null;
 }
 
-function Turntable({ drag, spin, children }: { drag: React.MutableRefObject<Drag>; spin: number; children: React.ReactNode }) {
+function Turntable({ drag, spin, rootRef, children }: { drag: React.MutableRefObject<Drag>; spin: number; rootRef: React.RefObject<HTMLDivElement | null>; children: React.ReactNode }) {
   const ref = useRef<Group>(null);
+  const shown = useRef(Number.NaN);
   useFrame((_, dt) => {
     const d = drag.current;
     if (!d.active) {
@@ -78,13 +79,22 @@ function Turntable({ drag, spin, children }: { drag: React.MutableRefObject<Drag
       const auto = d.idle > 2.2 ? spin * Math.min(1, (d.idle - 2.2) / 1.5) : 0;
       d.yaw += (d.vel + auto) * dt;
     }
-    if (ref.current) ref.current.rotation.y = d.yaw;
+    if (ref.current) {
+      ref.current.rotation.y = d.yaw;
+      // Read-only test hook: the yaw actually applied to the rendered model (written only when it changes).
+      const root = rootRef.current;
+      if (root && (Number.isNaN(shown.current) || Math.abs(d.yaw - shown.current) > 0.005)) {
+        shown.current = d.yaw;
+        root.dataset.yaw = d.yaw.toFixed(3);
+      }
+    }
   });
   return <group ref={ref}>{children}</group>;
 }
 
 export function CharacterPreview({ appearance, anim = 'idle', animSeq = 0, spin = 0.45, held = '', variant = 'player', yaw = -0.45, className, style }: CharacterPreviewProps) {
   const drag = useRef<Drag>({ active: false, lastX: 0, vel: 0, yaw, idle: 10 });
+  const rootRef = useRef<HTMLDivElement>(null);
   const blob = useMemo(() => (typeof document !== 'undefined' ? blobTexture() : null), []);
   useEffect(() => () => blob?.dispose(), [blob]);
   // Frame the actual silhouette (hair / hats included), with headroom for raised arms.
@@ -112,7 +122,9 @@ export function CharacterPreview({ appearance, anim = 'idle', animSeq = 0, spin 
 
   return (
     <div
+      ref={rootRef}
       className={className}
+      data-testid="character-preview"
       style={{ position: 'relative', width: '100%', height: '100%', minHeight: 160, touchAction: 'none', cursor: 'grab', ...style }}
       onPointerDown={onDown}
       onPointerMove={onMove}
@@ -140,7 +152,7 @@ export function CharacterPreview({ appearance, anim = 'idle', animSeq = 0, spin 
         <directionalLight position={[-3, 1.4, 2]} intensity={0.7} color="#d6e4ff" />
         {/* rim: behind */}
         <directionalLight position={[-1, 2.6, -3.5]} intensity={1.5} color="#fff0dc" />
-        <Turntable drag={drag} spin={spin}>
+        <Turntable drag={drag} spin={spin} rootRef={rootRef}>
           <Character appearance={appearance} anim={anim} animSeq={animSeq} held={held} variant={variant} castShadow seed={0.37} detail="high" groundShadow={false} />
         </Turntable>
         {/* soft contact blob + real shadow catcher */}

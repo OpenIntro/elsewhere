@@ -125,6 +125,7 @@ export function AudioDirector(): null {
     const bellRingers: { by: string; t: number }[] = [];
     let lastChorus = 0;
     let lastPortalSound = 0;
+    let lastFountainSound = 0;
     let lastChatBlip = 0;
     let lastReaction = 0;
     const onObject = (e: ObjectEvent) => {
@@ -167,6 +168,7 @@ export function AudioDirector(): null {
           audio.playSfx('splash', pos);
           break;
         case 'fountain_stage':
+          lastFountainSound = performance.now();
           audio.playSfx('fountain_stage', pos);
           break;
         case 'rune_lit':
@@ -247,7 +249,10 @@ export function AudioDirector(): null {
           }
         }
         // Collective changes (fallback when no explicit event arrives).
-        if (s.world.fountainStage > prev.world.fountainStage) audio.playSfx('fountain_stage', objectPosition('fountain'));
+        if (s.world.fountainStage > prev.world.fountainStage && performance.now() - lastFountainSound > 3000 && s.connection === 'connected' && prev.connection === 'connected') {
+          lastFountainSound = performance.now();
+          audio.playSfx('fountain_stage', objectPosition('fountain'));
+        }
         const awake = s.world.portalAwake || !!s.objects['portal_arch']?.active;
         const wasAwake = prev.world.portalAwake || !!prev.objects['portal_arch']?.active;
         if (awake !== wasAwake && performance.now() - lastPortalSound > 3000 && s.connection === 'connected' && prev.connection === 'connected') {

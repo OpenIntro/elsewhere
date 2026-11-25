@@ -151,12 +151,16 @@ describe('emotes while seated (live server, two clients)', { timeout: 60_000 }, 
     expect(seatRef).toMatch(new RegExp(`^${seat.id}#\\d$`));
 
     // Record what B observes for A's anim.
+    // Sample the baseline synchronously BEFORE sending: the first interval tick
+    // fires 20 ms later, and a 20 Hz patch can already carry 'wave' by then.
     const observed: string[] = [];
-    const t0 = Date.now();
-    const poll = setInterval(() => {
+    const sample = () => {
       const anim = seen()?.anim;
       if (anim && observed.at(-1) !== anim) observed.push(anim);
-    }, 20);
+    };
+    sample();
+    const t0 = Date.now();
+    const poll = setInterval(sample, 20);
     a.room.send('emote', { emote: 'wave' });
     await sleep(CONFIG.emotes.waveDurationMs + 500);
     clearInterval(poll);

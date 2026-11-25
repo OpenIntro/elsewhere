@@ -359,8 +359,16 @@ export class NetClient {
       }),
       cb.onAdd('objects', (o: ObjectStateView, id: string) => {
         const copy = (): ObjectStateView => ({ id, active: o.active, value: o.value, holder: o.holder, updatedAt: o.updatedAt });
-        store().setObject(copy());
-        cb.onChange(o, () => store().setObject(copy()));
+        // `world` comes from welcome only; keep it in step with the live synced objects
+        // (otherwise e.g. portalAwake stays true after the arch falls asleep).
+        const sync = () => {
+          const v = copy();
+          store().setObject(v);
+          if (id === 'fountain') store().setWorld({ fountainStage: Math.round(v.value) });
+          else if (id === 'portal_arch') store().setWorld({ portalAwake: v.active });
+        };
+        sync();
+        cb.onChange(o, sync);
       }),
       cb.listen('clockEpoch', (v: number) => store().setClock({ epochMs: v })),
       cb.listen('dayLengthMs', (v: number) => store().setClock({ dayLengthMs: v })),

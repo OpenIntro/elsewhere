@@ -2,7 +2,7 @@
   "name": "elsewhere",
   "version": "0.1.0",
   "private": true,
-  "description": "Elsewhere \u2014 somewhere between a game and a place.",
+  "description": "Elsewhere — somewhere between a game and a place.",
   "type": "module",
   "workspaces": [
     "shared",
@@ -18,7 +18,8 @@
     "start": "npm run start -w server",
     "typecheck": "npm run build -w shared && npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
     "test": "vitest run",
-    "smoke": "node scripts/smoke-two-clients.mjs"
+    "smoke": "node scripts/smoke-two-clients.mjs",
+    "e2e:acceptance": "node scripts/e2e-acceptance.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

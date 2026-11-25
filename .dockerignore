@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.git
+.env
+.env.*
+!.env.example
+data
+**/data
+.data
+docs/screenshots
+coverage
+test-results
+playwright-report
+*.log
+Dockerfile
+.dockerignore
