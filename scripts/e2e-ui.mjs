@@ -101,7 +101,7 @@ async function goInteract(page, id, resultSelector, tries = 30) {
     if (inView) {
       for (const dy of [0, 8, 16, 24, 32, 40]) {
         const pk = await query(page, 'pick', ground.x, ground.y - dy, 'mouse');
-        if (pk?.kind === 'interactable' && pk.id === id) {
+        if (pk?.kind === 'interactable' && pk.id === id && (await onCanvas(page, ground.x, ground.y - dy))) {
           await page.mouse.click(ground.x, ground.y - dy);
           try {
             if (typeof resultSelector === 'function') await resultSelector();
@@ -129,26 +129,51 @@ async function goInteract(page, id, resultSelector, tries = 30) {
   throw new Error(`could not reach/interact with ${id}`);
 }
 /** Click another player in the 3D view (opens the player card through the player menu). */
+/** True if a click at (x, y) would land on the 3D canvas rather than on UI. */
+async function onCanvas(page, x, y) {
+  return page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', [x, y]);
+}
 async function clickPlayer(page, sessionId) {
+  await closeChat(page);
+  await closeSheet(page);
   for (let i = 0; i < 20; i++) {
     const s = await snapshot(page);
     const p = s.players.find((q) => q.id === sessionId);
     if (p) {
       const at = await query(page, 'worldToScreen', p.x, p.z);
+      const vp = page.viewportSize();
+      if (at && (at.x < 60 || at.x > vp.width - 60 || at.y < 140 || at.y > vp.height - 130)) {
+        // Off-screen: walk toward them first (ground click part-way).
+        const me = await query(page, 'worldToScreen', s.local.x, s.local.z);
+        if (me) {
+          const dx = at.x - me.x;
+          const dy = at.y - me.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const step = Math.min(len * 0.6, Math.min(vp.width, vp.height) * 0.3);
+          await page.mouse.click(me.x + (dx / len) * step, me.y + (dy / len) * step);
+          await page.waitForTimeout(1500);
+          continue;
+        }
+      }
       if (at) {
         for (const dy of [30, 40, 20, 50, 12]) {
           const pk = await query(page, 'pick', at.x, at.y - dy, 'mouse');
-          if (pk?.kind === 'player' && pk.id === sessionId) {
+          if (pk?.kind === 'player' && pk.id === sessionId && (await onCanvas(page, at.x, at.y - dy))) {
             await page.mouse.click(at.x, at.y - dy);
-            await page.waitForSelector('[data-testid=player-card]', { timeout: 10000 });
-            return;
+            const ok = await page.waitForSelector('[data-testid=player-card]', { timeout: 6000 }).then(() => true, () => false);
+            if (ok) return;
+            break; // they may have moved; re-project and try again
           }
         }
       }
     }
     await page.waitForTimeout(500);
   }
-  throw new Error('could not click the other player');
+  const s = await snapshot(page);
+  const p = s.players.find((q) => q.id === sessionId);
+  const at = p ? await query(page, 'worldToScreen', p.x, p.z) : null;
+  await shot(page, 'e2e-fail-clickplayer');
+  throw new Error(`could not click the other player (me ${s.local.x.toFixed(1)},${s.local.z.toFixed(1)}; them ${p ? `${p.x.toFixed(1)},${p.z.toFixed(1)} → screen ${at ? `${Math.round(at.x)},${Math.round(at.y)}` : 'off'}` : 'not in roster'})`);
 }
 
 async function shot(page, name) {
@@ -385,23 +410,35 @@ try {
     pass('mailbox: A leaves a note → B reads it');
 
     // Pick up an item → Things → set it down.
-    await goInteract(a, 'pickup_apple', async () => {
+    // Pick the nearest item that is currently at its spot (a previous run may have moved one; they respawn after minutes).
+    const dbg = await uiDebug(a);
+    const meNow = (await snapshot(a)).local;
+    const candidates = [];
+    for (const p of dbg?.pickups ?? []) {
+      if (!p.available) continue;
+      const it = await query(a, 'interactable', p.id);
+      if (it) candidates.push({ id: p.id, name: it.name, d: Math.hypot(it.position.x - meNow.x, it.position.z - meNow.z) });
+    }
+    candidates.sort((x, y) => x.d - y.d);
+    const item = candidates[0];
+    if (!item) throw new Error('no pickup is available right now');
+    await goInteract(a, item.id, async () => {
       // Done when Things shows the apple in hand.
       const deadline = Date.now() + 15000;
       while (Date.now() < deadline) {
         await a.waitForTimeout(1200);
         await a.click('[data-testid=nav-inventory]');
-        const ok = await a.waitForSelector('[data-testid=panel-inventory] .item--held >> text=Apple', { timeout: 1500 }).then(() => true, () => false);
+        const ok = await a.waitForSelector(`[data-testid=panel-inventory] .item--held >> text=${item.name}`, { timeout: 1500 }).then(() => true, () => false);
         if (ok) return;
         await closeSheet(a);
       }
-      throw new Error('apple not in hand');
+      throw new Error(`${item.name} not in hand`);
     });
     await shot(a, 'e2e-11-things-apple');
     await a.click('[data-testid=panel-inventory] button:has-text("Set down")');
     await a.waitForSelector('[data-testid=panel-inventory] >> text=Your hands are empty', { timeout: 15000 });
     await closeSheet(a);
-    pass('pick up apple → shown in Things → set down');
+    pass('pick up an item → shown in Things → set down', item.name);
 
 
     // A real Gazette issue (needs the admin token of the server under test).

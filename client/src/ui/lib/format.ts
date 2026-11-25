@@ -35,9 +35,9 @@ export function formatWorldClock(t: WorldTime, style: '24h' | '12h' = '24h'): st
   return `${h}:${String(t.minutes).padStart(2, '0')} ${h24 < 12 ? 'am' : 'pm'}`;
 }
 
-/** In-world calendar: day 0 is the island's first day → "Day 1". */
+/** In-world calendar, numbered like the server's Gazette/World Memory text ("world-day 0" is the first day). */
 export function worldDayLabel(day: number): string {
-  return `Day ${Math.max(0, day) + 1}`;
+  return `Day ${Math.max(0, day)}`;
 }
 
 /** A real timestamp expressed in world time, e.g. "Day 12 · Golden hour". */

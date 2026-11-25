@@ -1074,13 +1074,16 @@ kbd {
 .article--lead { padding-bottom: 16px; margin-bottom: 18px; border-bottom: 1px solid var(--paper-line); }
 .article--lead .article__headline { font-size: clamp(24px, 3.6vw, 32px); line-height: 1.12; text-align: center; margin-bottom: 10px; }
 .article--lead .article__kicker { text-align: center; }
+.article--lead:not(.article--dropcap) .article__source { display: block; margin: 0 auto; }
 .article__body { margin: 0 0 0.6em; font-size: 15.5px; line-height: 1.58; color: #3a302a; hyphens: auto; }
 .article--lead .article__body { font-size: 17px; }
-.article--lead .article__body:first-of-type::first-letter { float: left; font: 600 3.1em/0.85 var(--font-display); margin: 0.06em 0.08em 0 0; color: var(--ink); }
+.article--lead:not(.article--dropcap) .article__body { text-align: center; }
+.article--dropcap .article__body--first::first-letter { float: left; font: 600 3.1em/0.85 var(--font-display); margin: 0.06em 0.08em 0 0; color: var(--ink); }
 .article__source { padding: 0; border: 0; background: none; color: var(--ink-3); font: italic 12.5px var(--font-serif); text-decoration: underline; text-decoration-color: var(--paper-line); text-underline-offset: 3px; cursor: pointer; min-height: 28px; }
 .article__source:hover { color: var(--ink); }
 .paper__cols { column-count: 2; column-gap: 28px; column-rule: 1px solid var(--paper-line); }
-.paper__section { break-inside: avoid-column; }
+.paper__section { break-inside: auto; }
+.paper__section-title { break-after: avoid; }
 .paper__section-title { margin: 0 0 10px; padding-bottom: 4px; border-bottom: 1px solid var(--ink); font: 700 11px/1.2 var(--font-sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
 .numbers { margin-top: 8px; padding: 14px 16px; background: rgba(58, 44, 32, 0.05); border-radius: 4px; }
 .numbers dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0; }
@@ -1305,6 +1308,7 @@ kbd {
   }
   .kb-open .chat { bottom: var(--kb); padding-bottom: 0; height: min(52dvh, calc(100dvh - var(--kb) - var(--safe-t) - 20px)); border-radius: 22px 22px 0 0; }
   .chat-peek { left: calc(var(--safe-l) + 12px); right: calc(var(--safe-r) + 12px); max-width: none; bottom: calc(var(--hud-bottom) + 66px); }
+  @media (pointer: coarse) { .chat-peek { bottom: calc(var(--ew-touch-bottom) + var(--safe-b) + 140px); } }
 
   .onboard, .loading { padding-left: calc(var(--safe-l) + 14px); padding-right: calc(var(--safe-r) + 14px); }
   .card { padding: 22px 18px; border-radius: 22px; }
@@ -1351,11 +1355,11 @@ kbd {
   .sheet--wide {
     left: auto;
     right: calc(var(--safe-r) + 8px);
-    top: 8px;
-    bottom: 8px;
+    top: calc(var(--hud-top) - 2px);
+    bottom: auto;
     width: min(460px, 62vw);
     height: auto;
-    max-height: none;
+    max-height: calc(100dvh - var(--hud-top) - 6px);
     translate: none;
     border-radius: 20px;
     border-bottom: 1px solid var(--glass-line);
@@ -1363,12 +1367,17 @@ kbd {
     z-index: 15;
     animation: sheet-in 320ms var(--ease-out) both;
   }
-  .sheet--wide { width: min(640px, 72vw); }
+  .sheet--wide { width: min(640px, 72vw); bottom: 8px; }
   .sheet__grip { display: none; }
+  .pcard { grid-template-columns: 92px 1fr; }
+  .pcard__preview { height: 104px; }
+  .action { min-height: 54px; }
   .sheet__head { padding-top: 10px; }
   .chat { left: calc(var(--safe-l) + 8px); right: auto; top: 8px; bottom: 8px; width: min(400px, 52vw); height: auto; border-radius: 20px; border-bottom: 1px solid var(--glass-line); padding-bottom: 0; }
   .kb-open .chat { bottom: calc(var(--kb) + 4px); height: auto; }
   .chat-peek { bottom: calc(var(--hud-bottom) + 10px); left: calc(var(--safe-l) + 12px); right: auto; max-width: 40vw; }
+  @media (pointer: coarse) { .chat-peek { bottom: auto; top: calc(var(--hud-top) + 4px); max-width: 28vw; } }
+  .toasts { width: min(360px, 40vw); top: calc(var(--hud-top) + 2px); }
   .onboard { padding-top: calc(var(--safe-t) + 8px); padding-bottom: calc(var(--safe-b) + 8px); }
   .onboard__steps { display: none; }
   .customize--screen .customize__panel { height: calc(100dvh - var(--safe-t) - var(--safe-b) - 16px); padding: 12px; gap: 10px; }

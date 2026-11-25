@@ -81,7 +81,12 @@ export function installUiBridge(): () => void {
   const offs: (() => void)[] = [];
   registerDebugSection('ui', () => {
     const ui = useUiStore.getState();
-    return { phase: ui.phase, panel: ui.panel?.kind ?? null, chatOpen: ui.chatOpen, rawChat: rawChat.slice(-30) };
+    const g = useGameStore.getState();
+    const held = g.sessionId ? (g.players[g.sessionId]?.held ?? '') : '';
+    const pickups = Object.values(g.objects)
+      .filter((o) => o.id.startsWith('pickup_'))
+      .map((o) => ({ id: o.id, available: o.active && !o.holder }));
+    return { phase: ui.phase, panel: ui.panel?.kind ?? null, chatOpen: ui.chatOpen, held, pickups, rawChat: rawChat.slice(-30) };
   });
   restoreChat();
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -112,8 +117,9 @@ export function installUiBridge(): () => void {
       pushChatOnce(m);
       if (m.fromProfileId && m.fromName) social().rememberName(m.fromProfileId, m.fromName);
       const ui = useUiStore.getState();
+      // A whisper while chat is closed: a notification without the text (the corner preview shows it and opens the conversation).
       if (m.channel === 'private' && m.from !== game().sessionId && !ui.chatOpen) {
-        toasts.push({ level: 'info', text: `${m.fromName} whispered to you`, detail: m.text.length > 70 ? `${m.text.slice(0, 68)}…` : m.text, ttlMs: 5000 });
+        toasts.push({ level: 'info', text: `${m.fromName} whispered to you`, ttlMs: 4500 });
       }
     }),
     net.on(S2C.rateLimited, (r) => {

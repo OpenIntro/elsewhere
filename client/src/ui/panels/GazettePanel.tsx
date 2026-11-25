@@ -34,11 +34,11 @@ function useClock() {
 function Article({ a, lead, onHistory }: { a: GazetteArticle; lead?: boolean; onHistory(): void }) {
   const place = LOCATIONS.find((l) => l.id === a.locationId)?.name;
   return (
-    <article className={`article${lead ? ' article--lead' : ''}`}>
+    <article className={`article${lead ? ' article--lead' : ''}${lead && a.body.length > 260 && !/^\S\s/.test(a.body) ? ' article--dropcap' : ''}`}>
       {place ? <p className="article__kicker">{place}</p> : null}
       <h3 className="article__headline">{a.headline}</h3>
       {a.body.split(/\n{2,}/).map((p, i) => (
-        <p key={i} className="article__body">
+        <p key={i} className={i === 0 ? 'article__body article__body--first' : 'article__body'}>
           {p}
         </p>
       ))}
@@ -82,6 +82,7 @@ function Issue({ issue, onHistory }: { issue: GazetteIssue; onHistory(): void })
           ))}
         </div>
       ) : null}
+      {bySection.has('by_the_numbers') ? null : (
       <aside className="numbers" aria-label="By the numbers">
         <h4 className="paper__section-title">This issue, by the numbers</h4>
         <dl>
@@ -103,6 +104,7 @@ function Issue({ issue, onHistory }: { issue: GazetteIssue; onHistory(): void })
           </div>
         </dl>
       </aside>
+      )}
       <p className="paper__colophon">Printed {new Date(issue.publishedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · compiled from the island’s own records</p>
     </div>
   );

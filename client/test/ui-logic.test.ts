@@ -92,8 +92,9 @@ describe('clock + formatting', () => {
     expect(phaseLabel(wt.phase)).toBe('Midday');
   });
   it('labels world days and dates', () => {
-    expect(worldDayLabel(0)).toBe('Day 1');
-    expect(worldDateAt(0, { epochMs: 0, dayLengthMs: 60_000 })).toMatch(/^Day 1 · /);
+    expect(worldDayLabel(0)).toBe('Day 0');
+    expect(worldDayLabel(3)).toBe('Day 3');
+    expect(worldDateAt(0, { epochMs: 0, dayLengthMs: 60_000 })).toMatch(/^Day 0 · /);
   });
   it('formats relative times', () => {
     expect(formatRelative(0, 10_000)).toBe('just now');
