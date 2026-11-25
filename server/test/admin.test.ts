@@ -5,7 +5,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client, type Room } from '@colyseus/sdk';
-import { CONFIG, ROOM_NAME, type ChatMessage } from '@elsewhere/shared';
+import { CONFIG, INTERACTABLES, ROOM_NAME, isSeatInteractable, type ChatMessage } from '@elsewhere/shared';
 
 const ADMIN = 'test-admin-token-0123456789';
 process.env.ADMIN_TOKEN = ADMIN;
@@ -121,5 +121,65 @@ describe('admin tools (ADMIN_TOKEN)', { timeout: 60_000 }, () => {
     expect((await rest('/api/admin/sanctions', { method: 'POST', token: ADMIN, body: { profileId: 'nobody', kind: 'ban' } })).status).toBe(404);
     expect((await rest('/api/admin/sanctions', { method: 'POST', token: ADMIN, body: { kind: 'ban' } })).status).toBe(400);
     expect((await rest('/api/admin/kick', { method: 'POST', token: ADMIN, body: {} })).status).toBe(400);
+  });
+});
+
+describe('emotes while seated (live server, two clients)', { timeout: 60_000 }, () => {
+  it('a seated player can wave; the other client sees wave then sit; the seat stays held; dance is refused', async () => {
+    const a = await player('Sitter');
+    const b = await player('Watcher');
+    const me = () => a.room.state.players.get(a.room.sessionId);
+    const seen = () => b.room.state.players.get(a.room.sessionId);
+    // Walk (server-validated moves) halfway to the nearest seat, then sit.
+    const start = { x: me().x, z: me().z };
+    const seat = INTERACTABLES.filter(isSeatInteractable).sort((p, q) => Math.hypot(p.position.x - start.x, p.position.z - start.z) - Math.hypot(q.position.x - start.x, q.position.z - start.z))[0]!;
+    for (let k = 1; k <= 10; k++) {
+      const t = (k / 10) * 0.5;
+      a.room.send('move', { x: start.x + (seat.position.x - start.x) * t, z: start.z + (seat.position.z - start.z) * t, rot: 0, anim: 'walk', seq: k });
+      await sleep(70);
+    }
+    await sleep(200);
+    const results: { id: string; ok: boolean; error?: string }[] = [];
+    a.room.onMessage('interact_result', (r: { id: string; ok: boolean; error?: string }) => results.push(r));
+    const errors: { code: string; inResponseTo?: string }[] = [];
+    a.room.onMessage('error', (e: { code: string; inResponseTo?: string }) => errors.push(e));
+    a.room.send('interact', { id: seat.id });
+    await sleep(400);
+    expect(results.at(-1)).toMatchObject({ id: seat.id, ok: true });
+    expect(seen().anim).toBe('sit');
+    const seatRef = seen().seat;
+    expect(seatRef).toMatch(new RegExp(`^${seat.id}#\\d$`));
+
+    // Record what B observes for A's anim.
+    const observed: string[] = [];
+    const t0 = Date.now();
+    const poll = setInterval(() => {
+      const anim = seen()?.anim;
+      if (anim && observed.at(-1) !== anim) observed.push(anim);
+    }, 20);
+    a.room.send('emote', { emote: 'wave' });
+    await sleep(CONFIG.emotes.waveDurationMs + 500);
+    clearInterval(poll);
+    expect(observed).toEqual(['sit', 'wave', 'sit']);
+    expect(seen().seat).toBe(seatRef);
+    expect(Date.now() - t0).toBeGreaterThan(CONFIG.emotes.waveDurationMs);
+
+    a.room.send('emote', { emote: 'dance' });
+    await sleep(300);
+    expect(errors.at(-1)).toMatchObject({ code: 'forbidden', inResponseTo: 'emote' });
+    expect(seen().anim).toBe('sit');
+    expect(seen().seat).toBe(seatRef);
+
+    // Standing up, a wave reverts to idle.
+    a.room.send('stand', {});
+    await sleep(300);
+    expect(seen().seat).toBe('');
+    a.room.send('emote', { emote: 'wave' });
+    await sleep(150);
+    expect(seen().anim).toBe('wave');
+    await sleep(CONFIG.emotes.waveDurationMs + 300);
+    expect(seen().anim).toBe('idle');
+    await a.room.leave();
+    await b.room.leave();
   });
 });

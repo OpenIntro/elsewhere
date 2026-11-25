@@ -45,6 +45,7 @@ import { newGuestProfile, toProfileSummary } from '../auth/index.js';
 import { ENV } from '../env.js';
 import type { StoredProfile } from '../persistence/index.js';
 import { services, type ServerServices } from '../services.js';
+import { applyEmote } from './emotes.js';
 import { roomRegistry, type RoomContext, type TimerHandle } from './RoomContext.js';
 import { ObjectState, PlayerState, WorldState } from './schema.js';
 
@@ -417,23 +418,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   }
 
   private handleEmote(sid: string, emote: unknown): void {
-    const p = this.state.players.get(sid);
-    if (!p) return;
-    if (!isEmote(emote)) return this.ctx.error(sid, 'bad_request', 'Unknown emote', C2S.emote);
-    if (p.seat) return this.ctx.error(sid, 'forbidden', 'Stand up first', C2S.emote);
-    p.anim = emote;
-    p.animSeq = (p.animSeq + 1) % 65536;
-    this.animTimers.get(sid)?.clear();
-    if (emote === 'wave') {
-      this.animTimers.set(
-        sid,
-        this.ctx.setTimeout(() => {
-          const cur = this.state.players.get(sid);
-          if (cur && cur.anim === 'wave') cur.anim = 'idle';
-        }, CONFIG.emotes.waveDurationMs),
-      );
-    }
-    this.ctx.broadcast(S2C.emote, { sessionId: sid, emote, ts: Date.now() });
+    applyEmote(this.ctx, sid, emote, this.animTimers);
   }
 
   private async handleInteract(sid: string, m: C2SPayloads['interact']): Promise<void> {

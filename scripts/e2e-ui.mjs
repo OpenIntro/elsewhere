@@ -365,6 +365,12 @@ try {
     await shot(a, 'e2e-09-fountain');
     pass('fountain → inspect panel');
 
+    // Town Hall archive → town history.
+    await goInteract(a, 'archive_town_hall', '[data-testid=memory-timeline]');
+    await shot(a, 'e2e-12-archive');
+    pass('Town Hall archive → town history timeline');
+    await closeSheet(a);
+
     // Mailbox: A leaves a note, B reads it.
     const note = `Hello from the e2e test ${Date.now() % 100000}`;
     await goInteract(a, 'mailbox_post_office', '[data-testid=panel-mailbox]');
@@ -397,11 +403,6 @@ try {
     await closeSheet(a);
     pass('pick up apple → shown in Things → set down');
 
-    // Town Hall archive → town history.
-    await goInteract(a, 'archive_town_hall', '[data-testid=memory-timeline]');
-    await shot(a, 'e2e-12-archive');
-    pass('Town Hall archive → town history timeline');
-    await closeSheet(a);
 
     // A real Gazette issue (needs the admin token of the server under test).
     const adminToken = process.env.E2E_ADMIN_TOKEN;
