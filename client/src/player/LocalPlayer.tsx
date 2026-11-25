@@ -207,8 +207,8 @@ export function LocalPlayer() {
       return;
     }
     // Simulate the real elapsed time (sub-stepped) so a slow device still moves at true speed;
-    // a gap > 0.5 s (tab was hidden, debugger, GC storm) is treated as a pause, not a teleport.
-    const frameDt = rawDt > 0.5 ? 1 / 60 : rawDt;
+    // a gap > 2 s (tab was hidden, debugger, GC storm) is treated as a pause, not a teleport.
+    const frameDt = rawDt > 2 ? 1 / 60 : rawDt;
     const steps = Math.max(1, Math.ceil(frameDt / 0.05));
     const dt = frameDt / steps;
     const game = useGameStore.getState();
@@ -391,39 +391,7 @@ export function LocalPlayer() {
       ground = groundHeight(lp.x, lp.z);
       lp.y = ground;
       void running;
-    }
-
-    // --- Network ------------------------------------------------------------
-    motion.sendAcc += frameDt;
-    if (live && !seat) {
-      const changed =
-        lp.x !== motion.lastSentX ||
-        lp.z !== motion.lastSentZ ||
-        lp.anim !== motion.lastSentAnim ||
-        Math.abs(angleDelta(lp.rot, motion.lastSentRot)) > 0.15;
-      if ((changed && motion.sendAcc >= SEND_INTERVAL) || motion.forceSend) {
-        motion.sendAcc = 0;
-        lp.seq += 1;
-        if (
-          net.send(C2S.move, {
-            x: lp.x,
-            z: lp.z,
-            rot: lp.rot,
-            anim: lp.anim,
-            seq: lp.seq,
-          })
-        ) {
-          const slot = lp.seq % HISTORY;
-          histSeq[slot] = lp.seq;
-          histX[slot] = lp.x;
-          histZ[slot] = lp.z;
-          motion.lastSentX = lp.x;
-          motion.lastSentZ = lp.z;
-          motion.lastSentAnim = lp.anim;
-          motion.lastSentRot = lp.rot;
-          motion.forceSend = false;
-        }
-      }
+      maybeSend(lp, live, !!seat, dt);
     }
 
     // --- Render -------------------------------------------------------------
@@ -476,6 +444,46 @@ export function LocalPlayer() {
       />
     </group>
   );
+}
+
+/** Send C2S.move at CONFIG.movement.sendRateHz of SIMULATED time (called per sub-step). */
+function maybeSend(
+  lp: typeof runtime.localPlayer,
+  live: boolean,
+  seated: boolean,
+  dt: number,
+): void {
+  motion.sendAcc += dt;
+  if (live && !seated) {
+    const changed =
+      lp.x !== motion.lastSentX ||
+      lp.z !== motion.lastSentZ ||
+      lp.anim !== motion.lastSentAnim ||
+      Math.abs(angleDelta(lp.rot, motion.lastSentRot)) > 0.15;
+    if ((changed && motion.sendAcc >= SEND_INTERVAL) || motion.forceSend) {
+      motion.sendAcc = 0;
+      lp.seq += 1;
+      if (
+        net.send(C2S.move, {
+          x: lp.x,
+          z: lp.z,
+          rot: lp.rot,
+          anim: lp.anim,
+          seq: lp.seq,
+        })
+      ) {
+        const slot = lp.seq % HISTORY;
+        histSeq[slot] = lp.seq;
+        histX[slot] = lp.x;
+        histZ[slot] = lp.z;
+        motion.lastSentX = lp.x;
+        motion.lastSentZ = lp.z;
+        motion.lastSentAnim = lp.anim;
+        motion.lastSentRot = lp.rot;
+        motion.forceSend = false;
+      }
+    }
+  }
 }
 
 function arrive(): void {

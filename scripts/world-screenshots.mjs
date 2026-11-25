@@ -59,29 +59,42 @@ const shots = [
   { name: 'night-residential', q: 'cam=residential&time=0.9' },
   { name: 'quality-low', q: `cam=town_square&time=${MID}&quality=low` },
   { name: 'quality-high', q: `cam=town_square&time=${MID}&quality=high` },
-].filter((s) => s.name.includes(filter));
+].filter((s) => !filter || filter.split(',').some((f) => s.name.includes(f)));
+
+async function takeShot(s) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(`${s.name}: pageerror ${e.message}`));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(`${s.name}: console.error ${m.text()}`);
+    if (m.type() === 'warning' && m.text().includes('[world]')) errors.push(`${s.name}: ${m.text()}`);
+  });
+  const quality = s.q.includes('quality=') ? '' : '&quality=high';
+  await page.goto(`${base}/?${s.q}${quality}`);
+  await page.waitForFunction(() => !!window.__ELSEWHERE_WORLD__, null, { timeout: 60_000 });
+  await page.addStyleTag({ content: '#root > :not(:first-child), body > div:not(#root) { display: none !important; }' });
+  await page.waitForTimeout(s.name.startsWith('fountain') || s.name.startsWith('portal') ? 6000 : 4500);
+  const info = await page.evaluate(() => window.__ELSEWHERE_WORLD__.info());
+  await page.screenshot({ path: `${outDir}/${s.name}.png` });
+  console.log(`[shot] ${s.name}: calls=${info.calls} tris=${info.triangles} avgFrame=${info.avgFrameMs.toFixed(1)}ms q=${info.quality}`);
+  if (s.name === 'island') console.log('[coverage]', JSON.stringify(await page.evaluate(() => window.__ELSEWHERE_WORLD__.coverage())));
+  await ctx.close();
+}
 
 const browser = await chromium.launch();
 const errors = [];
 try {
   for (const s of shots) {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
-    const page = await ctx.newPage();
-    page.on('pageerror', (e) => errors.push(`${s.name}: pageerror ${e.message}`));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(`${s.name}: console.error ${m.text()}`);
-      if (m.type() === 'warning' && m.text().includes('[world]')) errors.push(`${s.name}: ${m.text()}`);
-    });
-    const quality = s.q.includes('quality=') ? '' : '&quality=high';
-    await page.goto(`${base}/?${s.q}${quality}`);
-    await page.waitForFunction(() => !!window.__ELSEWHERE_WORLD__, null, { timeout: 60_000 });
-    await page.addStyleTag({ content: '#root > :not(:first-child), body > div:not(#root) { display: none !important; }' });
-    await page.waitForTimeout(s.name.startsWith('fountain') || s.name.startsWith('portal') ? 6000 : 4500);
-    const info = await page.evaluate(() => window.__ELSEWHERE_WORLD__.info());
-    await page.screenshot({ path: `${outDir}/${s.name}.png` });
-    console.log(`[shot] ${s.name}: calls=${info.calls} tris=${info.triangles} avgFrame=${info.avgFrameMs.toFixed(1)}ms q=${info.quality}`);
-    if (s.name === 'island') console.log('[coverage]', JSON.stringify(await page.evaluate(() => window.__ELSEWHERE_WORLD__.coverage())));
-    await ctx.close();
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await takeShot(s);
+        break;
+      } catch (err) {
+        // e.g. a dev-server HMR reload mid-shot (other people editing): retry
+        console.log(`[retry] ${s.name} attempt ${attempt}: ${err instanceof Error ? err.message.split('\n')[0] : err}`);
+        if (attempt === 3) errors.push(`${s.name}: failed after retries`);
+      }
+    }
   }
 } finally {
   await browser.close();

@@ -220,6 +220,22 @@ export class NetClient {
         });
       }
     }, delay);
+    // Long backoff: poll the (cheap) health endpoint and retry as soon as the server answers.
+    if (delay > 1500) {
+      const timer = this.rejoinTimer;
+      const probe = async () => {
+        if (this.rejoinTimer !== timer) return;
+        try {
+          await rest.health();
+          if (this.rejoinTimer === timer) this.rejoinNow();
+          return;
+        } catch {
+          /* still down */
+        }
+        setTimeout(() => void probe(), 1000);
+      };
+      setTimeout(() => void probe(), 1000);
+    }
   }
 
   /** Retry a pending fresh rejoin right now (network came back / tab visible). */

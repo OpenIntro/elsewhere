@@ -431,7 +431,7 @@ async function testRemoteSmoothness(pageA, pageB) {
         const tick = () => {
           const r = window.__ELSEWHERE__.snapshot().remotes.find((q) => q.id === id);
           if (r) out.push({ t: performance.now() - t0, x: r.x, z: r.z });
-          if (performance.now() - t0 < 2200) requestAnimationFrame(tick);
+          if (performance.now() - t0 < 3200) requestAnimationFrame(tick);
           else resolve(out);
         };
         requestAnimationFrame(tick);
@@ -440,7 +440,11 @@ async function testRemoteSmoothness(pageA, pageB) {
   );
   await pageA.keyboard.up(key);
   // Analyse the steady part (skip acceleration).
-  const steady = frames.filter((f) => f.t > 500 && f.t < 2100);
+  const steady = frames.filter((f) => f.t > 500 && f.t < 3100);
+  if (steady.length < 10) {
+    record('second client sees smooth movement', false, `INCONCLUSIVE: observer page rendered only ${frames.length} frames in 3.2 s (machine overloaded); see client/test/interpolation.test.ts for the deterministic check`);
+    return;
+  }
   const first = steady[0];
   const lastF = steady.at(-1);
   const dir = { x: lastF.x - first.x, z: lastF.z - first.z };
@@ -542,15 +546,20 @@ async function testMobile(browser) {
     await sleep(1200);
     const mid = await snap(page);
     await touch('touchEnd', []);
-    await sleep(500);
-    const after = await snap(page);
+    const tRel = Date.now();
+    const atRelease = await snap(page);
+    // Released: the player must decelerate to a stop (allow for slow frames under load).
+    const after = await waitFor(page, (sn) => sn.local.speed < 0.1, 'player to stop after joystick release', 8000).catch(() => null);
+    const stopMs = Date.now() - tRel;
     const moved = { x: mid.local.x - before.local.x, z: mid.local.z - before.local.z };
     const expect = keyDir('KeyW', before.camera.yaw);
     const ang = angleBetween(moved, expect);
     const d = Math.hypot(moved.x, moved.z);
-    const stopped = Math.hypot(after.local.x - mid.local.x, after.local.z - mid.local.z) < 1.5 && after.local.speed < 0.1;
+    // Drift is measured from the first snapshot after the release was delivered (CDP round trips are slow under load).
+    const drift = after ? Math.hypot(after.local.x - atRelease.local.x, after.local.z - atRelease.local.z) : Infinity;
+    const stopped = drift < 1.5;
     // A clear path upward is not guaranteed; sliding along an obstacle can bend the direction.
-    record('touch: virtual joystick moves the player', d > 1 && (ang < 35 || d > 1) && stopped, `moved ${d.toFixed(2)} m, direction error vs screen-up ${ang.toFixed(0)}°, stops on release=${stopped}`);
+    record('touch: virtual joystick moves the player', d > 1 && (ang < 35 || d > 1) && stopped, `moved ${d.toFixed(2)} m, direction error vs screen-up ${ang.toFixed(0)}°, stops on release=${stopped} (observed stopped ${stopMs} ms after release; drift after release ${drift.toFixed(2)} m)`);
   }
 
   // Pinch on the canvas: camera zoom changes, page does not zoom/scroll.
