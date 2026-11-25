@@ -18,6 +18,7 @@ import {
   getInteractable,
   groundHeight,
   isSeatInteractable,
+  sameSpace,
   type Interactable,
 } from '@elsewhere/shared';
 import { actions, net } from '../net/index.js';
@@ -67,6 +68,8 @@ export function findTarget(x: number, z: number, yaw = runtime.localPlayer.rot):
     const dz = it.position.z - z;
     const d2 = dx * dx + dz * dz;
     if (d2 > r * r) continue;
+    // No using things through walls (the server enforces the same rule).
+    if (!sameSpace({ x, z }, it.position, it.kind === 'door')) continue;
     const d = Math.sqrt(d2);
     const facing = d > 0.3 ? (dx * fx + dz * fz) / d : 1;
     const score = d * (1 - FACING_BIAS * facing);
@@ -134,6 +137,7 @@ export function updateTargeting(): void {
     const dz = p.z - lp.z;
     const d = Math.hypot(dx, dz);
     if (d > PLAYER_TARGET_RADIUS) continue;
+    if (!sameSpace({ x: lp.x, z: lp.z }, { x: p.x, z: p.z })) continue;
     const facing = d > 0.3 ? (dx * fx + dz * fz) / d : 1;
     // Objects get a small priority: standing next to a bench with friends should still offer "Sit".
     const score = d * (1 - FACING_BIAS * facing) + 0.5;

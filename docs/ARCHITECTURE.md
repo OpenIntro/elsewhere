@@ -22,6 +22,7 @@ docs/     this file
 | `npm test` | vitest (`shared/test`, `server/test`, `client/test`) |
 | `node scripts/smoke-two-clients.mjs [url]` | real two-browser sync check against a running server (default `http://localhost:2567`) |
 | `npm run e2e:acceptance` | MVP acceptance: own production server + desktop and phone browsers through real onboarding (needs `npm run build`) |
+| `npm run e2e:interiors` | walk-in interiors with two real browsers (needs `npm run build`; port `INT_PORT`, default 2631) |
 
 `@elsewhere/shared` exports a custom `source` condition → `src/*.ts`. Vite, vitest and `tsx` (dev) resolve it, so dev/test never need a shared build. `tsc` for the server (and `node` in production) use `dist/` — that is why `build`/`typecheck` build shared first.
 
@@ -53,12 +54,56 @@ Env (full table in README.md; `.env.example`; parsed in `server/src/env.ts`, whi
 - **`clock.ts`** — `worldTimeAt(now, {epochMs, dayLengthMs})` → day, 0..1 `timeOfDay`, hours, `phase` (`morning | midday | golden_hour | dusk | night`), `phaseProgress`; `sunAngles`, `daylight`, `lightsShouldBeOn`. Server persists the epoch; clients add `clock.offsetMs` (from `welcome.serverTime`) via `serverNow()`.
 - **`collision.ts`** — `resolveMovement(from, to, radius)` (sub-stepped, slides along colliders and shores, never ends overlapping), `isWalkable`, `collidesAt`, `findNearestWalkable`, `createCollisionWorld` (tests). Used by client prediction **and** server validation.
 - **`memory.ts`** — `WorldEvent` (attributed, `significance` 0–3), `NewWorldEvent`, `GazetteIssue/Article` (articles carry `eventIds` + `templateId`), `PersistentWorldState`.
+- **`world/interiors.ts`** — walk-in buildings (see "Interiors" below).
 - **`world/`** — `terrainHeight(x,z)` / `groundHeight` / `isGroundWalkable` / `shoreRadius` / `islandOutline` (organic ~120×127 island, hills, Town Hall rise, promontory under The Unknown, creek through the Woods), `LOCATIONS` (9, with ambience keys), `PATHS` (winding polylines) and `DECKS` (dock + Mossy Bridge; walkable over water), `BUILDINGS` (front = local +Z, door centred on it), `INTERACTABLES` (89 entries, discriminated union by `kind`), `structures.ts` (`FOUNTAIN`, `PORTAL_ARCH` + `archPillars`, `STANDING_STONES`, `PROPS` incl. café tables), `TREES`/`ROCKS`/`BUSHES` (seeded, deterministic), `COLLIDERS` (derived from all of the above — never edit by hand), `SPAWN_POINTS`, `ITEMS`, `DISCOVERIES`.
 
 Key data conventions:
 - Seat ref in `PlayerStateView.seat`: `"<interactableId>#<seatIndex>"` (`seatRef`, `parseSeatRef`, `getSeat`). Seated character root = `seat.position` at `groundHeight + seat.height`, facing `seat.yaw`; standing up → `seat.exit`.
 - `ObjectStateView` semantics per kind are documented on the interface (seat bitmask, door open, light on, bell ring count, pickup holder, fountain stage, portal awake, rune lit). Only `synced: true` interactables have entries.
 - `PlayerStateView.appearance` is a JSON string (schema stays flat); parse with `parseAppearanceJson`.
+
+## Interiors (walk-in buildings)
+
+Interiors live in the same world space and room as everything else: no scene switch, no teleport. A building with `enterable: true` (`world/buildings.ts`: Café, General Store, Town Hall, Workshop, House 1, House 2, Boathouse; houses 3–5 are closed with `futureHome: true`) is a hollow shell: `colliders.ts` emits its walls (`source: 'wall'`, `WALL_THICKNESS` 0.28 m, a gap of `doorWidth` in the front face) and its furniture (`source: 'furniture'`) instead of one box, so client prediction, server validation and both pathfinders (client NavGrid A*, server-integration walker) see the same rooms. `groundHeight` returns the interior floor (`floorY` = base terrain + `floorLift`), a linear doorstep ramp in front of the door and low platforms (café stage, hall dais); `terrain.ts` levels the ground under walk-in buildings. `locationAt` returns the building's location anywhere inside it. Server: `WorldRoom.handleInteract` additionally requires `sameSpace(player, target)` (no using indoor things from outside a wall; doors work from both sides), and a reconnect hint never moves a saved position to the other side of a wall.
+
+`shared/src/world/interiors.ts` API (for activities and other systems):
+
+```ts
+INTERIORS: readonly Interior[]           // one per enterable building; getInterior(id)
+interface Interior {
+  id; buildingId; name; locationId; purpose: 'cafe'|'store'|'hall'|'workshop'|'home'|'boathouse';
+  floor: 'wood'|'stone';
+  footprint: RectZone; inner: RectZone;  // RectZone = { center: Vec2, halfWidth, halfDepth, yaw }
+  floorY; baseY; wallThickness; wallHeight;
+  doors: InteriorDoor[];                 // { id (door interactable), position (opening centre), yaw (outward), width, apron: RectZone, inside: Vec2, outside: Vec2 }
+  rooms: InteriorRoom[];                 // { id, name, bounds: RectZone } (open-plan zones)
+  anchors: Record<string, InteriorAnchor>; // { name, position (walkable standing spot), yaw (facing the thing), y (floor) }
+  furniture: FurniturePiece[];           // { id, kind, position, yaw, local, localYaw, shape|null, height, variant }
+  platforms: InteriorPlatform[];         // { id, zone, height }
+  seatIds: string[];                     // indoor chair/bench interactables (INTERIOR_SEATS → interactables.ts)
+  lights: InteriorLight[];               // ceiling lamps (position, y above floor, colour)
+}
+interiorAnchor(interiorId, name) // throws on unknown names
+interiorAt(p, margin?) / spaceAt(p) / sameSpace(a, b, isDoor?) / zoneContains(zone, p, margin?) / zoneLocal / zoneCorners
+FURNITURE, INTERIOR_SEATS, wallSegments(building), floorHeightAt(...), rampLength(b), rampHalfWidth(b)
+PROTECTED_ZONES: readonly ProtectedZone[] // every building footprint ('building') + the apron in front of each door ('door_apron', DOOR_APRON_DEPTH 3.2 m deep, door width + 2·1.1 m wide)
+protectedZoneAt(p, margin?) // first zone containing p, or null — player building must refuse placement there
+```
+
+Anchors (all walkable, reachable from the spawn through the door — `shared/test/interiors.test.ts`):
+
+| Interior | Anchors |
+|---|---|
+| `cafe` | entrance, counter, barista, espresso, stage, piano, table_1, table_2, table_3, bookshelf |
+| `general_store` | entrance, counter, shopkeeper, shelf_1, shelf_2, shelf_3, display, crates, stove |
+| `town_hall` | entrance, lectern, stage, audience, notice_board, archive, archive_shelves, meeting_table |
+| `workshop` | entrance, workbench_1, workbench_2, tool_wall, kiln, anvil, project_1, lumber_rack |
+| `house_1`, `house_2` | entrance, table, hearth, bed, kitchen, bookshelf |
+| `boathouse` | entrance, boat, workbench, nets |
+
+Indoor interactables: café chairs + piano stool + `inspect_cafe_piano`; store `pickup_apple` (moved in) + a chair; Town Hall `archive_town_hall` (moved in), `inspect_hall_notices`, four benches, four meeting chairs; Workshop `inspect_workbench`, `pickup_wrench` (moved in), `inspect_boat_frame`, two stools; homes: two chairs + an armchair each; boathouse stool. The bell, mailboxes, signs, notice board, fountain and newsstand stay outdoors.
+
+Client (`client/src/world/`): `arch/walkin.ts` builds each walk-in shell (two-skin walls with real door openings, windows on both faces — the inner glass shows the sky, floors, doorstep ramp) and `arch/furniture.ts` the furniture/dressing/lamps from the shared data. **Cutaway** (`cutaway.ts` + `Cutaway.tsx`): every walk-in building owns 10 "cut slots" (roof, 4 wall faces, 4 corners); architecture vertices carry a `cut` attribute (`GeoBuilder.cut`), and the cut-aware materials (`*CutMaterial`, plus `cutDepthMaterial()` for the shadow pass) dissolve a slot with a dithered discard as its fade goes 0→1 — no transparency sorting, no extra draw calls. Each frame the building containing the focus (local player, or the free camera's focus; hysteresis at the door) fades its roof/tower and the faces whose normal points at the camera (any of the four rotations); wall stubs (0.95 m) stay. Door leaves swing open when anyone is near a walk-in door. A warm fill light follows the open room. `isHiddenIndoors(x,z)` (roof closed for this viewer) hides remote name tags/bubbles and pick targets inside other buildings. Audio: indoor floors give wood/stone footsteps; `AudioEnvironment.indoors` muffles outdoor ambience layers. Dev: `?inside=<buildingId>` forces a cutaway; `snapshot().interior` = `{active, amount}`.
 
 ## Server
 
@@ -93,7 +138,7 @@ Server checks: `npx vitest run server`; `npx tsx --conditions=source scripts/ser
 - **Per-frame data never goes through React state**: `state/runtime.ts` holds `runtime.localPlayer` (predicted pose) and `runtime.remotes` (snapshot buffers). Read them in `useFrame`.
 - **net/**: `net.connect({name, appearance})` (REST guest session → `joinOrCreate`; idempotent), `net.send(C2S.x, payload)` (typed), `net.on(S2C.x, handler)` (typed bus; every S2C type is registered), `rest.*` typed REST, `sampleRemote(id, out)` interpolation (render `interpolationDelayMs` in the past), `installDebugHook` → `window.__ELSEWHERE__.snapshot()` (read-only; used by the smoke/e2e tests — keep it; the `world` section exposes synced fountain/portal/rune/bell objects and the local profile's name + appearance). `CharacterPreview` writes its rendered yaw to `data-yaw` on `[data-testid=character-preview]` for the drag-to-rotate check.
 - **player/**: `LocalPlayer` (prediction with shared `resolveMovement`, sends `move` at `sendRateHz`, `stand` when moving while seated), `CameraRig` (orthographic iso, offset (30,30,30)), `input.ts` (`sampleInput`, `screenToWorld`, `setTouchMove`, `pressInteract`, `onInteractPressed`), `interaction.ts` (nearest interactable → `ui.prompt`, E → `C2S.interact`, results → panels).
-- **world/**: `<World />` — renders shared world data (incl. solid `FENCES`/`DECOR`) + lighting from the clock + synced object visuals. Quality profile (`world/env.ts` `QUALITY`) drives shadows/shadow-map size (it owns `gl.shadowMap.enabled` and recompiles on change), point-light budget, density and terrain resolution. `World` also sets the renderer's tone mapping (ACES, exposure 1) and caps the pixel ratio per quality via `setDpr` (1 / 1.5 / 2), overriding the Canvas `dpr`. Dev-only overrides: `?time=&fountain=&portal=&runes=&doors=&weather=&quality=&cam=` and `window.__ELSEWHERE_WORLD__` (info/bench/breakdown/coverage); screenshots via `scripts/world-screenshots.mjs`.
+- **world/**: `<World />` — renders shared world data (incl. solid `FENCES`/`DECOR`) + lighting from the clock + synced object visuals. Quality profile (`world/env.ts` `QUALITY`) drives shadows/shadow-map size (it owns `gl.shadowMap.enabled` and recompiles on change), point-light budget, density and terrain resolution. `World` also sets the renderer's tone mapping (ACES, exposure 1) and caps the pixel ratio per quality via `setDpr` (1 / 1.5 / 2), overriding the Canvas `dpr`. Dev-only overrides: `?time=&fountain=&portal=&runes=&doors=&weather=&quality=&cam=&inside=` and `window.__ELSEWHERE_WORLD__` (info/bench/breakdown/coverage); screenshots via `scripts/world-screenshots.mjs`.
 - **characters/**: `<Character appearance anim animSeq held highlighted castShadow />` renders at origin (feet y=0, facing +Z); parent group moves it. `<CharacterPreview appearance anim spin />` is its own Canvas.
 - **ui/**: `Hud`, `Chat`, `Onboarding({onDone})`, `CustomizationScreen({initial,onSave,onCancel})`. `App` resumes a saved session or runs onboarding before `net.connect`; `?autojoin=1` (tests) joins at once as a random guest.
 - **audio/**: `audio.unlock()`, `playSfx(SfxName, position?)`, `setAmbience(AmbienceKey|null)`, `playMusic(track)`, `setListener`, `gainFor(channel)`. Procedural only.

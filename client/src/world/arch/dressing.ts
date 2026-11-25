@@ -8,6 +8,7 @@ import {
   INTERACTABLES,
   PATHS,
   collidesAt,
+  interiorAt,
   distanceToPolyline,
   getLocation,
   groundHeight,
@@ -31,6 +32,7 @@ function nearInteractable(p: Vec2, r: number): boolean {
 export function clearSpot(p: Vec2, r = 0.6, pathClear = 0.4): boolean {
   if (inlandDistance(p.x, p.z) < 0.5) return false;
   if (collidesAt(p, r)) return false;
+  if (interiorAt(p, r + 0.3)) return false;
   if (pathDist(p) < pathClear) return false;
   if (nearInteractable(p, r + 0.9)) return false;
   return true;

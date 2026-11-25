@@ -53,8 +53,11 @@ export const anchors = {
   glows: [] as GlowAnchor[],
   lamps: [] as LampAnchor[],
   bell: null as Matrix4 | null,
+  /** Cutaway slot of the bell / each clock face (0 = never fades). */
+  bellCut: 0,
   clock: [] as Matrix4[],
-  spinners: [] as { matrix: Matrix4; kind: 'gear' | 'vane' | 'windmill'; speed: number; size: number }[],
+  clockCut: [] as number[],
+  spinners: [] as { matrix: Matrix4; kind: 'gear' | 'vane' | 'windmill'; speed: number; size: number; cut?: number }[],
   sparkles: [] as { id: string; position: Vector3; subtle: boolean }[],
 };
 
@@ -64,7 +67,9 @@ export function resetAnchors(): void {
   anchors.glows.length = 0;
   anchors.lamps.length = 0;
   anchors.bell = null;
+  anchors.bellCut = 0;
   anchors.clock.length = 0;
+  anchors.clockCut.length = 0;
   anchors.spinners.length = 0;
   anchors.sparkles.length = 0;
 }

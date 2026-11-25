@@ -65,6 +65,8 @@ export interface DevOverrides {
   cam: { x: number; z: number; zoom: number; yaw?: number } | null;
   weather: WeatherState | null;
   quality: GraphicsQuality | null;
+  /** Force a walk-in building's cutaway open (its id) — screenshots; null = follow the focus. */
+  inside: string | null;
 }
 
 export const devOverrides: DevOverrides = {
@@ -76,6 +78,7 @@ export const devOverrides: DevOverrides = {
   cam: null,
   weather: null,
   quality: null,
+  inside: null,
 };
 
 const LOCATION_CAMS: Record<string, { x: number; z: number; zoom: number }> = {
@@ -124,6 +127,8 @@ function parseOverrides(): void {
   }
   const w = q.get('weather');
   if (w && ['clear', 'haze', 'fog', 'rain', 'snow'].includes(w)) devOverrides.weather = { kind: w as WeatherKind, intensity: num('weatherIntensity') ?? 1 };
+  const inside = q.get('inside');
+  if (inside) devOverrides.inside = inside;
   const ql = q.get('quality');
   if (ql === 'low' || ql === 'medium' || ql === 'high') devOverrides.quality = ql;
 }

@@ -535,8 +535,8 @@ function boathouse(B: GeoBuilder, b: Building): void {
   });
 }
 
-export function buildBuilding(B: GeoBuilder, b: Building): void {
-  if (b.enterable) return buildWalkIn(B, b);
+export function buildBuilding(B: GeoBuilder, b: Building, interior?: GeoBuilder): void {
+  if (b.enterable) return buildWalkIn(B, b, interior ?? B);
   switch (b.style) {
     case 'cafe':
       return cafe(B, b);

@@ -575,11 +575,19 @@ function boatFrame(B: GeoBuilder, f: FurniturePiece): void {
       for (const sz of [-1, 1]) B.add('solid', rbox(0.06, 0.55, 0.06, 0.02), '#7a5c46', T(sx * L * 0.3, 0.25, sz * Wd * 0.4, 0, sz * 0.15));
     }
     if (f.variant === 1) {
-      // an upturned rowboat being re-painted
-      B.add('solid', sphere(1, 18, 10), '#6b8a96', T(0, 0.62, 0, 0, 0, Math.PI, L * 0.5, 0.32, Wd * 0.5), { grad: 0.2 });
-      B.add('solid', box(L * 0.9, 0.04, 0.06), '#e8e4d8', T(0, 0.62, 0), { ao: false });
-      B.add('solid', cyl(0.08, 0.08, 0.12, 10), '#e8e4d8', T(L * 0.35, 0.05, Wd * 0.5), { ao: false });
-      B.add('solid', cyl(0.012, 0.012, 0.3, 4), P.woodDark, T(L * 0.35, 0.15, Wd * 0.5 + 0.05, 0, 0.3), { ao: false });
+      // an upturned clinker rowboat being re-painted: hull, strakes, keel, gunwale
+      const hull = '#a65e4b';
+      B.add('solid', sphere(1, 20, 10, ), hull, T(0, 0.56, 0, 0, 0, 0, L * 0.5, 0.42, Wd * 0.5), { grad: 0.25 });
+      for (let k = 1; k <= 3; k++) {
+        const t = k / 4;
+        B.add('solid', torus(1, 0.022, 4, 28, Math.PI), k === 2 ? '#efe3cf' : shade(hull, 0.85), T(0, 0.56 + 0.42 * Math.sin(t * Math.PI * 0.5) * 0.98, 0, 0, Math.PI / 2, 0, L * 0.5 * Math.cos(t * Math.PI * 0.5), Wd * 0.5 * Math.cos(t * Math.PI * 0.5), 1), { ao: false });
+      }
+      B.add('solid', rbox(L * 0.92, 0.07, 0.1, 0.03), '#6a4f3e', T(0, 0.99, 0), { ao: false });
+      B.add('solid', torus(1, 0.04, 5, 30), '#6a4f3e', T(0, 0.56, 0, 0, Math.PI / 2, 0, L * 0.5, Wd * 0.5, 1), { ao: false });
+      // paint pot + brush on the floor
+      B.add('solid', cyl(0.09, 0.08, 0.14, 10), '#e8e4d8', T(L * 0.38, 0.07, Wd * 0.55 + 0.25), { ao: false });
+      B.add('solid', cyl(0.08, 0.08, 0.01, 10), hull, T(L * 0.38, 0.145, Wd * 0.55 + 0.25), { ao: false });
+      B.add('solid', cyl(0.012, 0.012, 0.3, 4), P.woodDark, T(L * 0.38, 0.2, Wd * 0.55 + 0.3, 0, 0.4), { ao: false });
       return;
     }
     // keel, stem, ribs: a boat skeleton
@@ -592,6 +600,39 @@ function boatFrame(B: GeoBuilder, f: FurniturePiece): void {
       B.add('solid', torus(r, 0.03, 5, 14, Math.PI), '#c49a6a', T(t * L * 0.9, 0.6 + r, 0, Math.PI / 2, 0, Math.PI), { ao: false });
     }
     for (const sz of [-1, 1]) B.add('solid', box(L * 0.7, 0.03, 0.04), '#b58f62', T(-0.05, 1.05, sz * Wd * 0.42), { ao: false });
+  });
+}
+
+function sawhorses(B: GeoBuilder): void {
+  for (const sx of [-1, 1]) {
+    B.at(T(sx * 0.65, 0, 0), () => {
+      B.add('solid', rbox(0.1, 0.08, 0.85, 0.02), '#a98a62', T(0, 0.62, 0));
+      for (const sz of [-1, 1]) for (const lx of [-1, 1]) B.add('solid', rbox(0.06, 0.66, 0.06, 0.015), '#8a6a4c', T(lx * 0.12, 0.31, sz * 0.32, 0, 0, lx * 0.18));
+    });
+  }
+  // a plank being sawn, the saw left in the cut, offcut on the floor
+  B.add('solid', box(2.0, 0.05, 0.3), '#c49a6a', T(0, 0.685, 0.05), { jitter: 0.03 });
+  B.add('solid', rbox(0.5, 0.14, 0.012, 0.004), '#c9ccce', T(0.25, 0.76, 0.05, 0.1, 0, -0.5), { ao: false });
+  B.add('solid', rbox(0.12, 0.12, 0.05, 0.02), P.woodDark, T(0.47, 0.9, 0.05, 0.1, 0, -0.5), { ao: false });
+  B.add('solid', box(0.45, 0.05, 0.3), '#c49a6a', T(1.25, 0.025, 0.35, 0.6), { ao: false });
+  for (let k = 0; k < 14; k++) B.add('solid', torus(0.05, 0.014, 3, 6), '#e2c99e', T(-0.4 + ((k * 0.37) % 1) * 1.3, 0.012, -0.3 + ((k * 0.61) % 1) * 0.8, k), { ao: false });
+}
+
+function tackle(B: GeoBuilder, it: Interior): void {
+  // rope coils, cork floats, a lobster pot, fishing rods leaning in the corner, a lantern
+  B.add('solid', torus(0.26, 0.07, 6, 18), '#d2bf98', T(0.1, 0.07, 0.1, 0, Math.PI / 2), { ao: false });
+  B.add('solid', torus(0.18, 0.06, 6, 16), '#c9b285', T(0.12, 0.18, 0.08, 0, Math.PI / 2), { ao: false });
+  for (let k = 0; k < 5; k++) B.add('solid', sphere(0.09, 8, 6), k % 2 ? '#e98a6b' : '#f1d27a', T(-0.35 + (k % 3) * 0.12, 0.09, -0.25 + Math.floor(k / 3) * 0.14), { ao: false });
+  B.at(T(0.35, 0, -0.3, 0.4), () => {
+    B.add('solid', cyl(0.24, 0.26, 0.04, 12), '#8a6a4c', T(0, 0.02, 0));
+    for (let k = 0; k < 5; k++) B.add('solid', torus(0.24, 0.012, 4, 14, Math.PI), '#8a6a4c', T(0, 0.02, 0, (k / 5) * Math.PI, Math.PI / 2), { ao: false });
+  });
+  for (let k = 0; k < 3; k++) B.add('solid', cyl(0.012, 0.008, 2.0, 4), P.woodDark, T(-0.3 + k * 0.08, 1.0, -0.42, 0, -0.18, 0.05 * k), { ao: false });
+  B.at(T(-0.1, 0, 0.35), () => {
+    B.add('solid', cyl(0.09, 0.1, 0.03, 10), P.iron, T(0, 0.015, 0), { ao: false });
+    B.add('glazed', cyl(0.07, 0.07, 0.16, 10), '#f4e2b8', T(0, 0.11, 0), { ao: false });
+    B.add('solid', cone(0.1, 0.08, 10), P.iron, T(0, 0.23, 0), { ao: false });
+    glow(B, it, 0, 0.11, 0, 0.06, 0);
   });
 }
 
@@ -755,7 +796,7 @@ function pendant(B: GeoBuilder, it: Interior, b: Building, x: number, y: number,
       }
     });
   });
-  anchors.glows.push({ lightId: lightId(it), position: worldPoint(B, x, y, z), size: style === 1 ? 0.05 : 0.09, kind: style === 1 ? 1 : 0 });
+  // (no bulb glow: the fixture fades with the roof; the light, its floor pool and the candles remain)
   anchors.lamps.push({ lightId: lightId(it), position: worldPoint(B, x, y - 0.1, z), color: '#ffc98a', range: 6.5, intensity: 1.1, interiorId: it.id });
 }
 
@@ -884,6 +925,10 @@ function piece(B: GeoBuilder, it: Interior, b: Building, f: FurniturePiece): voi
         return boatFrame(B, f);
       case 'anvil':
         return anvil(B);
+      case 'sawhorses':
+        return sawhorses(B);
+      case 'tackle':
+        return tackle(B, it);
       case 'bed':
         return bed(B, f);
       case 'hearth':

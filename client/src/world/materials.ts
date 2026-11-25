@@ -4,7 +4,7 @@
  * All patches read the shared `uniforms` from env.ts.
  */
 import { AdditiveBlending, CanvasTexture, Color, DoubleSide, MeshBasicMaterial, MeshDepthMaterial, MeshStandardMaterial, RGBADepthPacking, type Material, type WebGLProgramParametersWithUniforms } from 'three';
-import { CUT_VEC4S, cutUniform } from './cutaway.js';
+import { CUT_VEC4S, cutUniform, occluderDirUniform, occluderUniform } from './cutaway.js';
 import { uniforms } from './env.js';
 
 type Shader = WebGLProgramParametersWithUniforms;
@@ -28,6 +28,8 @@ interface PatchOpts {
   extraFragHeader?: string;
   /** Dollhouse cutaway: parts tagged with a `cut` slot dissolve (dithered) as that slot fades. */
   cut?: boolean;
+  /** Instanced foliage: instances standing between the camera and an open building dissolve. */
+  occlude?: boolean;
 }
 
 /** Vertex side of the cutaway: look up this vertex's slot fade (constant per part). */
@@ -61,6 +63,24 @@ export function patch(mat: MeshStandardMaterial, opts: PatchOpts): MeshStandardM
     shader.uniforms.uGlow = uniforms.uGlow;
     shader.uniforms.uKeyDir = uniforms.uKeyDir;
     shader.uniforms.uSunColor = uniforms.uSunColor;
+    if (opts.occlude) {
+      shader.uniforms.uOcc = occluderUniform;
+      shader.uniforms.uOccDir = occluderDirUniform;
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
+uniform vec4 uOcc; uniform vec2 uOccDir; varying float vCutFade;`).replace('#include <begin_vertex>', `#include <begin_vertex>
+vCutFade = 0.0;
+#ifdef USE_INSTANCING
+if (uOcc.w > 0.001) {
+  vec2 rel = (modelMatrix * vec4(instanceMatrix[3].xyz, 1.0)).xz - vec2(uOcc.x, uOcc.z);
+  float along = dot(rel, uOccDir);
+  float side = abs(dot(rel, vec2(-uOccDir.y, uOccDir.x)));
+  // whole trees go (no half-dissolved stipple at the zone edge)
+  float inZone = step(-uOcc.y * 0.2, along) * step(along, uOcc.y + 11.0) * step(side, uOcc.y * 0.85 + 1.2);
+  vCutFade = uOcc.w * inZone;
+}
+#endif`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${CUT_FRAG_HEADER}`).replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${CUT_FRAG}`);
+    }
     if (opts.cut) {
       shader.uniforms.uCut = cutUniform;
       shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${CUT_VERT_HEADER}`).replace('#include <begin_vertex>', `#include <begin_vertex>\n${CUT_VERT}`);
@@ -142,7 +162,7 @@ export const solidMaterial = standard({ vertexColors: true, roughness: 0.84, met
 export const glazedMaterial = standard({ vertexColors: true, roughness: 0.55, metalness: 0 }, { paint: 0.6, rim: 0.25 });
 
 /** Foliage: wind + paint. */
-export const foliageMaterial = standard({ vertexColors: true, roughness: 0.9, metalness: 0 }, { paint: 1.2, wind: 0.006, rim: 0.35 });
+export const foliageMaterial = standard({ vertexColors: true, roughness: 0.9, metalness: 0 }, { paint: 1.2, wind: 0.006, rim: 0.35, occlude: true });
 /** Low plants (stronger sway relative to height). */
 export const plantMaterial = standard({ vertexColors: true, roughness: 0.92, metalness: 0, side: DoubleSide }, { paint: 0.8, wind: 0.09, rim: 0.06 });
 /** Merged static plants (flower boxes, beds): world-space geometry, so no height-based sway. */

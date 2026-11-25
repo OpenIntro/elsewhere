@@ -2,10 +2,11 @@
  * Footstep surface under a world point, derived purely from shared world data
  * (decks, paths, coastline, the square's plaza, the Woods). No DOM; unit-tested.
  *
- * Priority: deck (wood) > path ribbon (its `surface`) > town-square plaza (stone)
- * > beach strip near the coast (sand) > Woods floor (leaves) > grass.
+ * Priority: indoor floor (wood boards / hall flagstones) > deck (wood) > path
+ * ribbon (its `surface`) > town-square plaza (stone) > beach strip near the
+ * coast (sand) > Woods floor (leaves) > grass.
  */
-import { DECKS, FOUNTAIN, LOCATIONS, PATHS, closestPointOnSegment, deckAt, inlandDistance, terrainHeight, type PathSurface, type Vec2 } from '@elsewhere/shared';
+import { DECKS, FOUNTAIN, LOCATIONS, PATHS, closestPointOnSegment, deckAt, inlandDistance, interiorAt, terrainHeight, type PathSurface, type Vec2 } from '@elsewhere/shared';
 
 export type Surface = 'grass' | 'leaves' | 'stone' | 'gravel' | 'dirt' | 'sand' | 'wood';
 export const SURFACES: readonly Surface[] = ['grass', 'leaves', 'stone', 'gravel', 'dirt', 'sand', 'wood'];
@@ -67,6 +68,8 @@ export function pathSurfaceAt(p: Vec2): Surface | null {
 
 export function surfaceAt(x: number, z: number): Surface {
   const p = { x, z };
+  const inside = interiorAt(p);
+  if (inside) return inside.floor === 'stone' ? 'stone' : 'wood';
   if (deckAt(p)) return 'wood';
   const path = pathSurfaceAt(p);
   if (path) return path;

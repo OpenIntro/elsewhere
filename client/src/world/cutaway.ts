@@ -14,7 +14,7 @@
  * every slot (≈0.35 s). Lower wall "stubs" are untagged, so the room outline
  * stays readable.
  */
-import { Vector4 } from 'three';
+import { Vector2, Vector4 } from 'three';
 import { INTERIORS, interiorAt, zoneContains, type Interior } from '@elsewhere/shared';
 
 export const SLOTS_PER_BUILDING = 10;
@@ -35,6 +35,14 @@ export function cutSlot(buildingId: string, part: CutPart): number {
 
 /** Shared uniform (the same object is bound into every cut-aware program). */
 export const cutUniform = { value: Array.from({ length: CUT_VEC4S }, () => new Vector4()) };
+
+/**
+ * Foliage between the camera and an open building dissolves too (trees/shrubs
+ * are instanced; materials.ts tests each instance's pivot against this):
+ * x,z = building centre, y = radius, w = amount; dir = horizontal camera direction.
+ */
+export const occluderUniform = { value: new Vector4(0, 0, 0, 0) };
+export const occluderDirUniform = { value: new Vector2(0.707, 0.707) };
 
 const fades = new Float32Array(SLOTS_PER_BUILDING * MAX_CUT_BUILDINGS);
 const targets = new Float32Array(SLOTS_PER_BUILDING * MAX_CUT_BUILDINGS);
@@ -98,6 +106,10 @@ export function updateCutaway(fx: number, fz: number, cameraYaw: number, dt: num
     u[i >> 2]!.setComponent(i & 3, v);
   }
   cutaway.amount = active ? fades[INDEX.get(active.id)! * SLOTS_PER_BUILDING]! : 0;
+  const o = occluderUniform.value;
+  if (active) o.set(active.footprint.center.x, Math.hypot(active.footprint.halfWidth, active.footprint.halfDepth), active.footprint.center.z, 0);
+  o.w = cutaway.amount;
+  occluderDirUniform.value.set(Math.sin(cameraYaw), Math.cos(cameraYaw));
 }
 
 /** Current fade (0..1) of a building's roof. */

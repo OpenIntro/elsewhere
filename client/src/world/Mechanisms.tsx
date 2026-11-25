@@ -11,7 +11,7 @@ import { net } from '../net/index.js';
 import { anchors, P, shade, type DoorAnchor } from './arch/kit.js';
 import { cone, cyl, GeoBuilder, lathe, rbox, sphere, T, torus } from './geom.js';
 import { env } from './env.js';
-import { cutDepthMaterial, solidMaterial, glazedMaterial, solidCutMaterial, windowCutMaterial } from './materials.js';
+import { cutDepthMaterial, glazedCutMaterial, solidCutMaterial, windowCutMaterial } from './materials.js';
 import { bellRings, doorOpen } from './objectState.js';
 import { runtime } from '../state/runtime.js';
 
@@ -118,6 +118,7 @@ function Bell() {
   const motion = useRef({ amp: 0, phase: 0, lastRings: -1 });
   const geo = useMemo(() => {
     const B = new GeoBuilder(5);
+    B.cut = anchors.bellCut;
     const no = { ao: false };
     const prof: [number, number][] = [[0.001, 0], [0.5, 0], [0.52, 0.06], [0.42, 0.2], [0.33, 0.55], [0.3, 0.8], [0.22, 0.92], [0.001, 0.95]];
     B.add('b', lathe('bell', prof, 24), '#b8893e', T(0, -0.95, 0), no);
@@ -147,7 +148,7 @@ function Bell() {
   return (
     <group ref={root}>
       <group ref={swing}>
-        <mesh geometry={geo} material={glazedMaterial} castShadow />
+        <mesh geometry={geo} material={glazedCutMaterial} castShadow customDepthMaterial={cutDepthMaterial()} />
       </group>
     </group>
   );
@@ -155,16 +156,22 @@ function Bell() {
 
 function ClockHands() {
   const groups = useRef<Group[]>([]);
-  const geo = useMemo(() => {
-    const B = new GeoBuilder(3);
-    B.add('h', rbox(0.07, 0.42, 0.03, 0.015), '#3a3236', T(0, 0.19, 0), { ao: false });
-    const hour = B.build().get('h')!;
-    const B2 = new GeoBuilder(4);
-    B2.add('m', rbox(0.05, 0.62, 0.03, 0.015), '#3a3236', T(0, 0.29, 0.02), { ao: false });
-    B2.add('m', sphere(0.06, 8, 6), P.brass, T(0, 0, 0.03), { ao: false });
-    const minute = B2.build().get('m')!;
-    return { hour, minute };
-  }, []);
+  const geos = useMemo(
+    () =>
+      anchors.clock.map((_, i) => {
+        const B = new GeoBuilder(3);
+        B.cut = anchors.clockCut[i] ?? 0;
+        B.add('h', rbox(0.07, 0.42, 0.03, 0.015), '#3a3236', T(0, 0.19, 0), { ao: false });
+        const hour = B.build().get('h')!;
+        const B2 = new GeoBuilder(4);
+        B2.cut = anchors.clockCut[i] ?? 0;
+        B2.add('m', rbox(0.05, 0.62, 0.03, 0.015), '#3a3236', T(0, 0.29, 0.02), { ao: false });
+        B2.add('m', sphere(0.06, 8, 6), P.brass, T(0, 0, 0.03), { ao: false });
+        const minute = B2.build().get('m')!;
+        return { hour, minute };
+      }),
+    [],
+  );
   useEffect(() => {
     anchors.clock.forEach((m, i) => {
       const g = groups.current[i];
@@ -183,8 +190,8 @@ function ClockHands() {
     <>
       {anchors.clock.map((_, i) => (
         <group key={i} ref={(g) => void (g && (groups.current[i] = g))}>
-          <mesh geometry={geo.hour} material={solidMaterial} />
-          <mesh geometry={geo.minute} material={solidMaterial} />
+          <mesh geometry={geos[i]!.hour} material={solidCutMaterial} />
+          <mesh geometry={geos[i]!.minute} material={solidCutMaterial} />
         </group>
       ))}
     </>
@@ -198,6 +205,7 @@ function Spinners() {
     () =>
       spinners.map((s) => {
         const B = new GeoBuilder(9);
+        B.cut = s.cut ?? 0;
         const no = { ao: false };
         if (s.kind === 'gear') {
           B.add('g', cyl(s.size, s.size, 0.14, 24), P.brass, T(0, 0, 0, 0, Math.PI / 2), no);
@@ -244,7 +252,7 @@ function Spinners() {
     <>
       {spinners.map((s, i) => (
         <group key={i} ref={(g) => void (g && (groups.current[i] = g))}>
-          <mesh geometry={geos[i]} material={glazedMaterial} castShadow />
+          <mesh geometry={geos[i]} material={glazedCutMaterial} castShadow customDepthMaterial={cutDepthMaterial()} />
         </group>
       ))}
     </>

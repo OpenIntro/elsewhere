@@ -34,6 +34,8 @@ export interface AudioEnvironment {
   /** In-world hours 0..24. */
   hours: number;
   portalAwake: boolean;
+  /** 0..1 inside a walk-in building (muffled outdoor ambience). */
+  indoors?: number;
 }
 
 export interface AudioDebugInfo {
@@ -142,7 +144,7 @@ class WebAudioManager implements AudioManager {
     if (!g || !this.ctx || this.ctx.state !== 'running') return;
     try {
       g.listener = this.listener;
-      const mix = ambienceMix({ x: this.listener.x, z: this.listener.z, hours: this.env.hours, key: this.key, portalAwake: this.env.portalAwake });
+      const mix = ambienceMix({ x: this.listener.x, z: this.listener.z, hours: this.env.hours, key: this.key, portalAwake: this.env.portalAwake, indoors: this.env.indoors ?? 0 });
       this.lastMix = mix;
       this.amb?.update(mix);
       this.amb?.tick(g.now + 1.2);

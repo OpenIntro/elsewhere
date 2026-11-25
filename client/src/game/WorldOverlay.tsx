@@ -26,6 +26,7 @@ import { useGameStore } from '../state/gameStore.js';
 import { runtime } from '../state/runtime.js';
 import { useSettingsStore } from '../state/settingsStore.js';
 import { ZOOM_DEFAULT, cameraRuntime } from '../player/camera.js';
+import { isHiddenIndoors } from '../world/cutaway.js';
 import { perfAdd, perfFrame } from './perf.js';
 import { REACTION_MS, bubbles, installSocialFeed, pruneSocial, reactions } from './social.js';
 
@@ -297,6 +298,8 @@ export function WorldOverlay() {
     for (const [id, r] of runtime.remotes) {
       const p = r.render;
       if (!p || !p.visible || id === sid) continue;
+      // Inside a building whose roof is closed for this viewer: hidden by the roof, so no tag/bubble either.
+      if (isHiddenIndoors(p.x, p.z)) continue;
       const info = game.players[id];
       if (!info) continue;
       const a = ensure(id, 'player');

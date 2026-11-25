@@ -19,7 +19,8 @@
     "typecheck": "npm run build -w shared && npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
     "test": "vitest run",
     "smoke": "node scripts/smoke-two-clients.mjs",
-    "e2e:acceptance": "node scripts/e2e-acceptance.mjs"
+    "e2e:acceptance": "node scripts/e2e-acceptance.mjs",
+    "e2e:interiors": "node scripts/e2e-interiors.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

@@ -31,7 +31,13 @@ export interface AmbienceInput {
   hours: number;
   key: AmbienceKey | null;
   portalAwake: boolean;
+  /** 0..1: inside a walk-in building (outdoor beds muffled, the room's own bed up). */
+  indoors?: number;
 }
+
+/** Outdoor layers are muffled to this fraction indoors; the room's own bed is lifted. */
+export const INDOOR_MUFFLE = 0.3;
+const OUTDOOR_LAYERS: readonly AmbienceLayer[] = ['wind', 'birds', 'gulls', 'insects', 'owl', 'shore', 'fountain', 'creek', 'forest', 'mystery', 'chimes'];
 
 export interface AmbienceMix {
   weights: Record<AmbienceLayer, number>;
@@ -121,6 +127,13 @@ export function ambienceMix(input: AmbienceInput): AmbienceMix {
 
   const bias = input.key ? KEY_BIAS[input.key] : undefined;
   if (bias) for (const [k, m] of Object.entries(bias) as [AmbienceLayer, number][]) weights[k] = clamp01(weights[k] * m);
+
+  const indoors = clamp01(input.indoors ?? 0);
+  if (indoors > 0) {
+    for (const k of OUTDOOR_LAYERS) weights[k] *= 1 - indoors * (1 - INDOOR_MUFFLE);
+    if (input.key === 'cafe') weights.cafe = clamp01(weights.cafe + 0.35 * indoors);
+    if (input.key === 'workshop') weights.workshop = clamp01(weights.workshop + 0.3 * indoors);
+  }
 
   return {
     weights,

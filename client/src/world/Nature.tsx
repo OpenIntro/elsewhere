@@ -12,6 +12,7 @@ import {
   ROCKS,
   TREES,
   collidesAt,
+  interiorAt,
   deckAt,
   distanceToPolyline,
   getLocation,
@@ -337,6 +338,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
       groundColor(x, z, h, tmpC, pave);
       if (pave.cell > 0.2 || pave.grain > 0.5) continue;
       if (collidesAt({ x, z }, 0.25)) continue;
+      if (interiorAt({ x, z }, 0.4)) continue; // no grass on floorboards
       const inWoods = Math.hypot(x - woods.center.x, z - woods.center.z) < woods.radius + 3;
       const clump = fbm(x * 0.12 + 5, z * 0.12 - 3);
       const roll = rnd();

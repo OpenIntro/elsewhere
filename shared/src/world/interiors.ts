@@ -114,7 +114,9 @@ export type FurnitureKind =
   | 'oar_rack'
   | 'net_wall'
   | 'chalkboard'
-  | 'mic_stand';
+  | 'mic_stand'
+  | 'sawhorses'
+  | 'tackle';
 
 export type FurnitureShape = { type: 'circle'; radius: number } | { type: 'box'; halfWidth: number; halfDepth: number };
 
@@ -290,7 +292,7 @@ const CAFE: InteriorSpec = {
     barista: { at: [2.6, -3.15], face: [2.6, -2.0] },
     espresso: { at: [4.1, -3.15], face: [4.1, -2.0] },
     stage: { at: [-3.3, -2.35], face: [0, 0.6] },
-    piano: { at: [-4.3, -2.8], face: [-4.3, -3.6] },
+    piano: { at: [-4.3, -2.5], face: [-4.3, -3.6] },
     table_1: { at: [-3.3, 2.6], face: [-3.3, 1.55] },
     table_2: { at: [3.25, 2.55], face: [3.25, 1.45] },
     table_3: { at: [0.0, -0.55], face: [-1.15, -0.55] },
@@ -305,14 +307,14 @@ const STORE: InteriorSpec = {
   floor: 'wood',
   rooms: [
     { id: 'store_floor', name: 'Shop floor', at: [0, 0.4], half: [4.8, 3.5] },
-    { id: 'store_counter', name: 'Behind the counter', at: [2.6, -3.15], half: [2.2, 0.75] },
+    { id: 'store_counter', name: 'Behind the counter', at: [2.6, -3.0], half: [2.2, 0.9] },
   ],
   furniture: [
-    { id: 'counter', kind: 'store_counter', at: [2.55, -1.95], yaw: 0, box: [1.75, 0.36], h: 1.0 },
+    { id: 'counter', kind: 'store_counter', at: [2.55, -1.72], yaw: 0, box: [1.75, 0.36], h: 1.0 },
     { id: 'wall_shelf_back', kind: 'back_shelf', at: [2.6, -3.78], yaw: 0, h: 2.7, v: 1 },
     { id: 'shelf_1', kind: 'shelf', at: [-4.52, -2.2], yaw: RIGHT, box: [0.95, 0.24], h: 2.2, v: 0 },
     { id: 'shelf_2', kind: 'shelf', at: [-4.52, 0.35], yaw: RIGHT, box: [0.95, 0.24], h: 2.2, v: 1 },
-    { id: 'shelf_3', kind: 'shelf', at: [-1.75, -3.62], yaw: 0, box: [1.2, 0.24], h: 2.2, v: 2 },
+    { id: 'shelf_3', kind: 'shelf', at: [-2.35, -3.62], yaw: 0, box: [1.1, 0.24], h: 2.2, v: 2 },
     { id: 'display', kind: 'display_table', at: [-1.9, 0.75], yaw: 0, box: [0.75, 0.5], h: 0.85 },
     { id: 'crates', kind: 'crate_stack', at: [3.7, 1.25], yaw: 0.15, box: [0.62, 0.45], h: 0.95 },
     { id: 'barrel', kind: 'barrel', at: [4.25, 3.3], r: 0.4, h: 0.95 },
@@ -325,11 +327,11 @@ const STORE: InteriorSpec = {
   ],
   anchors: {
     entrance: { at: [0, 3.1], face: [0, 0] },
-    counter: { at: [2.2, -1.0], face: [2.2, -1.95] },
-    shopkeeper: { at: [2.4, -3.1], face: [2.4, -1.95] },
+    counter: { at: [2.2, -0.75], face: [2.2, -1.72] },
+    shopkeeper: { at: [2.4, -3.0], face: [2.4, -1.72] },
     shelf_1: { at: [-3.6, -2.2], face: [-4.6, -2.2] },
     shelf_2: { at: [-3.6, 0.35], face: [-4.6, 0.35] },
-    shelf_3: { at: [-1.75, -2.6], face: [-1.75, -3.6] },
+    shelf_3: { at: [-2.35, -2.6], face: [-2.35, -3.6] },
     display: { at: [-1.9, 1.75], face: [-1.9, 0.75] },
     crates: { at: [2.6, 1.6], face: [3.7, 1.25] },
     stove: { at: [-3.1, 1.9], face: [-4.15, 3.2] },
@@ -347,7 +349,7 @@ const HALL: InteriorSpec = {
   ],
   furniture: [
     { id: 'tower_base', kind: 'tower_base', at: [5.7, 4.52], box: [1.62, 1.62], h: 5 },
-    { id: 'lectern', kind: 'lectern', at: [0, -4.15], yaw: 0, box: [0.38, 0.3], h: 1.2 },
+    { id: 'lectern', kind: 'lectern', at: [0, -3.85], yaw: 0, box: [0.38, 0.22], h: 1.2 },
     { id: 'archive_shelf_1', kind: 'archive_shelf', at: [-6.92, -2.9], yaw: RIGHT, box: [1.05, 0.28], h: 2.6, v: 0 },
     { id: 'archive_shelf_2', kind: 'archive_shelf', at: [-6.92, -0.2], yaw: RIGHT, box: [1.05, 0.28], h: 2.6, v: 1 },
     { id: 'archive_shelf_3', kind: 'archive_shelf', at: [-6.92, 2.5], yaw: RIGHT, box: [1.05, 0.28], h: 2.6, v: 2 },
@@ -361,10 +363,10 @@ const HALL: InteriorSpec = {
     { id: 'rug', kind: 'rug', at: [0, -0.4], h: 0.02, v: 2 },
   ],
   seats: [
-    { id: 'bench_hall_1', kind: 'bench', name: 'Hall bench', style: 'pew', at: [-2.4, -1.2], yaw: BACK },
-    { id: 'bench_hall_2', kind: 'bench', name: 'Hall bench', style: 'pew', at: [2.4, -1.2], yaw: BACK },
-    { id: 'bench_hall_3', kind: 'bench', name: 'Hall bench', style: 'pew', at: [-2.4, 1.1], yaw: BACK },
-    { id: 'bench_hall_4', kind: 'bench', name: 'Hall bench', style: 'pew', at: [2.4, 1.1], yaw: BACK },
+    { id: 'bench_hall_1', kind: 'bench', name: 'Hall bench', style: 'pew', at: [-2.4, -1.45], yaw: BACK },
+    { id: 'bench_hall_2', kind: 'bench', name: 'Hall bench', style: 'pew', at: [2.4, -1.45], yaw: BACK },
+    { id: 'bench_hall_3', kind: 'bench', name: 'Hall bench', style: 'pew', at: [-2.4, 1.15], yaw: BACK },
+    { id: 'bench_hall_4', kind: 'bench', name: 'Hall bench', style: 'pew', at: [2.4, 1.15], yaw: BACK },
     { id: 'chair_hall_meet_1', kind: 'chair', name: 'Chair', style: 'wood_chair', at: [4.85, -2.75], yaw: 0, exit: [4.85, -3.75] },
     { id: 'chair_hall_meet_2', kind: 'chair', name: 'Chair', style: 'wood_chair', at: [6.15, -2.75], yaw: 0, exit: [6.15, -3.75] },
     { id: 'chair_hall_meet_3', kind: 'chair', name: 'Chair', style: 'wood_chair', at: [4.85, -0.85], yaw: BACK, exit: [4.85, 0.15] },
@@ -372,7 +374,7 @@ const HALL: InteriorSpec = {
   ],
   anchors: {
     entrance: { at: [0, 4.9], face: [0, 0] },
-    lectern: { at: [0, -5.0], face: [0, 0] },
+    lectern: { at: [0, -4.9], face: [0, 0] },
     stage: { at: [-1.2, -4.6], face: [0, 0] },
     audience: { at: [0, 0], face: [0, -4.2] },
     notice_board: { at: [6.1, -4.4], face: [7.2, -4.4] },
@@ -380,7 +382,7 @@ const HALL: InteriorSpec = {
     archive_shelves: { at: [-5.9, -0.2], face: [-6.95, -0.2] },
     meeting_table: { at: [5.5, 0.25], face: [5.5, -1.8] },
   },
-  platforms: [{ id: 'dais', at: [0, -4.75], half: [2.3, 0.98], h: 0.18 }],
+  platforms: [{ id: 'dais', at: [0, -4.64], half: [2.3, 1.07], h: 0.18 }],
   lights: [[0, -0.5, 4.0], [-5.4, -1.2, 3.6], [5.2, -2.2, 3.6]],
 };
 
@@ -395,10 +397,11 @@ const WORKSHOP: InteriorSpec = {
     { id: 'kiln', kind: 'kiln', at: [4.35, -3.1], r: 0.9, h: 1.7 },
     { id: 'anvil', kind: 'anvil', at: [2.9, -1.75], yaw: 0.4, box: [0.38, 0.22], h: 0.8 },
     { id: 'lumber_rack', kind: 'lumber_rack', at: [-5.08, 0.6], yaw: RIGHT, box: [1.45, 0.34], h: 1.9 },
-    { id: 'boat_frame', kind: 'boat_frame', at: [-2.6, 2.2], yaw: 0, box: [1.55, 0.62], h: 0.95 },
+    { id: 'boat_frame', kind: 'boat_frame', at: [-2.6, 1.85], yaw: 0, box: [1.55, 0.62], h: 0.95 },
     { id: 'crates', kind: 'crate_stack', at: [4.8, 3.4], yaw: -0.2, box: [0.55, 0.45], h: 0.9 },
     { id: 'barrel', kind: 'barrel', at: [4.95, 1.9], r: 0.38, h: 0.95 },
-    { id: 'rug', kind: 'rug', at: [1.6, 2.4], h: 0.02, v: 3 },
+    { id: 'sawhorses', kind: 'sawhorses', at: [2.9, 2.75], yaw: 0.25, box: [1.0, 0.42], h: 0.85 },
+    { id: 'rug', kind: 'rug', at: [0.2, -1.6], h: 0.02, v: 3 },
   ],
   seats: [
     { id: 'stool_workshop_1', kind: 'chair', name: 'Stool', style: 'stool', at: [-1.7, -2.4], yaw: BACK, exit: [-0.8, -2.2] },
@@ -411,7 +414,7 @@ const WORKSHOP: InteriorSpec = {
     tool_wall: { at: [0.9, -3.2], face: [0.9, -4.2] },
     kiln: { at: [3.0, -3.0], face: [4.35, -3.1] },
     anvil: { at: [2.9, -0.8], face: [2.9, -1.75] },
-    project_1: { at: [-2.6, 3.4], face: [-2.6, 2.2] },
+    project_1: { at: [-2.6, 3.3], face: [-2.6, 1.85] },
     lumber_rack: { at: [-4.1, 0.6], face: [-5.1, 0.6] },
   },
   lights: [[-2.0, -1.0, 3.2], [2.4, 0.6, 3.2]],
@@ -433,19 +436,19 @@ function homeSpec(n: 1 | 2): InteriorSpec {
       { id: 'dresser', kind: 'dresser', at: [X(-3.22), 0.75], yaw: yawM(RIGHT), box: [0.55, 0.26], h: 1.0, v: n },
       { id: 'hearth', kind: 'hearth', at: [X(1.7), -2.82], yaw: 0, box: [0.85, 0.32], h: 1.6, v: n },
       { id: 'kitchen', kind: 'kitchen', at: [X(3.18), 1.0], yaw: yawM(LEFT), box: [0.95, 0.32], h: 0.95, v: n },
-      { id: 'table', kind: 'dining_table', at: [X(0.9), 1.25], r: 0.5, h: 0.76, v: n },
+      { id: 'table', kind: 'dining_table', at: [X(0.7), 0.55], r: 0.5, h: 0.76, v: n },
       { id: 'bookshelf', kind: 'bookshelf', at: [X(-0.45), -2.9], yaw: 0, box: [0.55, 0.2], h: 1.7, v: n },
       { id: 'plant', kind: 'plant', at: [X(-3.1), 2.75], r: 0.28, h: 1.1, v: n },
-      { id: 'rug', kind: 'rug', at: [X(0.9), 0.2], h: 0.02, v: 3 + n },
+      { id: 'rug', kind: 'rug', at: [X(0.7), 0.1], h: 0.02, v: 3 + n },
     ],
     seats: [
-      { id: `chair_house_${n}_a`, kind: 'chair', name: 'Chair', style: 'wood_chair', at: [X(-0.05), 1.25], yaw: yawM(RIGHT), exit: [X(-0.3), 2.25] },
-      { id: `chair_house_${n}_b`, kind: 'chair', name: 'Chair', style: 'wood_chair', at: [X(1.85), 1.25], yaw: yawM(LEFT), exit: [X(1.9), 2.3] },
+      { id: `chair_house_${n}_a`, kind: 'chair', name: 'Chair', style: 'wood_chair', at: [X(-0.25), 0.55], yaw: yawM(RIGHT), exit: [X(-0.35), 1.6] },
+      { id: `chair_house_${n}_b`, kind: 'chair', name: 'Chair', style: 'wood_chair', at: [X(1.65), 0.55], yaw: yawM(LEFT), exit: [X(1.75), 1.6] },
       { id: `armchair_house_${n}`, kind: 'chair', name: 'Armchair', style: 'armchair', at: [X(1.1), -1.45], yaw: yawM(2.6), exit: [X(0.0), -1.0] },
     ],
     anchors: {
       entrance: { at: [0, 2.5], face: [0, 0] },
-      table: { at: [X(0.9), 2.25], face: [X(0.9), 1.25] },
+      table: { at: [X(0.7), 1.65], face: [X(0.7), 0.55] },
       hearth: { at: [X(1.7), -1.9], face: [X(1.7), -2.85] },
       bed: { at: [X(-1.2), -1.9], face: [X(-2.55), -2.0] },
       kitchen: { at: [X(2.3), 1.0], face: [X(3.3), 1.0] },
@@ -466,6 +469,8 @@ const BOATHOUSE: InteriorSpec = {
     { id: 'nets', kind: 'net_wall', at: [0.9, -2.96], yaw: 0, h: 2.2 },
     { id: 'crates', kind: 'crate_stack', at: [2.3, -2.55], yaw: 0.1, box: [0.45, 0.35], h: 0.9 },
     { id: 'barrel', kind: 'barrel', at: [2.45, 2.45], r: 0.36, h: 0.9 },
+    { id: 'tackle', kind: 'tackle', at: [-2.1, -2.4], yaw: 0.6, r: 0.45, h: 0.6 },
+    { id: 'rug', kind: 'rug', at: [0.7, 1.2], h: 0.02, v: 5 },
   ],
   seats: [{ id: 'stool_boathouse', kind: 'chair', name: 'Stool', style: 'stool', at: [1.45, -0.6], yaw: RIGHT, exit: [1.0, 0.45] }],
   anchors: {
@@ -561,7 +566,8 @@ function buildInterior(b: Building, spec: InteriorSpec): { interior: Interior; s
     locationId: b.locationId,
     position: buildingLocal(b, s.at[0], s.at[1]),
     yaw: wrapYaw(b.yaw + s.yaw),
-    exit: s.exit ? buildingLocal(b, s.exit[0], s.exit[1]) : buildingLocal(b, s.at[0], s.at[1]),
+    // Benches stand you up in front of their centre (interactables.ts gives each seat its own spot).
+    exit: s.exit ? buildingLocal(b, s.exit[0], s.exit[1]) : buildingLocal(b, s.at[0] + Math.sin(s.yaw) * 1.05, s.at[1] + Math.cos(s.yaw) * 1.05),
   }));
   const rl = rampLength(b);
   const door: InteriorDoor = {

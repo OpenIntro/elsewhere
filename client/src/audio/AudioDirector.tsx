@@ -11,7 +11,7 @@
  *  - UI: panel open/close, soft button clicks, local seat changes
  */
 import { useEffect } from 'react';
-import { LOCATIONS, S2C, getInteractable, locationAt, worldTimeAt, type ObjectEvent, type Vec3 } from '@elsewhere/shared';
+import { LOCATIONS, S2C, getInteractable, interiorAt, locationAt, worldTimeAt, type ObjectEvent, type Vec3 } from '@elsewhere/shared';
 import { net, sampleRemote } from '../net/index.js';
 import { serverNow, useGameStore } from '../state/gameStore.js';
 import { runtime, type Pose } from '../state/runtime.js';
@@ -110,9 +110,9 @@ export function AudioDirector(): null {
         const clock = game.clock;
         const wt = worldTimeAt(serverNow(), { epochMs: clock.epochMs, dayLengthMs: clock.dayLengthMs });
         const portalAwake = game.world.portalAwake || !!game.objects['portal_arch']?.active;
-        audio.setEnvironment({ hours: wt.hours, portalAwake });
         const px = lp.ready ? lp.x : 0;
         const pz = lp.ready ? lp.z : 2;
+        audio.setEnvironment({ hours: wt.hours, portalAwake, indoors: interiorAt({ x: px, z: pz }) ? 1 : 0 });
         audio.setAmbience(locationAt({ x: px, z: pz })?.ambience ?? null);
         const playing = useUiStore.getState().phase === 'playing' || lp.ready;
         audio.playMusic(playing ? moodFor(wt.hours, Math.hypot(px - UNKNOWN.x, pz - UNKNOWN.z)) : 'none');

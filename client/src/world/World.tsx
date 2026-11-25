@@ -12,7 +12,7 @@
  *
  * Dev-only overrides (URL params, never sent to the server):
  *   ?time=0.8  ?fountain=0..3  ?portal=1  ?runes=1  ?doors=1  ?weather=fog|haze
- *   ?quality=low|medium|high   ?cam=<location id>|island|x,z,zoom
+ *   ?quality=low|medium|high   ?cam=<location id>|island|x,z,zoom   ?inside=<building id> (force its cutaway)
  * and window.__ELSEWHERE_WORLD__ (set overrides at runtime, renderer stats, coverage).
  */
 import { useFrame, useThree } from '@react-three/fiber';
@@ -24,6 +24,8 @@ import { useSettingsStore } from '../state/settingsStore.js';
 import { Architecture, buildWorld } from './Architecture.js';
 import { coverageReport, markRepresented } from './coverage.js';
 import { DEV_CAMERA_PRESETS, devOverrides, env, QUALITY, updateEnvironment, type DevOverrides } from './env.js';
+import { Cutaway } from './Cutaway.js';
+import { cutaway } from './cutaway.js';
 import { Fountain } from './Fountain.js';
 import { Lamps } from './Lamps.js';
 import { Life } from './Life.js';
@@ -142,6 +144,7 @@ function DevHook() {
         return rows.sort((a, b) => b.tris - a.tris).slice(0, top);
       },
       env: () => ({ hours: env.hours, phase: env.phase, night: env.night, glow: env.glow, lightsOn: env.lightsOn }),
+      cutaway: () => ({ active: cutaway.active?.id ?? null, amount: cutaway.amount }),
     };
     (window as unknown as { __ELSEWHERE_WORLD__?: typeof hook }).__ELSEWHERE_WORLD__ = hook;
     const cov = coverageReport();
@@ -206,6 +209,7 @@ export function World(_props: WorldProps) {
       <Terrain resolution={Q.terrainResolution} />
       <Water detail={Q.waterDetail} />
       <Architecture shadows={shadows} />
+      <Cutaway fill />
       <Mechanisms />
       <Nature shadows={shadows} density={Q.density} />
       <Lamps maxLights={Q.pointLights} density={Q.density} />

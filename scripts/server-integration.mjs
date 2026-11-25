@@ -24,12 +24,16 @@
  * NOT out of range; whisper private; blocked sender not delivered; seat
  * conflict; bell broadcast; fountain NOT advanced by one player spamming but
  * advanced by distinct players; portal awakened by two clients at the runes;
- * a Gazette issue built from those real events. With --save, writes what the
- * restart check needs. Phase 2 (--verify-restart) checks everything persisted.
+ * a Gazette issue built from those real events; walls of walk-in buildings
+ * hold (a move claimed through the café's back wall is corrected; an indoor
+ * chair cannot be used from outside). With --save, writes what the restart
+ * check needs. Phase 2 (--verify-restart) checks everything persisted.
+ * --position-save / --position-verify stand INSIDE the café, so a saved indoor
+ * position must resume indoors.
  */
 import fs from 'node:fs';
 import { Client } from '@colyseus/sdk';
-import { C2S, COLLIDERS, CONFIG, INTERACTABLES, ROOM_NAME, S2C, getInteractable, isWalkable } from '@elsewhere/shared';
+import { C2S, COLLIDERS, CONFIG, INTERACTABLES, ROOM_NAME, S2C, buildingLocal, getBuilding, getInteractable, interiorAnchor, interiorAt, isWalkable } from '@elsewhere/shared';
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -338,6 +342,41 @@ async function phaseOne() {
   A.send(C2S.whisper, { to: B.sid, text: 'let me in' });
   check((await A.next(S2C.error, (e) => e.code === 'blocked'))?.code === 'blocked', 'whisper to a blocker is refused');
 
+  log('7b. walls hold: walk into the café through its door, then claim a spot behind its back wall');
+  const cafeB = getBuilding('cafe');
+  await A.walkTo(buildingLocal(cafeB, 0, -2.6), 0.6);
+  check(interiorAt({ x: A.me().x, z: A.me().z })?.id === 'cafe', 'A walked in through the café door (server-validated moves)', { x: A.me().x, z: A.me().z });
+  await sleep(1200); // let the move budget refill so only the wall can stop the claim
+  {
+    const inside = { x: A.me().x, z: A.me().z };
+    const cafe = interiorAt(inside);
+    // Straight "back" (away from the door), 1 m past the back wall's outer face.
+    const back = { x: -Math.sin(cafe.footprint.yaw), z: -Math.cos(cafe.footprint.yaw) };
+    const toBack = (inside.x - cafe.footprint.center.x) * back.x + (inside.z - cafe.footprint.center.z) * back.z;
+    const dist = cafe.footprint.halfDepth - toBack + 1.0;
+    const claim = { x: inside.x + back.x * dist, z: inside.z + back.z * dist };
+    check(interiorAt(claim) === null, 'the claimed spot is outside the café (behind its back wall)', claim);
+    A.clear(S2C.correction);
+    A.send(C2S.move, { x: claim.x, z: claim.z, rot: 0, anim: 'walk', seq: ++A.seq });
+    const corr = await A.next(S2C.correction, () => true, 3000);
+    await sleep(200);
+    check(!!corr && corr.reason === 'collision', 'the server corrects a move through the wall', corr);
+    check(interiorAt({ x: A.me().x, z: A.me().z })?.id === 'cafe', 'A is still inside the café in synced state', { x: A.me().x, z: A.me().z });
+    // An indoor chair is out of bounds from the far side of a wall.
+    A.pos = { x: A.me().x, z: A.me().z };
+  }
+  {
+    // B stands just outside the café's right wall, within reach of an indoor chair: refused (no sitting through walls).
+    const chair = getInteractable('chair_cafe_in_2b');
+    const cafe = getBuilding('cafe');
+    const outside = buildingLocal(cafe, cafe.width / 2 + 0.7, 1.45);
+    await B.walkTo(outside, 0.45);
+    const d = Math.hypot(B.me().x - chair.position.x, B.me().z - chair.position.z);
+    check(interiorAt({ x: B.me().x, z: B.me().z }) === null && d < (chair.radius ?? 2.4) + CONFIG.interaction.serverSlack, `B is outdoors, ${d.toFixed(2)} m from the indoor chair (within range)`);
+    const r = await B.interact(chair.id);
+    check(r?.ok === false && B.me().seat === '', `an indoor chair cannot be used through the wall (${r?.error})`, r);
+  }
+
   log('8. gazette compiled from these real events');
   if (freshWorld) {
     // Young world: the first issue is compiled automatically soon after a few significant events
@@ -413,11 +452,12 @@ async function phaseTwo(file) {
   await A.leave();
 }
 
-/** Hard-kill check, part 1: walk somewhere, stand still ≥5 s, write where we stand. Then `kill -9` the server. */
+/** Hard-kill check, part 1: walk INTO the café, stand still ≥5 s, write where we stand. Then `kill -9` the server. */
 async function positionSave(file) {
   const P = await new Player('Wren').connect();
   const start = { x: P.me().x, z: P.me().z };
-  await P.walkToInteractable('sign_welcome');
+  await P.walkTo(interiorAnchor('cafe', 'table_2').position, 0.8);
+  check(interiorAt({ x: P.me().x, z: P.me().z })?.id === 'cafe', 'standing inside the café');
   const at = { x: P.me().x, z: P.me().z };
   log(`walked from (${start.x.toFixed(2)}, ${start.z.toFixed(2)}) to (${at.x.toFixed(2)}, ${at.z.toFixed(2)}) — ${Math.hypot(at.x - start.x, at.z - start.z).toFixed(1)} m; standing still 6 s`);
   await sleep(6000);
@@ -434,6 +474,7 @@ async function positionVerify(file) {
   log(`before kill (${before.at.x.toFixed(2)}, ${before.at.z.toFixed(2)}) → after restart (${P.me().x.toFixed(2)}, ${P.me().z.toFixed(2)})`);
   check(P.welcome.profile.profileId === before.profileId, 'same profile after kill -9');
   check(d <= 2, `resumed within 2 m of the pre-kill position (Δ ${d.toFixed(2)} m)`);
+  check(interiorAt(before.at)?.id === 'cafe' && interiorAt({ x: P.me().x, z: P.me().z })?.id === 'cafe', 'saved indoors (café) → resumed indoors (café)');
   await P.leave();
 }
 

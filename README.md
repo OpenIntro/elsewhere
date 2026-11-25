@@ -2,8 +2,9 @@
 
 A browser-based, persistent, multiplayer isometric 3D social world. Players create a small
 character, enter a shared island (Town Square, café, Town Hall, woods, waterfront and a few
-places that are not explained), walk around, chat, sit on benches, ring the bell, leave notes in
-mailboxes and pick things up. The world remembers what real players did: a fountain that changes
+places that are not explained), walk around and into its buildings (the Café, General Store, Town
+Hall, Workshop, Boathouse and two homes have furnished interiors you walk into through the door),
+chat, sit on benches and chairs, ring the bell, leave notes in mailboxes and pick things up. The world remembers what real players did: a fountain that changes
 as distinct players touch it, a dormant arch that wakes only when several players act together, a
 Town Hall archive of world events, and a Gazette compiled from those events. There are no bots,
 no simulated players and no invented activity; if nobody did anything, the Gazette says so.
@@ -154,8 +155,10 @@ The server is a single process on a single port.
 | Command | What it runs |
 |---|---|
 | `npm run typecheck` | builds shared type declarations, then `tsc --noEmit` per workspace |
-| `npm test` | vitest: `shared/test`, `server/test`, `client/test` (152 tests) |
+| `npm test` | vitest: `shared/test`, `server/test`, `client/test` |
 | `npm run build && npm run e2e:acceptance` | MVP acceptance: spawns its own production server (port `ACCEPT_PORT`, default 2620, fresh temp data dir, lowered fountain/Gazette thresholds), one desktop (1440x900) and one emulated phone (Pixel 7, touch) browser through the real onboarding; 17 named checks incl. restart persistence, audio and zero console errors; graphics set to "low" for headless speed; screenshots to `docs/screenshots/acceptance/` |
+| `npm run build && npm run e2e:interiors` | walk-in interiors: own production server (port `INT_PORT`, default 2631), a desktop and a phone browser; 9 named checks — click-to-move into the Café through its door, keyboard walking in and out, cutaway open inside / closed outside, name tags + speech bubble + interaction prompt indoors, an indoor chair seen seated by the other client, walls hold, zero console errors |
+| `node scripts/interior-screenshots.mjs [devUrl]` | every interior day/night on desktop and phone + exteriors at night + the four camera rotations → `docs/screenshots/interiors/` (dev client; uses `?inside=`) |
 | `node scripts/smoke-two-clients.mjs [url]` | two browsers join and see each other move |
 | `npx tsx --conditions=source scripts/server-integration.mjs [url] --save f.json` then restart the server and `... --verify-restart f.json` | multi-client protocol test (chat, seats, bell, fountain, portal, Gazette, persistence); see the script header for the server env it expects |
 | `node scripts/e2e-player.mjs` | movement, camera, click/tap-to-move, collision, remote smoothness, server restart reconnection, touch controls (spawns its own server) |
@@ -181,6 +184,7 @@ Browser scripts need Playwright with Chromium available to `require('playwright'
 | Drag on the world | pan the camera |
 | Touch | virtual joystick, round interact button, on-screen rotate/zoom buttons |
 | Drag the character preview | rotate it (customization screen) |
+| Walk through a door | enter a building: its roof and the walls between you and the camera fade away (dollhouse cutaway, any camera rotation); walk out and they come back. Clicking a spot inside a building from outside walks you in through the door |
 
 ## Moderation and admin
 
@@ -206,6 +210,9 @@ Everything visual and audible is generated in code and intended to be replaced b
 
 - Terrain, island outline, paths, water, sky (procedural geometry and shaders).
 - Buildings, fences, props, benches, lamps, fountain, arch and rune stones (primitive geometry).
+- Building interiors: walls, floors, furniture (counters, shelves, tables, chairs, piano, lectern,
+  workbenches, kiln, beds, hearths, boats…), wall pictures and pendant lamps (primitive geometry,
+  `client/src/world/arch/walkin.ts` + `furniture.ts`). Houses 3-5 are closed "future homes".
 - Trees, bushes, rocks, flowers (seeded procedural geometry).
 - Characters, hair, outfits, accessories, faces and their animations (procedural toy characters).
 - All audio: music, ambience beds and every sound effect (Web Audio synthesis, `client/src/audio/`).
@@ -215,7 +222,8 @@ Everything visual and audible is generated in code and intended to be replaced b
 
 Labelled "Planned" / "Not yet" in the UI (Home panel), not implemented:
 
-- A home of your own in the Residential District, with your own mailbox.
+- A home of your own in the Residential District, with your own mailbox (two homes can be walked
+  into already; houses 3-5 are marked "a future home").
 - Decorating (furniture, plants, objects).
 - Shops and trading between players (the General Store's till).
 - A gentle currency earned by being around (economy).
@@ -261,3 +269,8 @@ These were not checked, or were checked only in a limited way:
   modified client can still move at that rate, and paths are validated against shared colliders,
   not against a server-side navmesh.
 - Production builds publish source maps.
+- **Interiors:** the browser e2e (`e2e:interiors`) walks into and out of the Café only; the other
+  interiors are covered by unit tests (reachability of every anchor and seat through its door,
+  walls blocking, click-to-move paths) and screenshots, not by browser walks. Doors are open
+  passages: the door leaf swings open when someone is near, and a "closed" door does not block.
+  Outdoor trees are not faded by the cutaway and can hide part of a room at some rotations.

@@ -2,9 +2,12 @@
  * Builds all static architecture, props, decks and interactable bodies into a
  * few merged meshes per location (frustum-culled chunks, shared materials).
  */
-import { useMemo } from 'react';
-import { Vector3, type BufferGeometry, type Material } from 'three';
-import { BUILDINGS, DECKS, INTERACTABLES, PROPS, buildingLocal, getBuilding, terrainHeight, type LocationId } from '@elsewhere/shared';
+import { useFrame } from '@react-three/fiber';
+import { useMemo, useRef } from 'react';
+import { Vector3, type BufferGeometry, type Material, type Mesh } from 'three';
+import { roofFade } from './cutaway.js';
+import { env } from './env.js';
+import { BUILDINGS, DECKS, INTERACTABLES, PROPS, buildingLocal, getBuilding, interiorAt, terrainHeight, type LocationId } from '@elsewhere/shared';
 import { GeoBuilder } from './geom.js';
 import { buildBuilding } from './arch/buildings.js';
 import { anchors, resetAnchors } from './arch/kit.js';
@@ -21,6 +24,11 @@ export interface BuiltWorld {
 
 let built: BuiltWorld | null = null;
 
+/** Chunk keys of walk-in interiors (floor + furniture): drawn only while the room can be seen. */
+const INTERIOR_PREFIX = 'int_';
+/** Within this distance of the camera focus an interior is drawn (seen through the open door); else only when cut open. */
+const INTERIOR_DRAW_RADIUS = 16;
+
 /** Build once (deterministic); anchors are filled as a side effect. */
 export function buildWorld(): BuiltWorld {
   if (built) return built;
@@ -31,8 +39,11 @@ export function buildWorld(): BuiltWorld {
     if (!b) builders.set(key, (b = new GeoBuilder(key.length * 7919 + key.charCodeAt(0))));
     return b;
   };
-  for (const b of BUILDINGS) buildBuilding(get(b.style === 'cottage' ? `res_${b.id}` : b.locationId), b);
-  for (const i of INTERACTABLES) buildInteractable(get(i.locationId), i);
+  for (const b of BUILDINGS) buildBuilding(get(b.style === 'cottage' ? `res_${b.id}` : b.locationId), b, b.enterable ? get(`${INTERIOR_PREFIX}${b.id}`) : undefined);
+  for (const i of INTERACTABLES) {
+    const inside = i.kind === 'door' ? null : interiorAt(i.position);
+    buildInteractable(get(inside ? `${INTERIOR_PREFIX}${inside.id}` : i.locationId), i);
+  }
   for (const p of PROPS) {
     const loc: LocationId = p.id.includes('cafe') ? 'cafe' : p.id.includes('store') ? 'general_store' : p.id.includes('workshop') ? 'workshop' : 'residential';
     buildProp(get(loc), p);
@@ -79,11 +90,28 @@ function materialFor(bucket: string): Material {
 
 export function Architecture({ shadows }: { shadows: boolean }) {
   const world = useMemo(() => buildWorld(), []);
+  const interiorMeshes = useRef(new Map<string, Mesh[]>());
+  useFrame(() => {
+    for (const [id, meshes] of interiorMeshes.current) {
+      const b = getBuilding(id);
+      const near = Math.hypot(env.focus.x - b.position.x, env.focus.z - b.position.z) < INTERIOR_DRAW_RADIUS + Math.max(b.width, b.depth) / 2;
+      const show = near || roofFade(id) > 0.005;
+      for (const m of meshes) m.visible = show;
+    }
+  });
+  const register = (key: string) => (m: Mesh | null) => {
+    if (!m || !key.startsWith(INTERIOR_PREFIX)) return;
+    const id = key.slice(INTERIOR_PREFIX.length);
+    const list = interiorMeshes.current.get(id) ?? [];
+    if (!list.includes(m)) list.push(m);
+    interiorMeshes.current.set(id, list);
+  };
   return (
     <group name="architecture">
       {world.chunks.map((c) => (
         <mesh
           key={`${c.key}:${c.bucket}`}
+          ref={register(c.key)}
           name={`${c.key}:${c.bucket}`}
           geometry={c.geometry}
           material={materialFor(c.bucket)}

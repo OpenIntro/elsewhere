@@ -121,6 +121,7 @@ const WORKSHOP = getBuilding('workshop');
 const AO_CELL = 8;
 const aoGrid = new Map<string, typeof COLLIDERS[number][]>();
 for (const c of COLLIDERS) {
+  if (c.source === 'furniture') continue; // indoors: the floor covers the terrain there
   const r = c.shape === 'circle' ? c.radius + 3 : Math.hypot(c.halfWidth, c.halfDepth) + 3;
   for (let gx = Math.floor((c.x - r) / AO_CELL); gx <= Math.floor((c.x + r) / AO_CELL); gx++)
     for (let gz = Math.floor((c.z - r) / AO_CELL); gz <= Math.floor((c.z + r) / AO_CELL); gz++) {
@@ -157,7 +158,7 @@ function contactAO(x: number, z: number): number {
       const ex = Math.max(Math.abs(lx) - c.halfWidth, 0);
       const ez = Math.max(Math.abs(lz) - c.halfDepth, 0);
       const d = Math.hypot(ex, ez);
-      const big = c.source === 'building';
+      const big = c.source === 'building' || c.source === 'wall';
       ao *= 1 - (big ? 0.5 : 0.38) * (1 - smoothstep(0, big ? 1.8 : 0.7, d));
     }
   }
@@ -236,27 +237,29 @@ export function groundColor(x: number, z: number, h: number, out: Color, pave: P
     pave.scale = sq < 4.6 ? 3.4 : 2.5;
   }
   const lh = toLocal(HALL, x, z);
-  const hallW = Math.max(rectMask(lh.x, lh.z, -7.2, 7.2, 3.5, 9.2, 0.5), rectMask(lh.x, lh.z, -1.6, 1.6, 9, 12, 0.6));
+  // (forecourts are measured from each building's front face, so they follow footprint changes)
+  const hf = HALL.depth / 2;
+  const hallW = Math.max(rectMask(lh.x, lh.z, -7.2, 7.2, hf - 1, hf + 4.7, 0.5), rectMask(lh.x, lh.z, -1.6, 1.6, hf + 4.5, hf + 7.5, 0.6));
   if (hallW > 0) {
     out.lerp(PAL.hallStone, hallW);
     pave.cell = Math.max(pave.cell, hallW);
     pave.scale = 1.25;
   }
   const lc = toLocal(CAFE, x, z);
-  const cafeW = rectMask(lc.x, lc.z, -5.4, 5.4, 2.8, 9.2, 0.4);
+  const cafeW = rectMask(lc.x, lc.z, -5.9, 5.9, CAFE.depth / 2 - 0.2, CAFE.depth / 2 + 6.2, 0.4);
   if (cafeW > 0) {
     out.lerp(PAL.terrace, cafeW);
     pave.cell = Math.max(pave.cell, cafeW);
     pave.scale = 1.9;
   }
   const ls = toLocal(STORE, x, z);
-  const storeW = rectMask(ls.x, ls.z, -4.8, 4.8, 3, 5.6, 0.7);
+  const storeW = rectMask(ls.x, ls.z, -5.3, 5.3, STORE.depth / 2 - 0.25, STORE.depth / 2 + 2.35, 0.7);
   if (storeW > 0) {
     out.lerp(PAL.gravel, storeW * 0.9);
     pave.grain = Math.max(pave.grain, storeW);
   }
   const lw = toLocal(WORKSHOP, x, z);
-  const yardW = rectMask(lw.x, lw.z, -5.4, 5.8, 3.2, 7.6, 1.2 + n2);
+  const yardW = rectMask(lw.x, lw.z, -6.4, 6.8, WORKSHOP.depth / 2 - 0.3, WORKSHOP.depth / 2 + 4.1, 1.2 + n2);
   if (yardW > 0) {
     out.lerp(PAL.yard, yardW * 0.85);
     pave.grain = Math.max(pave.grain, yardW);

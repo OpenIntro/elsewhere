@@ -7,7 +7,7 @@
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import { Color, Group, Matrix4, Vector3, type BufferGeometry } from 'three';
-import { INTERACTABLES, ITEMS, PROPS, groundHeight, type ItemId, type PickupInteractable } from '@elsewhere/shared';
+import { FURNITURE, INTERACTABLES, ITEMS, PROPS, groundHeight, type ItemId, type PickupInteractable } from '@elsewhere/shared';
 import { anchors, P } from './arch/kit.js';
 import { makeBillboards } from './billboard.js';
 import { cone, cyl, GeoBuilder, rbox, sphere, T, torus } from './geom.js';
@@ -65,7 +65,7 @@ export function Pickups({ density }: { density: number }) {
       PICKUPS.map((p) => {
         // Resting surface: on top of a prop if it sits on one (apple on the crate).
         let y = groundHeight(p.position.x, p.position.z);
-        for (const pr of PROPS) {
+        for (const pr of [...PROPS, ...FURNITURE.filter((f) => f.shape)]) {
           const d = Math.hypot(pr.position.x - p.position.x, pr.position.z - p.position.z);
           if (d < 0.65) y = Math.max(y, groundHeight(pr.position.x, pr.position.z) + pr.height + 0.02);
         }

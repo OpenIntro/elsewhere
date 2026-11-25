@@ -77,7 +77,7 @@ function cottage(n: number, position: Vec2, wallColor: string, roofColor: string
 
 /** Lived-in cottage with an interior (wider/deeper than the closed ones, same façade line). */
 function home(b: Building): Building {
-  return { ...grown(b, 7.6, 6.8), enterable: true, doorWidth: 1.7, futureHome: false, height: 3.5 };
+  return { ...grown(b, 7.6, 6.8), enterable: true, doorWidth: 1.9, futureHome: false, height: 3.5 };
 }
 
 export const BUILDINGS: readonly Building[] = [

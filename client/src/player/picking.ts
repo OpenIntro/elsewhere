@@ -10,6 +10,7 @@
 import { Raycaster, Vector2, Vector3, type Camera } from 'three';
 import { INTERACTABLES, groundHeight, type Interactable, type Vec2 } from '@elsewhere/shared';
 import { useGameStore } from '../state/gameStore.js';
+import { isHiddenIndoors } from '../world/cutaway.js';
 import { runtime } from '../state/runtime.js';
 
 export const view3d: { camera: Camera | null; canvas: HTMLElement | null } = { camera: null, canvas: null };
@@ -73,6 +74,7 @@ export function pickAt(clientX: number, clientY: number, pointerType: string): P
   let bestD = radius;
   for (const it of INTERACTABLES) {
     if (it.kind === 'hidden') continue; // secrets are found by walking up to them, not by clicking
+    if (it.kind !== 'door' && isHiddenIndoors(it.position.x, it.position.z)) continue; // under a closed roof
     const y = groundHeight(it.position.x, it.position.z) + 0.7;
     if (!worldToScreen(it.position.x, y, it.position.z, scr)) continue;
     const d = Math.hypot(scr.x - clientX, scr.y - clientY);
@@ -86,6 +88,7 @@ export function pickAt(clientX: number, clientY: number, pointerType: string): P
     if (id === local) continue;
     const p = r.render;
     if (!p || !p.visible) continue;
+    if (isHiddenIndoors(p.x, p.z)) continue; // inside a building whose roof is closed for us
     // Character body spans ~0..1.8 m: test the torso and the head.
     for (const h of [0.9, 1.5]) {
       if (!worldToScreen(p.x, p.y + h, p.z, scr)) continue;

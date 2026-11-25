@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILDINGS, CONFIG, FENCES, INTERACTABLES, buildingLocal, createCollisionWorld, isWalkable, type Collider, type CollisionWorld, type Vec2 } from '@elsewhere/shared';
+import { BUILDINGS, CONFIG, FENCES, INTERACTABLES, INTERIORS, INTERIOR_SEATS, SPAWN_POINTS, buildingLocal, createCollisionWorld, getInteractable, interiorAt, isWalkable, type Collider, type CollisionWorld, type Vec2 } from '@elsewhere/shared';
 import { NavGrid, findPath, pathLength } from '../src/player/pathfinding.js';
 
 const R = CONFIG.movement.playerRadius;
@@ -150,5 +150,51 @@ describe('pathfinding (real island)', () => {
       if (isWalkable(outside) && isWalkable(inside)) expect(grid.lineOfSight(outside.x, outside.z, inside.x, inside.z), `${b.id} straight through the gate`).toBe(true);
     }
     expect(gates).toBeGreaterThan(0);
+  });
+
+  it('click-to-move routes through doors: plaza → every interior anchor and indoor seat → back out', () => {
+    const from = SPAWN_POINTS[0]!.position;
+    const failures: string[] = [];
+    for (const it of INTERIORS) {
+      const targets: [string, Vec2][] = Object.values(it.anchors).map((a) => [a.name, a.position]);
+      for (const s of INTERIOR_SEATS.filter((x) => x.interiorId === it.id)) {
+        const seat = getInteractable(s.id);
+        if (seat && 'seats' in seat) seat.seats.forEach((q, k) => targets.push([`${s.id}#${k}`, q.exit]));
+      }
+      for (const [name, to] of targets) {
+        const res = findPath(grid, from, to);
+        // Exact, or (tight spots near furniture on the 0.5 m grid) ending right next to it.
+        const miss = res ? Math.hypot(res.goal.x - to.x, res.goal.z - to.z) : Infinity;
+        if (!res || miss > 0.45) {
+          failures.push(`${it.id}.${name}: ${res ? `ends ${miss.toFixed(2)} m away` : 'no path'}`);
+          continue;
+        }
+        if (interiorAt(res.goal)?.id !== it.id) failures.push(`${it.id}.${name}: ends outside`);
+        assertWalkable(from, res.points);
+        // the path enters through the door opening (passes within the door's width of its centre)
+        const d = it.doors[0]!;
+        const near = [from, ...res.points].some((p, i, arr) => {
+          if (i === 0) return false;
+          const a = arr[i - 1]!;
+          for (let t = 0; t <= 1; t += 0.05) if (Math.hypot(a.x + (p.x - a.x) * t - d.position.x, a.z + (p.z - a.z) * t - d.position.z) < d.width / 2 + 0.2) return true;
+          return false;
+        });
+        if (!near) failures.push(`${it.id}.${name}: path does not use the door`);
+      }
+      // and back out to the plaza from inside
+      const back = findPath(grid, it.anchors.entrance!.position, from);
+      if (!back || !back.exact) failures.push(`${it.id}: no way back out`);
+      else assertWalkable(it.anchors.entrance!.position, back.points);
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('clicking an indoor seat from outside walks in through the door to its stand-up spot', () => {
+    const chair = getInteractable('chair_cafe_in_2b')!;
+    expect(interiorAt(chair.position)?.id).toBe('cafe');
+    const res = findPath(grid, { x: 10, z: -6 }, INTERIOR_SEATS.find((s) => s.id === chair.id)!.exit)!;
+    expect(res.exact).toBe(true);
+    expect(interiorAt(res.points.at(-1)!)?.id).toBe('cafe');
+    assertWalkable({ x: 10, z: -6 }, res.points);
   });
 });

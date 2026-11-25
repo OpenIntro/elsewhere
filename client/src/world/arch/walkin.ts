@@ -184,8 +184,17 @@ export function shellWalls(B: GeoBuilder, b: Building, s: ShellStyle): void {
     for (const sx of [-1, 1]) B.add('solid', box(0.04, s.doorH - STUB, TW), P.woodDark, T(sx * (gap + 0.02), y0 + STUB + (s.doorH - STUB) / 2, d / 2 - TW / 2), { ao: false });
     B.add('solid', box(gap * 2 + 0.08, 0.05, TW), P.woodDark, T(0, y0 + s.doorH, d / 2 - TW / 2), { ao: false });
   });
-  if (s.floor === 'planks') floorPlanks(B, b, s.floorColor);
-  else floorFlags(B, b, s.floorColor);
+  // the floor is part of the interior chunk (drawn with the furnishings, see buildWalkIn)
+  floorStyles.set(b.id, { kind: s.floor, color: s.floorColor });
+}
+
+const floorStyles = new Map<string, { kind: 'planks' | 'flags'; color: ColorLike }>();
+
+/** Interior floor (planks / flagstones), in the building frame. */
+export function buildFloor(B: GeoBuilder, b: Building): void {
+  const f = floorStyles.get(b.id);
+  if (!f) return;
+  placeAt(B, b, () => (f.kind === 'planks' ? floorPlanks(B, b, f.color) : floorFlags(B, b, f.color)));
 }
 
 /** Corner posts: lower part always, upper part fades with its corner. */
@@ -329,7 +338,7 @@ function cafe(B: GeoBuilder, b: Building): void {
       onFaceCut(B, b, 'front', s * 3.15, y0 + 0.95, 0, () => B.add('solid', rbox(2.2, 0.42, 0.04, 0.02), '#efe4cf', T(0, 0.35, 0.03)));
     }
     B.withCut(S(b, 'front'), () => B.at(onFace('front', w, d, 0, y0), () => doorway(B, b.doorId, b.doorWidth, 2.3, { frame: teal, color: '#4f6f66', style: 'glass', double: true, hood: null, step: false, walkIn: true })));
-    onFaceCut(B, b, 'front', 0, 0, 0, () => awning(B, w - 0.6, h - 0.55, 1.35, '#b0563d', '#efe3cf', 0.55));
+    onFaceCut(B, b, 'front', 0, 0, 0, () => awning(B, w - 0.6, h - 0.55, 1.35, '#b0563d', '#efe3cf', 0.55), h);
     B.withCut(S(b, 'front'), () => sign(B, 'cafe', 2.2, onFace('front', w, d, 0, h + 0.55, 0.12), '#2f4a44'));
     // sides & back: arched shuttered windows
     for (const u of [2.0, -2.8]) win(B, b, 'left', u, y0 + 1.25, 0.85, 1.5, { arched: true, shutters: '#6d8b7f', flowers: true, curtains: '#d9c4a0' });
@@ -397,7 +406,7 @@ function store(B: GeoBuilder, b: Building): void {
       win(B, b, 'front', s * 3.0, y0 + 0.75, 2.2, 1.65, { frame: green, mullions: 'vertical' });
       onFaceCut(B, b, 'front', s * 3.0, y0 + 0.75, 0, () => B.add('solid', rbox(2.1, 0.3, 0.18, 0.03), P.woodDark, T(0, -0.25, 0.12)));
     }
-    onFaceCut(B, b, 'front', 0, 0, 0, () => awning(B, w - 0.4, h - 0.45, 1.25, green, '#eee5d0', 0.5));
+    onFaceCut(B, b, 'front', 0, 0, 0, () => awning(B, w - 0.4, h - 0.45, 1.25, green, '#eee5d0', 0.5), h);
     // board porch either side of the ramp
     const rh = rampHalfWidth(b) + 0.3;
     for (let i = 0; i < 9; i++) {
@@ -492,6 +501,15 @@ function hall(B: GeoBuilder, b: Building): void {
       // lower shaft up to the stub is always there; the rest fades with the roof
       B.add('solid', rbox(ts, STUB + 0.04, ts, 0.12), '#e3d9c7', T(0, y0 + (STUB + 0.04) / 2, 0), { grad: 0.1 });
       B.add('solid', rbox(ts + 0.06, 0.08, ts + 0.06, 0.03), '#d8cdb9', T(0, y0 + STUB + 0.02, 0));
+      // inside the hall the tower base reads as the stair-tower: a little door and a lantern on the stub top
+      B.at(onFace('left', ts, ts, -0.4, y0, 0.01), () => {
+        B.add('solid', rbox(0.9, 0.85, 0.06, 0.03), '#5a4636', T(0, 0.45, 0.02), { ao: false });
+        for (let k = 0; k < 3; k++) B.add('solid', box(0.02, 0.8, 0.02), shade('#5a4636', 0.8), T(-0.3 + k * 0.3, 0.45, 0.06), { ao: false });
+        B.add('solid', sphere(0.035, 6, 5), P.brass, T(0.32, 0.45, 0.07), { ao: false });
+      });
+      B.add('solid', cyl(0.18, 0.2, 0.08, 10), P.iron, T(-0.6, y0 + STUB + 0.1, -0.6), { ao: false });
+      B.add('solid', cyl(0.14, 0.12, 0.4, 10), '#5f7c74', T(-0.6, y0 + STUB + 0.35, -0.6), { ao: false });
+      B.add('plant', sphere(0.32, 10, 8), P.leaf, T(-0.6, y0 + STUB + 0.7, -0.6), { grad: 0.3 });
       B.withCut(S(b, 'roof'), () => {
         B.add('solid', rbox(ts, by - y0 - STUB, ts, 0.14, 3), '#e3d9c7', T(0, y0 + STUB + (by - y0 - STUB) / 2, 0), { grad: 0.1 });
         const tb = { ...b, width: ts, depth: ts };
@@ -509,6 +527,7 @@ function hall(B: GeoBuilder, b: Building): void {
               B.add('solid', rbox(0.06, k % 3 === 0 ? 0.2 : 0.12, 0.03, 0.01), '#4a4148', T(Math.sin(a) * 0.66, Math.cos(a) * 0.66, 0.14, 0, 0, -a), { ao: false });
             }
             anchors.clock.push(B.matrix.clone().multiply(T(0, 0, 0.16)));
+            anchors.clockCut.push(B.cut);
           });
         }
         const bh = tw.height - by - 0.2;
@@ -524,8 +543,9 @@ function hall(B: GeoBuilder, b: Building): void {
         B.add('solid', cone(ts * 0.62 * Math.SQRT2 * 0.5 + 0.9, 3.0, 4), b.roofColor, T(0, tw.height + 1.65, 0, Math.PI / 4), { ao: false, grad: 0.15 });
         B.add('solid', sphere(0.22, 10, 8), P.brass, T(0, tw.height + 3.2, 0), { ao: false });
         B.add('solid', cyl(0.03, 0.03, 0.9, 6), P.iron, T(0, tw.height + 3.7, 0), { ao: false });
-        anchors.spinners.push({ matrix: B.matrix.clone().multiply(T(0, tw.height + 3.95, 0)), kind: 'vane', speed: 0.2, size: 1 });
+        anchors.spinners.push({ matrix: B.matrix.clone().multiply(T(0, tw.height + 3.95, 0)), kind: 'vane', speed: 0.2, size: 1, cut: B.cut });
         anchors.bell = B.matrix.clone().multiply(T(0, by + bh - 0.35, 0));
+        anchors.bellCut = B.cut;
         B.add('solid', rbox(ts - 0.6, 0.14, 0.18, 0.04), P.woodDark, T(0, by + bh - 0.2, 0));
       });
     });
@@ -559,7 +579,7 @@ function workshop(B: GeoBuilder, b: Building): void {
     }
     B.withCut(S(b, 'front'), () => {
       B.at(onFace('front', w, d, 0, y0), () => doorway(B, b.doorId, b.doorWidth, 3.05, { frame: beam, color: '#8a5a3c', double: true, style: 'barn', step: false, walkIn: true }));
-      anchors.spinners.push({ matrix: B.matrix.clone().multiply(T(0, h + 0.85, d / 2 + 0.15)), kind: 'gear', speed: 0.35, size: 0.75 });
+      anchors.spinners.push({ matrix: B.matrix.clone().multiply(T(0, h + 0.85, d / 2 + 0.15)), kind: 'gear', speed: 0.35, size: 0.75, cut: B.cut });
       sign(B, 'workshop', 2.4, onFace('front', w, d, 0, h - 0.5, 0.08), beam);
       // pegboard with tool silhouettes beside the doors
       B.at(onFace('front', w, d, 3.9, y0 + 2.35, 0.03), () => {
@@ -587,7 +607,7 @@ function workshop(B: GeoBuilder, b: Building): void {
         for (const z of [-1.8, 1.8]) B.addRaw('window', rbox(0.9, 0.05, 1.1, 0.02), [0.8, 0.4, 0], T(-2.3, 1.3, z, 0, 0, 0.5));
       });
       stovepipe(B, 4.35, h + 1.0, -3.1, 2.0);
-      anchors.spinners.push({ matrix: B.matrix.clone().multiply(T(-3.4, h + 2.6, 0.5)), kind: 'windmill', speed: 1.4, size: 0.7 });
+      anchors.spinners.push({ matrix: B.matrix.clone().multiply(T(-3.4, h + 2.6, 0.5)), kind: 'windmill', speed: 1.4, size: 0.7, cut: B.cut });
       B.add('solid', cyl(0.04, 0.05, 1.0, 6), P.iron, T(-3.4, h + 1.95, 0.3));
     });
   });
@@ -705,8 +725,11 @@ function boathouse(B: GeoBuilder, b: Building): void {
   });
 }
 
-/** Build a walk-in building's shell, façade and furnished interior. */
-export function buildWalkIn(B: GeoBuilder, b: Building): void {
+/**
+ * Build a walk-in building: shell + façade into `B`; floor + furnished interior
+ * into `I` (a separate chunk the renderer only draws when the room can be seen).
+ */
+export function buildWalkIn(B: GeoBuilder, b: Building, I: GeoBuilder = B): void {
   switch (b.style) {
     case 'cafe':
       cafe(B, b);
@@ -727,5 +750,6 @@ export function buildWalkIn(B: GeoBuilder, b: Building): void {
       boathouse(B, b);
       break;
   }
-  buildInteriorFurnishings(B, b);
+  buildFloor(I, b);
+  buildInteriorFurnishings(I, b);
 }
