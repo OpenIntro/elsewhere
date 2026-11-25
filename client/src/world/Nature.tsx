@@ -30,7 +30,7 @@ import { fbm, groundColor, vnoise } from './Terrain.js';
 
 const blobCache = new Map<string, BufferGeometry>();
 /** Lumpy soft sphere (smooth normals) for canopies and bushes. */
-function blob(r: number, seed: number, amp = 0.14, ws = 11, hs = 8): BufferGeometry {
+function blob(r: number, seed: number, amp = 0.14, ws = 9, hs = 7): BufferGeometry {
   const key = `${r},${seed},${amp},${ws}`;
   let g = blobCache.get(key);
   if (g) return g;
@@ -53,12 +53,10 @@ function blob(r: number, seed: number, amp = 0.14, ws = 11, hs = 8): BufferGeome
 function tierProfile(r: number, h: number): [number, number][] {
   return [
     [0.001, h],
-    [r * 0.22, h * 0.82],
-    [r * 0.55, h * 0.45],
-    [r * 0.88, h * 0.14],
-    [r, 0.02],
-    [r * 0.93, -0.1],
-    [r * 0.55, -0.14],
+    [r * 0.4, h * 0.62],
+    [r * 0.85, h * 0.16],
+    [r, 0.0],
+    [r * 0.75, -0.12],
     [0.001, -0.1],
   ];
 }
@@ -75,7 +73,7 @@ function buildTree(kind: TreeKind, variant: number): BufferGeometry {
       const h = 1.55 - i * 0.12;
       const y = 1.05 + i * 0.92;
       const col = new Color('#4f6c4c').lerp(new Color('#6a8a55'), i / tiers + 0.1);
-      B.add('t', lathe(`pine${i},${variant}`, tierProfile(r, h), 11), col, T(0, y, 0, i * 0.6 + variant), { ...no, grad: 0.35 });
+      B.add('t', lathe(`pine${i},${variant}`, tierProfile(r, h), 9), col, T(0, y, 0, i * 0.6 + variant), { ...no, grad: 0.35 });
     }
     B.add('t', cone(0.25, 0.7, 7), '#6f8f58', T(0, 1.05 + tiers * 0.92 + 0.35, 0), no);
   } else if (kind === 'oak') {
@@ -83,7 +81,7 @@ function buildTree(kind: TreeKind, variant: number): BufferGeometry {
     B.add('t', cyl(0.07, 0.12, 1.1, 6), bark, T(0.4, 2.1, 0.1, 0, 0.2, -0.75), no);
     B.add('t', cyl(0.07, 0.11, 1.0, 6), bark, T(-0.35, 2.15, -0.1, 0, -0.2, 0.7), no);
     const blobs: [number, number, number, number][] = [
-      [0, 3.05, 0, 1.45], [0.95, 2.65, 0.35, 1.0], [-0.85, 2.75, -0.2, 1.05], [0.15, 3.75, -0.25, 0.95], [-0.3, 2.55, 0.85, 0.9], [0.45, 2.45, -0.85, 0.85],
+      [0, 3.05, 0, 1.5], [0.95, 2.65, 0.35, 1.05], [-0.85, 2.75, -0.2, 1.1], [0.15, 3.75, -0.25, 1.0], [-0.2, 2.5, 0.85, 0.95],
     ];
     blobs.forEach(([x, y, z, r], k) => {
       const col = new Color('#6f8f4f').lerp(new Color('#93ad62'), (y - 2.4) / 1.6 * 0.8 + (k % 2) * 0.08);
@@ -91,7 +89,7 @@ function buildTree(kind: TreeKind, variant: number): BufferGeometry {
     });
   } else if (kind === 'birch') {
     B.add('t', cyl(0.1, 0.15, 3.4, 8), '#e9e4d8', T(0, 1.7, 0, 0, 0.03, 0.02), no);
-    for (let k = 0; k < 7; k++) B.add('t', cyl(0.115, 0.13, 0.06, 8), '#4a4440', T(0, 0.4 + k * 0.42, 0, 0, 0, 0, 1, 1, 0.6 + (k % 3) * 0.2), no);
+    for (let k = 0; k < 4; k++) B.add('t', cyl(0.12, 0.13, 0.07, 6, true), '#4a4440', T(0, 0.5 + k * 0.65, 0, k, 0, 0, 1, 1, 0.6 + (k % 3) * 0.2), no);
     const blobs: [number, number, number, number][] = [[0, 3.6, 0, 0.95], [0.45, 3.1, 0.2, 0.75], [-0.4, 3.2, -0.15, 0.78], [0.05, 4.25, 0.05, 0.7]];
     blobs.forEach(([x, y, z, r], k) => {
       const col = new Color('#9aae5c').lerp(new Color('#bdc56f'), (y - 3) / 1.3 * 0.7);
@@ -103,11 +101,11 @@ function buildTree(kind: TreeKind, variant: number): BufferGeometry {
     B.add('t', blob(0.8, 41 + variant), '#86a85c', T(0.7, 2.0, 0.3), { ...no, grad: 0.3 });
     B.add('t', blob(0.75, 42 + variant), '#86a85c', T(-0.6, 2.1, -0.4), { ...no, grad: 0.3 });
     const rnd = mulberry32(99 + variant);
-    for (let k = 0; k < 12; k++) {
+    for (let k = 0; k < 8; k++) {
       const a = rnd() * Math.PI * 2;
       const y = 1.7 + rnd() * 1.4;
       const rr = Math.sqrt(Math.max(0, 1.3 * 1.3 - (y - 2.3) ** 2)) * 0.98;
-      B.add('t', cyl(0.11, 0.11, 0.2, 7), k % 4 ? '#c0473a' : '#d9a03f', T(Math.cos(a) * rr, y, Math.sin(a) * rr, 0, 0, 0, 1, 0.9, 1), no);
+      B.add('t', cyl(0.12, 0.12, 0.2, 5), k % 4 ? '#c0473a' : '#d9a03f', T(Math.cos(a) * rr, y, Math.sin(a) * rr, 0, 0, 0, 1, 0.9, 1), no);
     }
   }
   return B.build().get('t')!;
@@ -149,25 +147,25 @@ function bushGeometry(kind: 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft', var
   const no = { ao: false };
   if (kind === 'shrub') {
     const pts: [number, number, number, number][] = [[0, 0.45, 0, 0.6], [0.45, 0.35, 0.15, 0.42], [-0.4, 0.33, -0.1, 0.45], [0.1, 0.32, -0.45, 0.4]];
-    pts.forEach(([x, y, z, r], k) => B.add('t', blob(r, 60 + k + variant * 4, 0.16, 12, 9), new Color('#6c8c4e').lerp(new Color('#8eaa5f'), y), T(x, y, z), { ...no, grad: 0.4 }));
+    pts.forEach(([x, y, z, r], k) => B.add('t', blob(r, 60 + k + variant * 4, 0.16, 9, 6), new Color('#6c8c4e').lerp(new Color('#8eaa5f'), y), T(x, y, z), { ...no, grad: 0.4 }));
   } else if (kind === 'fern') {
-    const n = 9;
+    const n = 7;
     for (let k = 0; k < n; k++) {
       const a = (k / n) * Math.PI * 2 + variant;
-      B.add('t', blob(0.5, 80 + k, 0.08, 8, 6), new Color('#5f8a4a').lerp(new Color('#7fa65a'), (k % 3) / 3), T(Math.cos(a) * 0.38, 0.22, Math.sin(a) * 0.38, -a + Math.PI / 2, 0, 0.5, 1.0, 0.12, 0.28), no);
+      B.add('t', blob(0.5, 80 + k, 0.08, 6, 4), new Color('#5f8a4a').lerp(new Color('#7fa65a'), (k % 3) / 3), T(Math.cos(a) * 0.38, 0.22, Math.sin(a) * 0.38, -a + Math.PI / 2, 0, 0.5, 1.0, 0.12, 0.28), no);
     }
     B.add('t', blob(0.2, 90, 0.1, 8, 6), '#5f7a4b', T(0, 0.1, 0), no);
   } else if (kind === 'flowers') {
     const palettes = [['#e7a0a6', '#f4efe6'], ['#f1d27a', '#e98a3b'], ['#b9a2d8', '#9fc0e8'], ['#f4efe6', '#e7a0a6']];
     const pal = palettes[variant % palettes.length]!;
-    B.add('t', blob(0.28, 100 + variant, 0.15, 10, 8), '#6f9050', T(0, 0.16, 0, 0, 0, 0, 1.2, 0.7, 1.2), { ...no, grad: 0.4 });
+    B.add('t', blob(0.28, 100 + variant, 0.15, 7, 5), '#6f9050', T(0, 0.16, 0, 0, 0, 0, 1.2, 0.7, 1.2), { ...no, grad: 0.4 });
     const rnd = mulberry32(300 + variant);
-    for (let k = 0; k < 9; k++) {
+    for (let k = 0; k < 6; k++) {
       const a = rnd() * Math.PI * 2;
       const r = rnd() * 0.32;
       const h = 0.25 + rnd() * 0.25;
-      B.add('t', cyl(0.012, 0.015, h, 4, true), '#6f8f4d', T(Math.cos(a) * r, h / 2, Math.sin(a) * r), no);
-      B.add('t', blob(0.07, 110 + k, 0.1, 7, 5), pal[k % 2]!, T(Math.cos(a) * r, h, Math.sin(a) * r, 0, 0, 0, 1, 0.6, 1), no);
+      B.add('t', cyl(0.014, 0.016, h, 3, true), '#6f8f4d', T(Math.cos(a) * r, h / 2, Math.sin(a) * r), no);
+      B.add('t', blob(0.08, 110 + k, 0.1, 5, 4), pal[k % 2]!, T(Math.cos(a) * r, h, Math.sin(a) * r, 0, 0, 0, 1, 0.6, 1), no);
     }
   } else if (kind === 'reeds') {
     const rnd = mulberry32(400 + variant);
@@ -181,12 +179,11 @@ function bushGeometry(kind: 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft', var
   } else {
     // grass tuft: a soft clump of short, broad blades (tinted per instance to the ground colour)
     const rnd = mulberry32(500 + variant);
-    for (let k = 0; k < 5; k++) {
-      const a = (k / 5) * Math.PI * 2 + rnd();
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + rnd();
       const h = 0.16 + rnd() * 0.16;
-      B.add('t', cone(0.075, h, 4), new Color(1, 1, 1).multiplyScalar(0.92 + 0.2 * (h / 0.32)), T(Math.cos(a) * 0.07, h / 2 - 0.02, Math.sin(a) * 0.07, a, Math.sin(a) * 0.3, Math.cos(a) * 0.3, 1, 1, 0.55), no);
+      B.add('t', cone(0.08, h, 3), new Color(1, 1, 1).multiplyScalar(0.92 + 0.2 * (h / 0.32)), T(Math.cos(a) * 0.07, h / 2 - 0.02, Math.sin(a) * 0.07, a, Math.sin(a) * 0.3, Math.cos(a) * 0.3, 1, 1, 0.55), no);
     }
-    B.add('t', blob(0.12, 520 + variant, 0.1, 7, 5), new Color(0.95, 0.95, 0.95), T(0, 0.02, 0, 0, 0, 0, 1.3, 0.5, 1.3), no);
   }
   return B.build().get('t')!;
 }
@@ -200,19 +197,33 @@ interface Inst {
   c: Color;
 }
 
-function makeInstanced(geo: BufferGeometry, mat: Material, list: Inst[], shadows: boolean, receive = true): InstancedMesh | null {
-  if (!list.length) return null;
-  const mesh = new InstancedMesh(geo, mat, list.length);
-  list.forEach((it, i) => {
-    mesh.setMatrixAt(i, it.m);
-    mesh.setColorAt(i, it.c);
-  });
-  mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  mesh.castShadow = shadows;
-  mesh.receiveShadow = receive;
-  mesh.computeBoundingSphere();
-  return mesh;
+/** Instanced meshes split into spatial cells so frustum culling (main + shadow pass) works. */
+const CELL = 36;
+function makeInstanced(geo: BufferGeometry, mat: Material, list: Inst[], shadows: boolean, receive = true): InstancedMesh[] {
+  const cells = new Map<string, Inst[]>();
+  const p = new Vector3();
+  for (const it of list) {
+    p.setFromMatrixPosition(it.m);
+    const k = `${Math.floor(p.x / CELL)},${Math.floor(p.z / CELL)}`;
+    let l = cells.get(k);
+    if (!l) cells.set(k, (l = []));
+    l.push(it);
+  }
+  const out: InstancedMesh[] = [];
+  for (const items of cells.values()) {
+    const mesh = new InstancedMesh(geo, mat, items.length);
+    items.forEach((it, i) => {
+      mesh.setMatrixAt(i, it.m);
+      mesh.setColorAt(i, it.c);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.castShadow = shadows;
+    mesh.receiveShadow = receive;
+    mesh.computeBoundingSphere();
+    out.push(mesh);
+  }
+  return out;
 }
 
 const tmpC = new Color();
@@ -242,8 +253,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
           const m = T(t.position.x, y, t.position.z, t.yaw, (rnd() - 0.5) * 0.06, (rnd() - 0.5) * 0.06, s * (0.95 + rnd() * 0.1), s * (0.92 + rnd() * 0.16), s * (0.95 + rnd() * 0.1));
           list.push({ m, c: jitterColor(rnd, 0.09, 0.03) });
         });
-        const mesh = makeInstanced(buildTree(kind, v), foliageMaterial, list, shadows);
-        if (mesh) out.push(mesh);
+        out.push(...makeInstanced(buildTree(kind, v), foliageMaterial, list, shadows));
       }
     }
     // Rocks.
@@ -254,8 +264,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
         const y = terrainHeight(r.position.x, r.position.z) - 0.1 * r.scale;
         list.push({ m: T(r.position.x, y, r.position.z, r.yaw, 0, 0, r.scale * 0.62, r.scale * 0.62, r.scale * 0.55), c: jitterColor(rnd, 0.08, 0.01) });
       });
-      const mesh = makeInstanced(rockGeometry(v * 7.3 + 1), barkMaterial, list, shadows);
-      if (mesh) out.push(mesh);
+      out.push(...makeInstanced(rockGeometry(v * 7.3 + 1), barkMaterial, list, shadows));
     }
     const pave0 = { cell: 0, grain: 0, scale: 1 };
     // Bushes from data.
@@ -284,8 +293,8 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
     const square = getLocation('town_square');
     const unknown = getLocation('the_unknown');
     const pave = { cell: 0, grain: 0, scale: 1 };
-    const tuftTarget = Math.round(1800 * density);
-    const flowerTarget = Math.round(420 * density);
+    const tuftTarget = Math.round(1300 * density);
+    const flowerTarget = Math.round(300 * density);
     const fernTarget = Math.round(160 * density);
     let tufts = 0;
     let flowers = 0;
@@ -320,7 +329,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
         tufts++;
         const s = 0.8 + rnd() * 0.9;
         const c = tmpC.clone().multiplyScalar(1.06 + rnd() * 0.12);
-        pushB(`tuft${tufts % 3}`, { m: T(x, h - 0.02, z, rnd() * 6.28, 0, 0, s, s * (0.8 + rnd() * 0.6), s), c });
+        pushB(`tuft${tufts % 3}`, { m: T(x, h - 0.02, z, rnd() * 6.28, 0, 0, s * 1.2, s * (0.55 + rnd() * 0.4), s * 1.2), c });
       }
     }
 
@@ -328,8 +337,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
       const kind = key.replace(/\d+$/, '') as 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft';
       const variant = Number(key.match(/\d+$/)?.[0] ?? 0);
       const mat = kind === 'shrub' ? foliageMaterial : plantMaterial;
-      const mesh = makeInstanced(bushGeometry(kind, variant), mat, list, shadows && kind === 'shrub', true);
-      if (mesh) out.push(mesh);
+      out.push(...makeInstanced(bushGeometry(kind, variant), mat, list, shadows && kind === 'shrub', true));
     }
     void DECKS;
     return out;

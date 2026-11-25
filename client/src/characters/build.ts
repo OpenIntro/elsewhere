@@ -28,7 +28,7 @@ import {
   type ShoeStyleId,
   type SkinToneId,
 } from '@elsewhere/shared';
-import { GeoBuilder, T, capsule, cylinder, hairShell, lathe, type HairlineSpec, mix, onSurface, roundedBox, shadeColor, sphere, sphereCap, superHead, torus } from './geometry.js';
+import { GeoBuilder, T, capsule, currentDetail, cylinder, hairShell, withDetail, type Detail, lathe, type HairlineSpec, mix, onSurface, roundedBox, shadeColor, sphere, sphereCap, superHead, torus } from './geometry.js';
 import { B, BODY_PROPORTIONS, BONE_COUNT, BONE_PARENT, headFront, headNormal, layoutFor, type Proportions, type RigLayout } from './rig.js';
 
 // ---------------------------------------------------------------------------
@@ -70,6 +70,60 @@ interface Ctx {
   hairTop: number;
   /** Head-space positions of face anchors (filled by the face builder). */
   anchors: Partial<Record<number, Vector3>>;
+  /** Tone-aware face paint (contrast against the skin). */
+  ink: FaceInk;
+  /** Low detail: skip tiny decorative parts (silhouette unchanged). */
+  low: boolean;
+}
+
+/**
+ * Face paint chosen by contrast against the skin tone, so features read on
+ * every tone at grid AND in-game size. Deep tones get a light painted outline
+ * ("eye whites") around dark features and light coral mouths; light tones get
+ * darker brows when the hair colour would vanish and a stronger blush.
+ */
+interface FaceInk {
+  /** Light outline behind dark features (null = not needed). */
+  rim: Color | null;
+  /** Outline size multiplier. */
+  rimScale: number;
+  brow: Color;
+  /** Mouth line / mouth interior colour. */
+  mouth: Color;
+  /** Rim behind the mouth (null = none). */
+  mouthRim: Color | null;
+  blush: Color;
+  freckle: Color;
+}
+
+/** WCAG-style contrast ratio between two linear colours. */
+function contrast(a: Color, b: Color): number {
+  const la = luminance(a);
+  const lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+const FACE_INK_PLACEHOLDER = {} as FaceInk;
+
+function faceInk(skin: Color, hair: Color, bald: boolean): FaceInk {
+  const L = luminance(skin);
+  const deep = L < 0.09;
+  const needsRim = contrast(EYE_INK, skin) < 3.6;
+  const rim = needsRim ? mix(skin, '#fff4e4', deep ? 0.88 : 0.7) : null;
+  let brow = bald ? shadeColor(skin, 0.5) : shadeColor(hair, 0.72);
+  if (contrast(brow, skin) < 2.4) {
+    if (L < 0.2) brow = new Color('#16100d');
+    else for (let i = 0; i < 8 && contrast(brow, skin) < 2.6; i++) brow = mix(brow, '#3a2a22', 0.35);
+  }
+  return {
+    rim,
+    rimScale: deep ? 1.34 : 1.22,
+    brow,
+    mouth: deep ? new Color('#f2a08f') : MOUTH_DARK.clone(),
+    mouthRim: deep ? null : rim,
+    blush: deep ? mix(skin, '#f07a64', 0.72) : L < 0.2 ? mix(skin, '#ee7a66', 0.62) : mix(skin, BLUSH, L > 0.5 ? 0.62 : 0.5),
+    freckle: L < 0.2 ? mix(skin, '#f3d2b4', 0.45) : mix(skin, '#7a4a35', 0.45),
+  };
 }
 
 const EYE_INK = new Color('#2a201d');
@@ -238,11 +292,12 @@ const FaceKit = {
     const x = side * c.eye.x * R;
     const y = c.eye.y * c.p.headRy;
     const k = 1 + (side > 0 ? 0.03 : -0.03);
-    // On deep skin tones a soft cream rim keeps painted eyes readable at small size.
-    if (luminance(c.skin) < 0.12) paint(c, bone, sphere('lo'), mix(c.skin, '#f4e8d8', 0.38), { x, y, lift: -R * 0.006, local: S(w * R * k * 1.16, h * R * k * 1.12, R * 0.05) }, 0.2);
+    // Light painted outline ("eye white") where dark eyes would vanish into the skin.
+    const rk = c.ink.rimScale;
+    if (c.ink.rim) paint(c, bone, sphere('lo'), c.ink.rim, { x, y, lift: -R * 0.006, local: S(w * R * k * rk, h * R * k * (rk - 0.06), R * 0.05) }, 0.2);
     paint(c, bone, sphere('mid'), ink, { x, y, local: S(w * R * k, h * R * k, R * 0.05) }, 1);
     paint(c, bone, sphere('lo'), WHITE, { x, y, local: S(w * R * 0.33, h * R * 0.26, R * 0.03, w * R * 0.32, h * R * 0.42, R * 0.035) }, 1);
-    if (highlights > 1) paint(c, bone, sphere('lo'), WHITE, { x, y, local: S(w * R * 0.16, w * R * 0.16, R * 0.02, -w * R * 0.35, -h * R * 0.4, R * 0.035) }, 1);
+    if (highlights > 1 && !c.low) paint(c, bone, sphere('lo'), WHITE, { x, y, local: S(w * R * 0.16, w * R * 0.16, R * 0.02, -w * R * 0.35, -h * R * 0.4, R * 0.035) }, 1);
   },
   lid(c: Ctx, side: number, w: number, h: number, tilt = 0) {
     w *= FS;
@@ -273,7 +328,8 @@ const FaceKit = {
     const x = side * c.eye.x * R;
     const y = c.eye.y * c.p.headRy;
     // ∩ (happy) or ∪ (sleepy)
-    arc(c, bone, x, y, r * R, R * 0.032, Math.PI * 0.8, up ? Math.PI / 2 : -Math.PI / 2, EYE_INK, 0, 0.6, up ? -r * R * 0.55 : r * R * 0.55);
+    if (c.ink.rim) arc(c, bone, x, y, r * R, R * 0.07, Math.PI * 0.86, up ? Math.PI / 2 : -Math.PI / 2, c.ink.rim, -R * 0.01, 0.2, up ? -r * R * 0.55 : r * R * 0.55);
+    arc(c, bone, x, y, r * R, R * 0.036, Math.PI * 0.8, up ? Math.PI / 2 : -Math.PI / 2, EYE_INK, 0, 0.6, up ? -r * R * 0.55 : r * R * 0.55);
   },
   brow(c: Ctx, side: number, raise: number, angle: number, len = 0.2, thick = 0.034) {
     const bone = side > 0 ? B.browL : B.browR;
@@ -281,42 +337,60 @@ const FaceKit = {
     const x = side * (c.eye.x + 0.02) * R;
     const y = c.eye.y * c.p.headRy + (0.3 + raise) * R;
     anchorAt(c, bone, x, y);
-    const brow = c.a.hairStyle === 'none' ? shadeColor(c.skin, 0.55) : shadeColor(c.hair, 0.72);
-    paint(c, bone, capsule(thick * R, len * R, 6), brow, { x, y, local: T(0, 0, 0, 0, 0, Math.PI / 2 + side * angle, 1, 1, 0.6) }, 0.2);
+    const t = Math.max(thick, 0.04);
+    // softer, slimmer outline than the eyes so brows read as dark strokes, not pale bars
+    if (c.ink.rim) paint(c, bone, capsule(t * R * 1.5, len * R * 1.02, 6), mix(c.skin, c.ink.rim, 0.55), { x, y, lift: -R * 0.008, local: T(0, 0, 0, 0, 0, Math.PI / 2 + side * angle, 1, 1, 0.5) }, 0.1);
+    paint(c, bone, capsule(t * R, len * R, 6), c.ink.brow, { x, y, local: T(0, 0, 0, 0, 0, Math.PI / 2 + side * angle, 1, 1, 0.6) }, 0.2);
   },
   mouthArc(c: Ctx, bone: number, w: number, up: boolean, dx = 0, tilt = 0, y = -0.3) {
     const R = c.R;
     const span = Math.PI * 0.75;
-    arc(c, bone, dx * R, y * c.p.headRy, w * R, R * 0.03, span, (up ? Math.PI / 2 : -Math.PI / 2) + tilt, MOUTH_DARK, 0, 0.4, up ? -w * R * 0.6 : w * R * 0.6);
+    const dir = (up ? Math.PI / 2 : -Math.PI / 2) + tilt;
+    const off = up ? -w * R * 0.6 : w * R * 0.6;
+    if (c.ink.mouthRim) arc(c, bone, dx * R, y * c.p.headRy, w * R, R * 0.07, span * 1.08, dir, c.ink.mouthRim, -R * 0.01, 0.1, off);
+    arc(c, bone, dx * R, y * c.p.headRy, w * R, R * 0.036, span, dir, c.ink.mouth, 0, 0.4, off);
   },
   mouthD(c: Ctx, bone: number, w: number, h: number, teeth = false, y = -0.28) {
     const R = c.R;
     const yy = y * c.p.headRy;
+    // Deep tones: coral lip outline around a dark mouth; others: optional light rim.
+    const lip = c.ink.mouthRim ?? (luminance(c.skin) < 0.09 ? c.ink.mouth : null);
+    if (lip) paint(c, bone, lowerHemi(), lip, { x: 0, y: yy, lift: -R * 0.01, local: S(w * R * 1.28, h * R * 1.3, R * 0.04, 0, h * R * 0.3, 0) }, 0.2);
     paint(c, bone, lowerHemi(), MOUTH_DARK, { x: 0, y: yy, local: S(w * R, h * R, R * 0.04, 0, h * R * 0.25, 0) }, 0.4);
     paint(c, bone, sphere('lo'), TONGUE, { x: 0, y: yy, local: S(w * R * 0.55, h * R * 0.35, R * 0.03, 0, -h * R * 0.45, R * 0.015) }, 0.3);
     if (teeth) paint(c, bone, capsule(R * 0.03, w * R * 1.2, 6), WHITE, { x: 0, y: yy, local: T(0, h * R * 0.12, R * 0.02, 0, 0, Math.PI / 2, 1, 1, 0.6) }, 0.5);
   },
   mouthO(c: Ctx, bone: number, w: number, h: number, y = -0.31) {
     const R = c.R;
+    const lip = c.ink.mouthRim ?? (luminance(c.skin) < 0.09 ? c.ink.mouth : null);
+    if (lip) paint(c, bone, sphere('lo'), lip, { x: 0, y: y * c.p.headRy, lift: -R * 0.01, local: S(w * R * 1.45, h * R * 1.4, R * 0.04) }, 0.2);
     paint(c, bone, sphere('lo'), MOUTH_DARK, { x: 0, y: y * c.p.headRy, local: S(w * R, h * R, R * 0.04) }, 0.4);
   },
   cheeks(c: Ctx, strength = 0.5, size = 1) {
     const R = c.R;
-    const col = mix(c.skin, BLUSH, strength);
+    // Tone-aware blush; the face's own strength only nudges it.
+    const col = mix(c.skin, c.ink.blush, Math.min(1, 0.55 + strength));
     for (const s of [1, -1]) paint(c, B.head, sphere('lo'), col, { x: s * (c.eye.x + 0.2) * R, y: (c.eye.y - 0.42) * c.p.headRy, lift: -R * 0.012, local: S(R * 0.14 * size, R * 0.085 * size, R * 0.04) }, 0);
   },
   freckles(c: Ctx) {
+    if (c.low) return;
     const R = c.R;
-    const col = shadeColor(mix(c.skin, '#7a4a35', 0.45), 1);
+    const col = c.ink.freckle;
     for (const s of [1, -1])
       for (const [dx, dy] of [[0.12, -0.34], [0.24, -0.3], [0.18, -0.44]] as const)
         paint(c, B.head, sphere('lo'), col, { x: s * (c.eye.x + dx - 0.05) * R, y: (c.eye.y + dy) * c.p.headRy, lift: -R * 0.004, local: S(R * 0.022, R * 0.022, R * 0.02) }, 0);
   },
 };
 
-let _lowerHemi: BufferGeometry | null = null;
+const _lowerHemi = new Map<string, BufferGeometry>();
 function lowerHemi(): BufferGeometry {
-  return (_lowerHemi ??= new SphereGeometry(1, 12, 5, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2));
+  const d = currentDetail();
+  let g = _lowerHemi.get(d);
+  if (!g) {
+    g = new SphereGeometry(1, d === 'low' ? 8 : 12, d === 'low' ? 3 : 5, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+    _lowerHemi.set(d, g);
+  }
+  return g;
 }
 
 type FaceBuilder = (c: Ctx) => void;
@@ -477,7 +551,7 @@ export const HAIR_BUILDERS: Record<HairStyleId, HairBuilder> = {
     const ry = c.p.headRy / c.R;
     const els = [-0.25, 0.1, 0.45, 0.8, 1.2];
     for (const el of els) {
-      const n = el > 1 ? 3 : 7;
+      const n = el > 1 ? 3 : c.low ? 5 : 7;
       for (let i = 0; i < n; i++) {
         const az = (i / n) * Math.PI * 2 + el * 1.7;
         const front = Math.cos(az); // +1 = facing forward
@@ -992,7 +1066,11 @@ export function appearanceKey(a: Appearance): string {
   return [a.body, a.skin, a.hairStyle, a.hairColor, a.face, a.shirtStyle, a.shirtColor, a.pantsStyle, a.pantsColor, a.shoeStyle, a.shoeColor, x.hat, x.eyewear, x.neck, x.back].join('|');
 }
 
-export function buildCharacter(a: Appearance): BuiltCharacter {
+export function buildCharacter(a: Appearance, detail: Detail = 'high'): BuiltCharacter {
+  return withDetail(detail, () => buildCharacterAt(a, detail));
+}
+
+function buildCharacterAt(a: Appearance, detail: Detail): BuiltCharacter {
   const d = DEFAULT_APPEARANCE;
   const acc = a.accessories ?? d.accessories;
   const L = layoutFor(a.body);
@@ -1018,7 +1096,10 @@ export function buildCharacter(a: Appearance): BuiltCharacter {
     eye: FACE_EYES.smile,
     hairTop: 0,
     anchors: {},
+    ink: FACE_INK_PLACEHOLDER,
+    low: detail === 'low',
   };
+  c.ink = faceInk(c.skin, c.hair, a.hairStyle === 'none');
 
   // Pass 1 (dry): face anchors decide the face bone rest positions; hair decides the hat fit + hair top.
   buildFace({ ...c, b: new GeoBuilder() });

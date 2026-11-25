@@ -27,7 +27,7 @@ import {
   type PointLight,
 } from 'three';
 import { FOUNTAIN, terrainHeight } from '@elsewhere/shared';
-import { P, shade } from './arch/kit.js';
+import { P } from './arch/kit.js';
 import { makeBillboards } from './billboard.js';
 import { cyl, GeoBuilder, ico, lathe, rbox, sphere, T, torus } from './geom.js';
 import { env, uniforms } from './env.js';
@@ -362,4 +362,3 @@ export function Fountain({ density }: { density: number }) {
     </group>
   );
 }
-void shade;

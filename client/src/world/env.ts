@@ -45,9 +45,9 @@ export interface QualityProfile {
 }
 
 export const QUALITY: Record<GraphicsQuality, QualityProfile> = {
-  low: { level: 'low', shadows: false, shadowMapSize: 512, pointLights: 0, terrainResolution: 1.1, density: 0.35, pixelRatioCap: 1, post: false, waterDetail: false },
-  medium: { level: 'medium', shadows: true, shadowMapSize: 1024, pointLights: 3, terrainResolution: 0.7, density: 0.65, pixelRatioCap: 1.5, post: true, waterDetail: true },
-  high: { level: 'high', shadows: true, shadowMapSize: 2048, pointLights: 6, terrainResolution: 0.5, density: 1, pixelRatioCap: 2, post: true, waterDetail: true },
+  low: { level: 'low', shadows: false, shadowMapSize: 512, pointLights: 0, terrainResolution: 1.2, density: 0.3, pixelRatioCap: 1, post: false, waterDetail: false },
+  medium: { level: 'medium', shadows: true, shadowMapSize: 1024, pointLights: 3, terrainResolution: 0.8, density: 0.6, pixelRatioCap: 1.5, post: true, waterDetail: true },
+  high: { level: 'high', shadows: true, shadowMapSize: 2048, pointLights: 6, terrainResolution: 0.6, density: 1, pixelRatioCap: 2, post: true, waterDetail: true },
 };
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@
  * vertex colours and a cheap ground-contact ambient occlusion baked in.
  */
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   Color,
@@ -52,6 +53,10 @@ export function rbox(w: number, h: number, d: number, radius = 0.08, seg?: numbe
   // Small parts get a single bevel segment; only big, close-up forms get smoother corners.
   seg ??= Math.max(w, h, d) > 2.5 && r > 0.1 ? 2 : 1;
   return cached(`rb${r3(w)},${r3(h)},${r3(d)},${r3(r)},${seg}`, () => new RoundedBoxGeometry(w, h, d, seg, r));
+}
+/** Plain box for tiny repeated parts where a bevel would be invisible. */
+export function box(w: number, h: number, d: number): BufferGeometry {
+  return cached(`bx${r3(w)},${r3(h)},${r3(d)}`, () => new BoxGeometry(w, h, d));
 }
 export function cyl(rt: number, rb: number, h: number, seg = 16, open = false): BufferGeometry {
   return cached(`cy${r3(rt)},${r3(rb)},${r3(h)},${seg},${open}`, () => new CylinderGeometry(rt, rb, h, seg, 1, open));

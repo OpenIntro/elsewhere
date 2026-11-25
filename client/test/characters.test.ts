@@ -114,6 +114,54 @@ describe('character renderer mapping', () => {
   });
 });
 
+describe('character detail levels and face legibility', () => {
+  it('low / medium / high keep their triangle budgets', () => {
+    const avg = (d: 'high' | 'medium' | 'low') => {
+      let tot = 0;
+      let max = 0;
+      for (let i = 0; i < 60; i++) {
+        const t = buildCharacter(randomAppearance(i), d).geometry.getIndex()!.count / 3;
+        tot += t;
+        max = Math.max(max, t);
+      }
+      return { avg: tot / 60, max };
+    };
+    const low = avg('low');
+    const med = avg('medium');
+    const high = avg('high');
+    expect(low.avg).toBeLessThan(4000);
+    expect(low.max).toBeLessThan(5500);
+    expect(med.avg).toBeLessThan(high.avg * 0.75);
+    expect(low.avg).toBeLessThan(high.avg * 0.35);
+  }, 60_000);
+
+  it('same silhouette at every level (bounding box within a few cm)', () => {
+    for (let i = 0; i < 12; i++) {
+      const a = randomAppearance(500 + i);
+      const bh = buildCharacter(a, 'high').geometry;
+      const bl = buildCharacter(a, 'low').geometry;
+      bh.computeBoundingBox();
+      bl.computeBoundingBox();
+      expect(bl.boundingBox!.max.y).toBeCloseTo(bh.boundingBox!.max.y, 1);
+      expect(Math.abs(bl.boundingBox!.max.x - bh.boundingBox!.max.x)).toBeLessThan(0.06);
+    }
+  }, 60_000);
+
+  it('adds light outlines to facial features on deep skin tones only', () => {
+    const lightVerts = (skin: string) => {
+      const g = buildCharacter({ ...DEFAULT_APPEARANCE, skin, face: 'smile' } as Appearance).geometry;
+      const si = g.getAttribute('skinIndex');
+      const col = g.getAttribute('color');
+      let light = 0;
+      for (let i = 0; i < si.count; i++) if (si.getX(i) === B.eyeL && col.getX(i) + col.getY(i) + col.getZ(i) > 0.9) light++;
+      return light;
+    };
+    // espresso / cocoa eyes get a light painted rim; porcelain doesn't need one
+    expect(lightVerts('espresso')).toBeGreaterThan(lightVerts('porcelain') + 20);
+    expect(lightVerts('cocoa')).toBeGreaterThan(lightVerts('porcelain') + 20);
+  });
+});
+
 describe('character animation', () => {
   const L = layoutFor('round');
   const bones = Array.from({ length: BONE_COUNT }, () => new Bone());

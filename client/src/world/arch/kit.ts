@@ -6,7 +6,7 @@
  * `anchors` for the animated systems.
  */
 import { BufferAttribute, BufferGeometry, Color, Matrix4, Quaternion, Vector3 } from 'three';
-import { archFrame, archPanel, cone, cyl, gableRoof, gableWall, rbox, sphere, T, torus, type ColorLike, type GeoBuilder } from '../geom.js';
+import { archFrame, archPanel, box, cone, cyl, gableRoof, gableWall, lathe, rbox, sphere, T, torus, type ColorLike, type GeoBuilder } from '../geom.js';
 
 // ---------------------------------------------------------------------------
 // Dynamic anchors collected while building
@@ -174,7 +174,7 @@ export function windowUnit(B: GeoBuilder, w: number, h: number, o: WindowOpts = 
     for (const s of [-1, 1]) {
       const x = s * (w / 2 + sw / 2 + 0.1);
       B.add('solid', rbox(sw, hh * 0.98, 0.06, 0.025), o.shutters, T(x, hh / 2, 0.05));
-      for (let k = 1; k < 5; k++) B.add('solid', rbox(sw * 0.84, 0.035, 0.03, 0.01), shade(o.shutters, 0.82), T(x, (hh * k) / 5, 0.09));
+      for (let k = 1; k < 5; k++) B.add('solid', box(sw * 0.84, 0.035, 0.03), shade(o.shutters, 0.82), T(x, (hh * k) / 5, 0.09));
     }
   }
   if (o.flowers) flowerBox(B, w + 0.2);
@@ -268,10 +268,10 @@ export function roof(B: GeoBuilder, o: RoofOpts): void {
           for (let k = 0; k < count; k++) {
             const z = -o.length / 2 + (k + 0.5) * seg + ((i % 2) - 0.5) * seg * 0.5;
             if (Math.abs(z) > o.length / 2 - seg * 0.45) continue;
-            B.add('solid', rbox(0.2, 0.085, seg * 0.92, 0.04), (k + i) % 4 === 0 ? dark : o.color, T(x, y + 0.035, z, 0, 0, ang), { ao: false, jitter: 0.07 });
+            B.add('solid', box(0.2, 0.085, seg * 0.92), (k + i) % 4 === 0 ? dark : o.color, T(x, y + 0.035, z, 0, 0, ang), { ao: false, jitter: 0.07 });
           }
         } else {
-          B.add('solid', rbox(0.14, 0.07, o.length - 0.04, 0.03), i % 2 ? dark : shade(o.color, 0.93), T(x, y + 0.02, 0, 0, 0, ang), { ao: false, jitter: 0.05 });
+          B.add('solid', box(0.14, 0.07, o.length - 0.04), i % 2 ? dark : shade(o.color, 0.93), T(x, y + 0.02, 0, 0, 0, ang), { ao: false, jitter: 0.05 });
         }
       }
     }
@@ -282,7 +282,7 @@ export function roof(B: GeoBuilder, o: RoofOpts): void {
         for (const side of [-1, 1]) {
           const ang = Math.atan2(o.rise + drop, hw) * -side;
           const len = Math.hypot(hw, o.rise + drop);
-          B.add('solid', rbox(len, 0.06, 0.06, 0.025), dark, T((side * hw) / 2, (o.rise - drop) / 2 + 0.04 + curve * 0.5, z, 0, 0, ang), { ao: false });
+          B.add('solid', box(len, 0.06, 0.06), dark, T((side * hw) / 2, (o.rise - drop) / 2 + 0.04 + curve * 0.5, z, 0, 0, ang), { ao: false });
         }
       }
     }
@@ -340,9 +340,9 @@ export function pavilionRoof(B: GeoBuilder, w: number, d: number, rise: number, 
     const zf = hd * (1 - t) * (along ? 1 : 1) - (along ? 0 : 0);
     const xHalfF = along ? hw - t * short : hw * (1 - t);
     const angF = Math.atan2(rise, short);
-    for (const s of [1, -1]) B.add('solid', rbox(Math.max(0.2, xHalfF * 2 - 0.1), 0.07, 0.16, 0.03), c, T(0, y, s * (along ? short * (1 - t) : zf)).multiply(T(0, 0, 0, 0, s * angF)), { ao: false, jitter: 0.04 });
+    for (const s of [1, -1]) B.add('solid', box(Math.max(0.2, xHalfF * 2 - 0.1), 0.07, 0.16), c, T(0, y, s * (along ? short * (1 - t) : zf)).multiply(T(0, 0, 0, 0, s * angF)), { ao: false, jitter: 0.04 });
     const zHalfS = along ? hd * (1 - t) : hd - t * short;
-    for (const s of [1, -1]) B.add('solid', rbox(0.16, 0.07, Math.max(0.2, zHalfS * 2 - 0.1), 0.03), c, T(s * (along ? hw - t * short : short * (1 - t)), y, 0).multiply(T(0, 0, 0, 0, 0, -s * angF)), { ao: false, jitter: 0.04 });
+    for (const s of [1, -1]) B.add('solid', box(0.16, 0.07, Math.max(0.2, zHalfS * 2 - 0.1)), c, T(s * (along ? hw - t * short : short * (1 - t)), y, 0).multiply(T(0, 0, 0, 0, 0, -s * angF)), { ao: false, jitter: 0.04 });
   }
   // Ridge + hip caps.
   const cap = shade(col, 0.7);
@@ -405,7 +405,7 @@ export function picketFence(B: GeoBuilder, x0: number, z0: number, x1: number, z
   B.at(T(x0, 0, z0, yaw), () => {
     for (let i = 0; i <= n; i++) {
       const z = (i / n) * len;
-      B.add('solid', rbox(0.09, h, 0.05, 0.02), color, T(0, h / 2, z), { jitter: 0.05 });
+      B.add('solid', box(0.09, h, 0.05), color, T(0, h / 2, z), { jitter: 0.05 });
       B.add('solid', cone(0.065, 0.1, 4), color, T(0, h + 0.05, z, Math.PI / 4), { jitter: 0.05 });
     }
     B.add('solid', rbox(0.04, 0.06, len, 0.015), shade(color, 0.9), T(-0.04, h * 0.32, len / 2));
@@ -498,7 +498,6 @@ export function barrel(B: GeoBuilder, r: number, h: number, color: ColorLike = P
   for (const t of [0.15, 0.5, 0.85]) B.add('solid', torus(r * (0.87 + 0.13 * Math.sin(t * Math.PI)) + 0.01, 0.025, 5, 18), P.iron, T(0, t * h, 0, 0, Math.PI / 2));
 }
 
-import { lathe } from '../geom.js';
 function lathe2(key: string, pts: [number, number][]) {
   return lathe(key, pts, 16);
 }

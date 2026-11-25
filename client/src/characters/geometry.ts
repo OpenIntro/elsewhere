@@ -180,7 +180,7 @@ function cached(rawKey: string, make: () => BufferGeometry): BufferGeometry {
 /** Unit sphere (radius 1). Detail: 'hi' | 'mid' | 'lo'. */
 export function sphere(detail: 'hi' | 'mid' | 'lo' = 'mid'): BufferGeometry {
   const [w, h] =
-    detail === 'hi' ? byDetail([28, 18], [18, 12], [12, 8]) : detail === 'mid' ? byDetail([12, 9], [10, 7], [7, 5]) : byDetail([8, 6], [7, 5], [5, 4]);
+    detail === 'hi' ? byDetail([28, 18], [18, 12], [11, 7]) : detail === 'mid' ? byDetail([12, 9], [10, 7], [7, 4]) : byDetail([8, 6], [7, 5], [5, 3]);
   return cached(`sphere-${detail}`, () => new SphereGeometry(1, w, h));
 }
 
@@ -193,7 +193,7 @@ export function sphereCap(thetaLength: number, detail: 'hi' | 'mid' = 'mid'): Bu
 /** Capsule along Y, centred, radius r, straight length len. */
 export function capsule(r: number, len: number, radial = 8): BufferGeometry {
   const rad = byDetail(radial, Math.max(6, radial - 2), Math.max(5, radial - 3));
-  const capSeg = byDetail(3, 2, 2);
+  const capSeg = byDetail(3, 2, 1);
   return cached(`caps-${r.toFixed(4)}-${len.toFixed(4)}-${radial}`, () => new CapsuleGeometry(r, len, capSeg, rad));
 }
 
@@ -217,7 +217,7 @@ export function roundedBox(w: number, h: number, d: number, r: number): BufferGe
 
 /** Lathe from (radius, y) pairs, smoothed with a Catmull-Rom pass. */
 export function lathe(key: string, pts: readonly (readonly [number, number])[], segmentsHigh = 18, samplesHigh = 2): BufferGeometry {
-  const segments = byDetail(segmentsHigh, Math.max(12, Math.round(segmentsHigh * 0.75)), Math.max(10, Math.round(segmentsHigh * 0.55)));
+  const segments = byDetail(segmentsHigh, Math.max(12, Math.round(segmentsHigh * 0.75)), Math.max(9, Math.round(segmentsHigh * 0.5)));
   const samples = byDetail(samplesHigh, samplesHigh, 1);
   return cached(`lathe-${key}`, () => {
     const out: Vector2[] = [];
@@ -244,7 +244,7 @@ export function lathe(key: string, pts: readonly (readonly [number, number])[], 
 export function superHead(rx: number, ry: number, n: number): BufferGeometry {
   return cached(`head-${rx}-${ry}-${n}`, () => {
     const pts: Vector2[] = [];
-    const steps = byDetail(20, 14, 10);
+    const steps = byDetail(20, 14, 9);
     for (let i = 0; i <= steps; i++) {
       // parameter angle from bottom (-pi/2) to top (pi/2)
       const a = -Math.PI / 2 + (Math.PI * i) / steps;
@@ -254,7 +254,7 @@ export function superHead(rx: number, ry: number, n: number): BufferGeometry {
       const y = ry * Math.sign(s) * Math.pow(Math.abs(s), 2 / n);
       pts.push(new Vector2(Math.max(0, x), y));
     }
-    return new LatheGeometry(pts, byDetail(30, 22, 16));
+    return new LatheGeometry(pts, byDetail(30, 22, 15));
   });
 }
 
@@ -303,8 +303,8 @@ export function hairlineAt(h: HairlineSpec, phi: number): number {
 export function hairShell(rx: number, ry: number, n: number, h: HairlineSpec): BufferGeometry {
   const key = `shell2-${rx}-${ry}-${n}-${h.front}-${h.side}-${h.back}-${h.thick}-${h.bulk ?? 0}`;
   return cached(key, () => {
-    const COLS = byDetail(40, 28, 20);
-    const ROWS = byDetail(14, 9, 6);
+    const COLS = byDetail(40, 28, 18);
+    const ROWS = byDetail(14, 9, 5);
     const pt = (phi: number, a: number, out: number) => {
       const c = Math.cos(a);
       const s = Math.sin(a);

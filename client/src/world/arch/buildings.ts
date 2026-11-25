@@ -5,8 +5,9 @@
  * Footprints match the shared BUILDINGS colliders exactly; decorative bits
  * that stick out stay small (trims, sills, awnings overhead).
  */
+import { Matrix4 } from 'three';
 import { type Building, terrainHeight } from '@elsewhere/shared';
-import { archFrame, cone, cyl, quad, rbox, sphere, T, torus, type GeoBuilder } from '../geom.js';
+import { archFrame, box, cone, cyl, gableWall, quad, rbox, sphere, T, torus, type GeoBuilder } from '../geom.js';
 import { signUV } from '../signs.js';
 import {
   anchors,
@@ -70,7 +71,7 @@ function siding(B: GeoBuilder, w: number, h: number, d: number, color: string, y
       const n = Math.floor(len / spacing);
       for (let i = 1; i < n; i++) {
         const u = -len / 2 + i * spacing;
-        B.add('solid', rbox(0.035, h - 0.2, 0.03, 0.01), dk, onFace(face, w, d, u, y0 + h / 2, 0).multiply(T(0, 0, 0.005)), { jitter: 0.02 });
+        B.add('solid', box(0.035, h - 0.2, 0.03), dk, onFace(face, w, d, u, y0 + h / 2, 0).multiply(T(0, 0, 0.005)), { jitter: 0.02 });
       }
     }
     return;
@@ -78,7 +79,7 @@ function siding(B: GeoBuilder, w: number, h: number, d: number, color: string, y
   const n = Math.floor(h / spacing);
   for (let i = 1; i < n; i++) {
     const y = y0 + i * spacing;
-    B.add('solid', rbox(w + 0.03, 0.035, d + 0.03, 0.012), dk, T(0, y, 0), { jitter: 0.015 });
+    B.add('solid', box(w + 0.03, 0.035, d + 0.03), dk, T(0, y, 0), { jitter: 0.015 });
   }
 }
 
@@ -314,8 +315,6 @@ function hall(B: GeoBuilder, b: Building): void {
   });
 }
 
-import { Matrix4 } from 'three';
-import { gableWall } from '../geom.js';
 function gableTri(w: number, h: number) {
   return gableWall(w, h, 0.2);
 }

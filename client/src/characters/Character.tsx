@@ -17,12 +17,15 @@
  */
 import { useFrame } from '@react-three/fiber';
 import { memo, useEffect, useMemo, useRef } from 'react';
-import { Bone, Mesh, Object3D, OctahedronGeometry, Skeleton, SkinnedMesh, Sphere, Vector3 } from 'three';
+import { Bone, Mesh, Object3D, OctahedronGeometry, PlaneGeometry, Skeleton, SkinnedMesh, Sphere, Vector3 } from 'three';
 import type { AnimState, Appearance, ItemId } from '@elsewhere/shared';
 import { Animator } from './animation.js';
 import { getCharacter, releaseCharacter, retainCharacter } from './cache.js';
 import { heldGeometry } from './held.js';
-import { NPC_MARKER_MATERIAL, TOY_MATERIALS, toyMaterial, type CharacterVariant } from './materials.js';
+import { NPC_MARKER_MATERIAL, TOY_MATERIALS, groundBlobMaterial, toyMaterial, type CharacterVariant } from './materials.js';
+import { tickToyLighting } from './lighting.js';
+import type { Detail } from './geometry.js';
+import { useSettingsStore } from '../state/settingsStore.js';
 import { BONE_COUNT, BONE_PARENT, B } from './rig.js';
 import type { BuiltCharacter } from './build.js';
 
@@ -45,9 +48,14 @@ export interface CharacterProps {
   variant?: CharacterVariant;
   /** Animation phase seed 0..1 (defaults to random per instance so crowds don't sync). */
   seed?: number;
+  /** Geometry detail; defaults to the graphics-quality setting (low ≈3.4k, medium ≈8.3k, high ≈12.7k tris avg). */
+  detail?: Detail;
+  /** Soft contact blob under the feet (1 extra draw call). Default true. */
+  groundShadow?: boolean;
 }
 
 const MARKER_GEO = new OctahedronGeometry(0.075, 0);
+const BLOB_GEO = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 
 /** Cumulative CPU time spent animating characters (ms) — read by the dev gallery / perf checks. */
 export const characterPerf = { ms: 0, updates: 0 };
@@ -101,8 +109,12 @@ export const Character = memo(function Character({
   sitStyle = 'seat',
   variant = 'player',
   seed,
+  detail,
+  groundShadow = true,
 }: CharacterProps) {
-  const { key, built } = getCharacter(appearance);
+  const quality = useSettingsStore((s) => s.graphics);
+  const level: Detail = detail ?? (quality === 'low' ? 'low' : quality === 'medium' ? 'medium' : 'high');
+  const { key, built } = getCharacter(appearance, level);
   const inst = useMemo(() => new CharacterInstance(built), [built]);
   const animator = useRef<Animator | null>(null);
   if (!animator.current) animator.current = new Animator(seed ?? Math.random());
@@ -145,8 +157,9 @@ export const Character = memo(function Character({
     animator.current!.apply(inst.bones, inst.built.rest);
   }, [inst]);
 
-  useFrame((_, dt) => {
+  useFrame((st, dt) => {
     const t0 = performance.now();
+    tickToyLighting(st.clock.elapsedTime);
     const a = animator.current!;
     a.update(dt, inputs.current, inst.built.layout);
     a.apply(inst.bones, inst.built.rest);
@@ -159,9 +172,11 @@ export const Character = memo(function Character({
     characterPerf.updates++;
   });
 
+  const blobW = Math.max(0.75, built.layout.p.rMid * 2 + 0.42);
   return (
     <group>
       <primitive object={inst.mesh} />
+      {groundShadow && <mesh geometry={BLOB_GEO} material={groundBlobMaterial()} position={[0, 0.02, 0.02]} scale={[blobW, 1, blobW * 0.85]} renderOrder={-1} />}
       {variant === 'npc' && <mesh ref={marker} geometry={MARKER_GEO} material={NPC_MARKER_MATERIAL} position={[0, built.topY + 0.28, 0]} scale={[1, 1.5, 1]} />}
     </group>
   );

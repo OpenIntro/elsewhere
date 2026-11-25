@@ -396,7 +396,9 @@ async function testCannotEnterSea(page) {
   record('cannot walk into the sea', walk && ran > 3, `ran ${best.keys.join('+')} toward water ${best.dist} m away; covered ${ran.toFixed(1)} m in ${(end.t / 1000).toFixed(1)} s; ${samples.length} samples all walkable=${walk}; end is ${toWater === Infinity ? '>6' : toWater.toFixed(2)} m from water${toWater > 2 ? ' (stopped by an obstacle before the shore)' : ''}`);
 
   // Click out at sea → walks to the nearest reachable beach point, never into water.
-  const sea = { x: end.x + best.d.x * (toWater === Infinity ? 8 : toWater + 6), z: end.z + best.d.z * (toWater === Infinity ? 8 : toWater + 6) };
+  if (best.dist === Infinity) return;
+  // A point 6 m out to sea along the same line (from the original start, where we measured the shore).
+  const sea = { x: s.local.x + best.d.x * (best.dist + 6), z: s.local.z + best.d.z * (best.dist + 6) };
   const scr = await query(page, 'worldToScreen', sea.x, sea.z, 0);
   const vp = page.viewportSize();
   if (scr && scr.x > 10 && scr.y > 10 && scr.x < vp.width - 10 && scr.y < vp.height - 10) {

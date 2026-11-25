@@ -8,9 +8,11 @@ import { Canvas, advance, useFrame, useThree } from '@react-three/fiber';
 import { StrictMode, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PCFShadowMap, Vector3, type Group } from 'three';
-import { ACCESSORY_CATALOG, ANIM_STATES, APPEARANCE_CATALOG, ITEMS, randomAppearance, type AnimState, type Appearance } from '@elsewhere/shared';
+import { ACCESSORY_CATALOG, ANIM_STATES, APPEARANCE_CATALOG, ITEMS, SKIN_TONES, randomAppearance, type AnimState, type Appearance } from '@elsewhere/shared';
 import { Character, CharacterPreview } from '../index.js';
 import { characterCacheStats } from '../cache.js';
+import { setCharacterNight } from '../lighting.js';
+import type { Detail } from '../geometry.js';
 import { characterPerf } from '../Character.js';
 
 const q = new URLSearchParams(location.search);
@@ -18,6 +20,9 @@ const view = q.get('view') ?? 'grid';
 const fixed = q.get('fixed') === '1';
 const seed0 = Number(q.get('seed') ?? 1);
 const zoomQ = q.get('zoom');
+const night = q.get('night') === '1';
+const detailQ = (q.get('detail') as Detail | null) ?? undefined;
+setCharacterNight(night ? 1 : 0);
 
 declare global {
   interface Window {
@@ -50,6 +55,14 @@ function IsoCam({ zoom, target = [0, 0.8, 0] }: { zoom: number; target?: [number
 }
 
 function Lights({ shadowSize = 14 }: { shadowSize?: number }) {
+  if (night)
+    return (
+      <>
+        <ambientLight intensity={0.35} color="#7d8bb5" />
+        <directionalLight position={[18, 30, 10]} intensity={0.3} color="#7d8bb5" castShadow shadow-mapSize={[1024, 1024]} shadow-camera-left={-shadowSize} shadow-camera-right={shadowSize} shadow-camera-top={shadowSize} shadow-camera-bottom={-shadowSize} />
+        <pointLight position={[4, 3.4, 2]} intensity={6} distance={9} color="#ffc27a" />
+      </>
+    );
   return (
     <>
       <hemisphereLight args={['#fff4e3', '#7b6a55', 0.55]} />
@@ -139,7 +152,7 @@ function GridView() {
         const [x, z] = gridPos(i, cols, 1.45, 2.4);
         return (
           <Placed key={i} x={x} z={z}>
-            <Character appearance={a} anim="idle" seed={i / n} />
+            <Character appearance={a} anim="idle" seed={i / n} detail={detailQ} />
             {q.get('labels') === '1' && <Label text={`#${seed0 * 1000 + i} ${a.body}/${a.face}/${a.hairStyle}`} />}
           </Placed>
         );
@@ -283,7 +296,7 @@ function Walker({ i, a }: { i: number; a: Appearance }) {
   });
   return (
     <group ref={g}>
-      <Character appearance={a} anim={anim} animSeq={seq} speed={moving ? speed : undefined} held={i % 9 === 4 ? (Object.keys(ITEMS)[i % 7] as never) : ''} />
+      <Character appearance={a} anim={anim} animSeq={seq} detail={detailQ} speed={moving ? speed : undefined} held={i % 9 === 4 ? (Object.keys(ITEMS)[i % 7] as never) : ''} />
     </group>
   );
 }
@@ -394,6 +407,61 @@ function CatalogView() {
   );
 }
 
+/** Every skin tone × a set of faces: ?view=tones */
+function TonesView() {
+  const faces = (q.get('faces') ?? 'smile,calm,grin,sleepy,wink,button,starry,grumpy,surprised').split(',');
+  const hairs = ['buzz', 'bob', 'curly', 'none', 'ponytail', 'swoop', 'afro', 'long', 'spiky'];
+  const hairCols = ['ink', 'chestnut', 'snow', 'auburn', 'wheat', 'ink', 'ash', 'moss', 'ink'];
+  const tones = SKIN_TONES.map((t) => t.id);
+  const cols = faces.length;
+  const base = useMemo(() => randomAppearance(seed0), []);
+  return (
+    <Canvas shadows={{ type: PCFShadowMap }} dpr={1}>
+      <IsoCam zoom={Number(zoomQ ?? 70)} target={[(TOWARD[0] * ((tones.length - 1) * 1.9)) / 2, 0.8, (TOWARD[1] * ((tones.length - 1) * 1.9)) / 2]} />
+      <color attach="background" args={[night ? '#1d2233' : '#e9dfcf']} />
+      <Lights shadowSize={20} />
+      <Ground size={80} color={night ? '#3a3f4f' : '#b9b48f'} />
+      {tones.flatMap((tone, r) =>
+        faces.map((face, i) => {
+          const [x, z] = gridPos(r * cols + i, cols, 1.25, 1.9);
+          const a = { ...base, skin: tone, face, hairStyle: hairs[(i + r) % hairs.length], hairColor: hairCols[(i * 3 + r) % hairCols.length], accessories: { hat: 'none', eyewear: 'none', neck: 'none', back: 'none' } } as Appearance;
+          return (
+            <Placed key={`${tone}-${face}`} x={x} z={z}>
+              <Character appearance={a} anim="idle" seed={(r * cols + i) * 0.07} detail={detailQ} />
+            </Placed>
+          );
+        }),
+      )}
+    </Canvas>
+  );
+}
+
+/** Same characters at high / medium / low detail: ?view=detail */
+function DetailView() {
+  const n = Number(q.get('n') ?? 4);
+  const apps = useMemo(() => Array.from({ length: n }, (_, i) => randomAppearance(seed0 * 100 + i)), []);
+  const levels: Detail[] = ['high', 'medium', 'low'];
+  return (
+    <Canvas shadows={{ type: PCFShadowMap }} dpr={1}>
+      <IsoCam zoom={Number(zoomQ ?? 120)} target={[(TOWARD[0] * 2 * 3.4) / 2, 0.8, (TOWARD[1] * 2 * 3.4) / 2]} />
+      <color attach="background" args={['#e9dfcf']} />
+      <Lights />
+      <Ground />
+      {levels.flatMap((lv, r) =>
+        apps.map((a, i) => {
+          const [x, z] = gridPos(r * n + i, n, 1.6, 3.4);
+          return (
+            <Placed key={`${lv}-${i}`} x={x} z={z}>
+              <Character appearance={a} anim="idle" seed={i * 0.2} detail={lv} />
+              {i === 0 && <Label text={lv} />}
+            </Placed>
+          );
+        }),
+      )}
+    </Canvas>
+  );
+}
+
 function App() {
   useEffect(() => {
     const id = setTimeout(() => (window.__ready = true), 300);
@@ -412,6 +480,10 @@ function App() {
       return <ItemsView />;
     case 'catalog':
       return <CatalogView />;
+    case 'tones':
+      return <TonesView />;
+    case 'detail':
+      return <DetailView />;
     default:
       return <GridView />;
   }

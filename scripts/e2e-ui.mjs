@@ -25,7 +25,7 @@ const { chromium } = await loadPlaywright();
 
 const base = process.argv[2] ?? process.env.E2E_URL ?? 'http://localhost:2567';
 const SHOTS = process.env.SHOTS ?? null;
-const T = 20_000;
+const T = 45_000;
 const log = (...a) => console.log('[e2e]', ...a);
 const errors = [];
 const results = [];
@@ -73,8 +73,16 @@ async function shot(page, name) {
 }
 
 const browser = await chromium.launch();
+// Headless WebGL is software-rendered: start every context on low graphics so the UI stays responsive.
+// (Volumes are left at defaults; step 4 changes and verifies them.)
+const LOW_GFX = `try { if (!localStorage.getItem('elsewhere.settings.v1')) localStorage.setItem('elsewhere.settings.v1', JSON.stringify({ state: { graphics: 'low' }, version: 1 })); } catch {}`;
+async function newContext(opts) {
+  const ctx = await browser.newContext(opts);
+  await ctx.addInitScript(LOW_GFX);
+  return ctx;
+}
 try {
-  const ctxA = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctxA = await newContext({ viewport: { width: 1024, height: 700 } });
   const a = await ctxA.newPage();
   watch(a, 'A');
 
@@ -118,7 +126,7 @@ try {
     const s = await waitSnap(a, (x) => x.connection === 'connected', 'A reconnected');
     const me = s.players.find((p) => p.id === s.sessionId);
     if (me?.name !== 'Test Wren') throw new Error(`resumed as ${me?.name}, expected Test Wren`);
-    await a.waitForSelector('[data-testid=toast]:has-text("Welcome back")', { timeout: 5000 });
+    await a.waitForSelector('[data-testid=toast]:has-text("Welcome back")', { timeout: 15000 });
     pass('reload resumes saved session (no onboarding, welcome back)');
   } catch (err) {
     failStep('reload resume', err);
@@ -129,11 +137,11 @@ try {
     const panels = { map: 'panel-map', inventory: 'panel-inventory', chat: 'chat', home: 'panel-home', gazette: 'panel-gazette', settings: 'panel-settings' };
     for (const [nav, id] of Object.entries(panels)) {
       await a.click(`[data-testid=nav-${nav}]`);
-      await a.waitForSelector(`[data-testid=${id}]`, { timeout: 5000 });
+      await a.waitForSelector(`[data-testid=${id}]`, { timeout: 15000 });
       await noOverflow(a, nav);
       await shot(a, `e2e-04-${nav}`);
       await a.click(`[data-testid=nav-${nav}]`);
-      await a.waitForSelector(`[data-testid=${id}]`, { state: 'detached', timeout: 5000 });
+      await a.waitForSelector(`[data-testid=${id}]`, { state: 'detached', timeout: 15000 });
     }
     // Gazette shows either an issue or the honest empty state (never invented news).
     await a.click('[data-testid=nav-gazette]');
@@ -165,7 +173,7 @@ try {
 
   // 5. Chat between two clients.
   try {
-    const ctxB = await browser.newContext({ viewport: { width: 1024, height: 720 } });
+    const ctxB = await newContext({ viewport: { width: 960, height: 640 } });
     const b = await ctxB.newPage();
     watch(b, 'B');
     await b.goto(withQuery(base, { autojoin: '1' }));

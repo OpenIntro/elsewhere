@@ -4,6 +4,7 @@
  */
 import type { Appearance } from '@elsewhere/shared';
 import { appearanceKey, buildCharacter, type BuiltCharacter } from './build.js';
+import type { Detail } from './geometry.js';
 
 interface Entry {
   built: BuiltCharacter;
@@ -26,11 +27,11 @@ function scheduleCheck(key: string, e: Entry) {
 }
 
 /** Get (building if needed) without taking a reference; pair with retain/release in an effect. */
-export function getCharacter(a: Appearance): { key: string; built: BuiltCharacter } {
-  const key = appearanceKey(a);
+export function getCharacter(a: Appearance, detail: Detail = 'high'): { key: string; built: BuiltCharacter } {
+  const key = `${detail}#${appearanceKey(a)}`;
   let e = entries.get(key);
   if (!e) {
-    e = { built: buildCharacter(a), refs: 0, timer: null };
+    e = { built: buildCharacter(a, detail), refs: 0, timer: null };
     entries.set(key, e);
     scheduleCheck(key, e);
   }

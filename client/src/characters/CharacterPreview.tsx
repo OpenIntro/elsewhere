@@ -141,7 +141,7 @@ export function CharacterPreview({ appearance, anim = 'idle', animSeq = 0, spin 
         {/* rim: behind */}
         <directionalLight position={[-1, 2.6, -3.5]} intensity={1.5} color="#fff0dc" />
         <Turntable drag={drag} spin={spin}>
-          <Character appearance={appearance} anim={anim} animSeq={animSeq} held={held} variant={variant} castShadow seed={0.37} />
+          <Character appearance={appearance} anim={anim} animSeq={animSeq} held={held} variant={variant} castShadow seed={0.37} detail="high" groundShadow={false} />
         </Turntable>
         {/* soft contact blob + real shadow catcher */}
         {blob && (
