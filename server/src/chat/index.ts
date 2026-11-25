@@ -16,8 +16,8 @@ export interface ChatService extends RoomHooks {
   handleChat(ctx: RoomContext, sessionId: string, payload: ChatPayload): void;
   handleWhisper(ctx: RoomContext, sessionId: string, payload: WhisperPayload): void;
   handleTyping(ctx: RoomContext, sessionId: string, payload: TypingPayload): void;
-  /** Recent global/system messages for the welcome payload (hides lines from profiles blocked either way). */
-  recent(forProfileId?: string): ChatMessage[];
+  /** Recent global/system messages of one room for the welcome payload (hides lines from profiles blocked either way). */
+  recent(forProfileId?: string, roomId?: string): ChatMessage[];
   /** Post a system line (e.g. "The bell rings out over the island."). */
   system(ctx: RoomContext, text: string): void;
 }
@@ -26,10 +26,13 @@ let seq = 0;
 const newId = (ts: number) => `m_${ts.toString(36)}${(seq++ % 1296).toString(36).padStart(2, '0')}_${randomUUID().slice(0, 6)}`;
 
 export function createChat(moderation: ModerationService): ChatService {
-  const history: ChatMessage[] = [];
+  /** Global/system history per room instance (keyed by ctx.roomId). */
+  const histories = new Map<string, ChatMessage[]>();
   const lastLines = new Map<string, { text: string; ts: number }[]>();
 
-  const pushHistory = (m: ChatMessage) => {
+  const pushHistory = (ctx: RoomContext, m: ChatMessage) => {
+    let history = histories.get(ctx.roomId);
+    if (!history) histories.set(ctx.roomId, (history = []));
     history.push(m);
     if (history.length > CONFIG.chat.historyLength) history.splice(0, history.length - CONFIG.chat.historyLength);
   };
@@ -108,7 +111,7 @@ export function createChat(moderation: ModerationService): ChatService {
         },
       });
       moderation.recordChat(msg);
-      if (channel === 'global') pushHistory(msg);
+      if (channel === 'global') pushHistory(ctx, msg);
     },
 
     handleWhisper(ctx, sessionId, payload) {
@@ -147,7 +150,8 @@ export function createChat(moderation: ModerationService): ChatService {
       p.typing = payload.typing === true;
     },
 
-    recent(forProfileId) {
+    recent(forProfileId, roomId) {
+      const history = roomId !== undefined ? (histories.get(roomId) ?? []) : [...histories.values()].flat();
       if (!forProfileId) return history.slice();
       return history.filter((m) => m.channel === 'system' || (!moderation.isBlockedBetween(forProfileId, m.fromProfileId) && !moderation.isMutedBy(forProfileId, m.fromProfileId)));
     },
@@ -156,7 +160,11 @@ export function createChat(moderation: ModerationService): ChatService {
       const ts = ctx.now();
       const msg: ChatMessage = { id: newId(ts), channel: 'system', from: '', fromProfileId: '', fromName: 'Elsewhere', text, ts, mentions: [] };
       ctx.broadcast(S2C.chat, msg);
-      pushHistory(msg);
+      pushHistory(ctx, msg);
+    },
+
+    onRoomDispose(ctx) {
+      histories.delete(ctx.roomId);
     },
 
     onPlayerLeave(ctx, sessionId) {

@@ -42,6 +42,8 @@ export interface GameState {
   muted: string[];
   /** Fresh-rejoin attempts since the session was lost (0 while connected / during same-session reconnection). Written by net/. */
   reconnectAttempt: number;
+  /** Set by net/ when the server kicked/banned this client (socket closed with 4003): no auto-reconnect. connection = 'disconnected', connectionError = 'kicked'. */
+  kicked: { reason: string; at: number } | null;
 
   setConnection(status: ConnectionStatus, error?: string | null): void;
   setSession(sessionId: string | null, profile?: ProfileSummary | null): void;
@@ -68,6 +70,7 @@ const initial = {
   blocked: [],
   muted: [],
   reconnectAttempt: 0,
+  kicked: null,
 };
 
 export const useGameStore = create<GameState>()((set) => ({

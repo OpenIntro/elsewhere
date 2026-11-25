@@ -6,8 +6,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { LOCATIONS, worldTimeAt } from '@elsewhere/shared';
-import { cameraControls, useCameraStore } from '../player/camera.js';
-import { pressInteract } from '../player/index.js';
+import { cameraControls, pressInteract, useCameraStore, useTouchControlsVisible } from '../player/index.js';
 import { serverNow, useGameStore } from '../state/gameStore.js';
 import { useUiStore, type Panel } from '../state/uiStore.js';
 import { useChatUnread } from './Chat.js';
@@ -195,8 +194,10 @@ function Prompt() {
   const panel = useUiStore((s) => s.panel);
   const typing = useUiStore((s) => s.textInputFocused);
   const touch = useIsTouch();
+  // On touch the player system's thumb action button carries the prompt; don't duplicate it.
+  const touchControls = useTouchControlsVisible();
   const p = prompt ? { label: prompt.label, name: prompt.name } : playerPrompt ? { label: playerPrompt.label, name: playerPrompt.name } : null;
-  if (!p || (panel && READING_PANELS.has(panel.kind))) return null;
+  if (!p || touchControls || (panel && READING_PANELS.has(panel.kind))) return null;
   return (
     <button
       type="button"
@@ -276,7 +277,7 @@ function ControlsHint() {
               <span className="hint__key">Joystick</span> to walk
             </li>
             <li>
-              <span className="hint__key">Tap</span> the prompt to interact
+              <span className="hint__key">Tap</span> the round button to interact
             </li>
             <li>
               <span className="hint__key">Pinch</span> to zoom
@@ -338,7 +339,8 @@ function CameraButtons() {
   const pref = useUiPrefs((s) => s.cameraButtons);
   const touch = useIsTouch();
   const free = useCameraStore((s) => s.free);
-  if (pref === 'off' || (pref === 'auto' && !touch)) return null;
+  const panelOpen = useUiStore((s) => s.panel !== null);
+  if (pref === 'off' || (pref === 'auto' && !touch) || panelOpen) return null;
   return (
     <div className="camctl" role="group" aria-label="Camera">
       <button type="button" className="icon-btn icon-btn--glass" aria-label="Turn view left" onClick={() => cameraControls.rotateLeft()}>
@@ -381,6 +383,7 @@ function PanelHost() {
   const panel = useUiStore((s) => s.panel);
   const closePanel = useUiStore((s) => s.closePanel);
   const playerMenu = useUiStore((s) => s.playerMenu);
+  const narrow = useIsNarrow();
 
   // The player worker's context-menu request opens the player card.
   useEffect(() => {
@@ -392,7 +395,9 @@ function PanelHost() {
   useEffect(() => {
     const ui = useUiStore.getState();
     if (ui.playerMenu && !(panel?.kind === 'profile' && panel.sessionId === ui.playerMenu.sessionId)) ui.closePlayerMenu();
-  }, [panel]);
+    // Small screens show one surface at a time.
+    if (panel && narrow && ui.chatOpen) ui.setChatOpen(false);
+  }, [panel, narrow]);
 
   if (!panel) return null;
   const close = closePanel;

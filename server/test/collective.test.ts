@@ -126,4 +126,42 @@ describe('collective reality', { timeout: 60_000 }, () => {
     expect(w.collective.describe().counters['rule:popular_place:cafe:contributions']).toBe(1);
     await w.close();
   });
+
+  it('transient state is room-scoped: runes and bell rings in another room instance never combine; persistent facts reach every room', async () => {
+    const w = await makeWorld(); // portalRunesRequired: 2, bellChorusPlayers: 3
+    const r2 = await w.openRoom('second');
+    expect(w.collective.roomCount()).toBe(2);
+    const a = await w.join('Alice', -10, -61);
+    const b = await r2.join('Bob', -10, -61);
+    await w.interact(a, 'rune_1');
+    await r2.interact(b, 'rune_2');
+    // Each room sees only its own lit rune; together they would have woken the portal if state were shared.
+    expect(w.state.objects.get('rune_1')!.active).toBe(true);
+    expect(w.state.objects.get('rune_2')!.active).toBe(false);
+    expect(r2.state.objects.get('rune_2')!.active).toBe(true);
+    expect(r2.state.objects.get('rune_1')!.active).toBe(false);
+    expect(w.state.objects.get('portal_arch')!.active).toBe(false);
+    expect(r2.state.objects.get('portal_arch')!.active).toBe(false);
+    // rune_1 in room 2 is free (it is lit only in room 1).
+    const c = await r2.join('Cara', -10, -61);
+    expect(await r2.interact(c, 'rune_1')).toMatchObject({ ok: true });
+    // Two distinct players in the SAME room wake it — and the persistent fact shows in every room of the world.
+    expect(r2.state.objects.get('portal_arch')!.active).toBe(true);
+    expect(w.state.objects.get('portal_arch')!.active).toBe(true);
+    expect(w.state.objects.get('portal_arch')!.value).toBe(1);
+    expect((await w.memory.list({ kind: 'portal_awakened' }))[0]!.actors.map((x) => x.name).sort()).toEqual(['Bob', 'Cara']);
+
+    // Bell: three ringers split across rooms → no chorus.
+    const d = await w.join('Dan', 0, 0);
+    await w.interact(a, 'bell_town_hall');
+    await w.interact(d, 'bell_town_hall');
+    await r2.interact(b, 'bell_town_hall');
+    expect((await w.memory.list({ kind: 'bell_chorus' })).length).toBe(0);
+    // The ring total is a world fact shared by both rooms.
+    expect(r2.state.objects.get('bell_town_hall')!.value).toBe(3);
+
+    await r2.dispose();
+    expect(w.collective.roomCount()).toBe(1);
+    await w.close();
+  });
 });

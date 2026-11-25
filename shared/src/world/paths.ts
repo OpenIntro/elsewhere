@@ -66,7 +66,7 @@ export const PATHS: readonly WorldPath[] = [
     id: 'path_square_workshop',
     surface: 'gravel',
     width: 2.4,
-    points: [p(7.5, 7.5), p(13.5, 10.5), p(20, 10.2), p(25.5, 11.6)],
+    points: [p(7.5, 7.5), p(13.5, 10.5), p(20, 10.2), p(25.5, 11.6), p(29.5, 15.2), p(33.2, 15.6)],
     connects: ['town_square', 'workshop'],
   },
   {
@@ -89,7 +89,7 @@ export const PATHS: readonly WorldPath[] = [
     id: 'path_workshop_waterfront',
     surface: 'dirt',
     width: 2,
-    points: [p(31, 18.5), p(28.5, 26.5), p(23, 34), p(17, 40)],
+    points: [p(30.5, 16.4), p(30.2, 19.5), p(28.5, 26.5), p(23, 34), p(17, 40)],
     connects: ['workshop', 'waterfront'],
   },
   {

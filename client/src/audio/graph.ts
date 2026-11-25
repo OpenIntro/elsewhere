@@ -188,6 +188,18 @@ export class AudioGraph {
     };
     this.dry = { music: mk(levels.music, this.master), ambience: mk(levels.ambience, this.master), sfx: mk(levels.sfx, this.master) };
     this.wet = { music: mk(levels.music, reverb), ambience: mk(levels.ambience, reverb), sfx: mk(levels.sfx, reverb) };
+    // Keep-alive: Chrome stops processing a GainNode whose inputs have all gone away, and
+    // its gain automation then is not evaluated (`.value` stays stale). A single silent
+    // ConstantSource feeding every bus keeps them live (and the debug readout honest).
+    if (typeof ctx.createConstantSource === 'function') {
+      const zero = this.keep(ctx.createConstantSource());
+      zero.offset.value = 0;
+      for (const ch of CHANNELS) {
+        zero.connect(this.dry[ch]);
+        zero.connect(this.wet[ch]);
+      }
+      zero.start();
+    }
   }
 
   /** Track a long-lived node. */

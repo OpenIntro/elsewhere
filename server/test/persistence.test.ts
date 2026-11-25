@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { newGuestProfile } from '../src/auth/index.js';
 import { createMemory } from '../src/memory/index.js';
-import { migrate } from '../src/persistence/migrations.js';
+import { MIGRATIONS, migrate } from '../src/persistence/migrations.js';
 import { openDb } from '../src/persistence/db.js';
 import { createPersistence } from '../src/persistence/index.js';
 
@@ -38,9 +38,34 @@ describe('persistence (PGlite)', { timeout: 60_000 }, () => {
 
   it('migrations are idempotent', async () => {
     const db = await openDb({ dataDir: 'memory://' });
-    expect(await migrate(db)).toEqual([1]);
+    expect(await migrate(db)).toEqual([1, 2]);
     expect(await migrate(db)).toEqual([]);
     await db.close();
+  });
+
+  it('migration 2 upgrades a v1 database in place: existing world rows land in the default world; worlds are isolated', async () => {
+    const db = await openDb({ dataDir: 'memory://' });
+    await migrate(db, MIGRATIONS.slice(0, 1));
+    await db.query("INSERT INTO world_kv (key, value, updated_at) VALUES ('facts', '{\"fountainStage\":2}', 1)");
+    await db.query("INSERT INTO world_sets (set_name, member, added_at) VALUES ('s', 'a', 1)");
+    expect(await migrate(db)).toEqual([2]);
+    const rows = await db.query<{ world_id: string }>('SELECT world_id FROM world_kv');
+    expect(rows.map((r) => r.world_id)).toEqual(['default']);
+    await db.close();
+
+    const p = createPersistence({ dataDir: 'memory://' });
+    await p.init();
+    const other = p.forWorld('second');
+    await p.worldState.setKv('k', 1);
+    await other.setKv('k', 2);
+    expect(await p.worldState.addToSet('set', 'm')).toBe(true);
+    expect(await other.addToSet('set', 'm')).toBe(true);
+    await other.saveObject({ id: 'bell_town_hall', active: false, value: 9, data: {}, updatedAt: 1 });
+    expect(await p.worldState.getKv('k')).toBe(1);
+    expect(await other.getKv('k')).toBe(2);
+    expect(await p.worldState.loadObjects()).toEqual([]);
+    expect((await other.loadObjects())[0]?.value).toBe(9);
+    await p.close();
   });
 
   it('round-trips every repository through a close/reopen of the same DATA_DIR', async () => {

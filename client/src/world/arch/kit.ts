@@ -5,7 +5,7 @@
  * Dynamic anchors (doors, smoke, lamp bulbs, bell, spinners) are recorded in
  * `anchors` for the animated systems.
  */
-import { Color, Matrix4, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, Color, Matrix4, Quaternion, Vector3 } from 'three';
 import { archFrame, archPanel, cone, cyl, gableRoof, gableWall, rbox, sphere, T, torus, type ColorLike, type GeoBuilder } from '../geom.js';
 
 // ---------------------------------------------------------------------------
@@ -245,6 +245,7 @@ export function roof(B: GeoBuilder, o: RoofOpts): void {
   const ov = o.overhang ?? 0.45;
   const curve = o.curve ?? 0.14;
   const th = o.thickness ?? 0.3;
+  o = { ...o, color: mix(o.color, '#8a8078', 0.24) };
   B.add('solid', gableRoof(o.span, o.rise, o.length, th, ov, curve), o.color, undefined, { ao: false, grad: 0.12 });
   const hw = o.span / 2 + ov;
   const drop = (ov / (o.span / 2)) * o.rise;
@@ -303,29 +304,60 @@ export function gableEnds(B: GeoBuilder, span: number, rise: number, length: num
   for (const s of [-1, 1]) B.add('solid', gableWall(span - 0.05, rise * 0.98, 0.16), color, T(0, 0, s * (length / 2 - 0.1)));
 }
 
-/** A properly scaled hip roof with a ridge (w along X, d along Z). */
+/** Hip roof with a ridge (w along X, d along Z), eaves at y=0, tile courses on every face. */
 export function pavilionRoof(B: GeoBuilder, w: number, d: number, rise: number, color: ColorLike, overhang = 0.5): void {
   const W = w + overhang * 2;
   const D = d + overhang * 2;
-  // Unit pyramid (cone 4 segments, rotated 45°) has a square base of side sqrt(2)*radius.
-  const base = new Matrix4().makeScale(W / Math.SQRT2, rise, D / Math.SQRT2);
-  const m = T(0, rise / 2, 0).multiply(base).multiply(T(0, 0, 0, Math.PI / 4));
-  B.add('solid', cone(1, 1, 4), color, m, { ao: false, grad: 0.15 });
-  // Eave fascia.
-  B.add('solid', rbox(W + 0.1, 0.22, D + 0.1, 0.08), shade(color, 0.75), T(0, 0.02, 0), { ao: false });
-  // Courses: shrinking rings of strips.
-  for (let i = 1; i < 5; i++) {
-    const t = i / 5;
-    const ww = W * (1 - t) + 0.04;
-    const dd = D * (1 - t) + 0.04;
-    const y = rise * t + 0.03;
-    const c = i % 2 ? shade(color, 0.86) : shade(color, 0.95);
-    B.add('solid', rbox(ww, 0.06, 0.1, 0.02), c, T(0, y, dd / 2 - 0.02, 0, Math.atan2(rise, D / 2) * -0.0), { ao: false });
-    B.add('solid', rbox(ww, 0.06, 0.1, 0.02), c, T(0, y, -dd / 2 + 0.02), { ao: false });
-    B.add('solid', rbox(0.1, 0.06, dd, 0.02), c, T(ww / 2 - 0.02, y, 0), { ao: false });
-    B.add('solid', rbox(0.1, 0.06, dd, 0.02), c, T(-ww / 2 + 0.02, y, 0), { ao: false });
+  const along = W >= D;
+  const hw = W / 2;
+  const hd = D / 2;
+  const short = Math.min(hw, hd);
+  const rl = along ? hw - short : 0; // ridge half-length along X
+  const rd = along ? 0 : hd - short; // or along Z
+  const v = (x: number, y: number, z: number) => [x, y, z];
+  const A = v(-hw, 0, hd), Bp = v(hw, 0, hd), Cp = v(hw, 0, -hd), Dp = v(-hw, 0, -hd);
+  const R1 = v(-rl, rise, -rd), R2 = v(rl, rise, rd);
+  const tris: number[][] = along
+    ? [A, Bp, R2, A, R2, R1, Cp, Dp, R1, Cp, R1, R2, Bp, Cp, R2, Dp, A, R1]
+    : [A, Bp, R2, Bp, Cp, R1, Bp, R1, R2, Cp, Dp, R1, Dp, A, R2, Dp, R2, R1];
+  const g = new BufferGeometry();
+  const pos = new Float32Array(tris.length * 3);
+  tris.forEach((p, i) => pos.set(p, i * 3));
+  g.setAttribute('position', new BufferAttribute(pos, 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(tris.length * 2), 2));
+  g.computeVertexNormals();
+  const col = mix(color, '#8a8078', 0.18);
+  B.add('solid', g, col, T(0, 0.05, 0), { ao: false, grad: 0.18 });
+  B.add('solid', rbox(W + 0.1, 0.24, D + 0.1, 0.09), shade(col, 0.72), T(0, 0.0, 0), { ao: false });
+  // Tile courses on each face.
+  const n = Math.max(4, Math.round(rise * 3.2));
+  const dark = shade(col, 0.86);
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.45) / n;
+    const y = rise * t + 0.07;
+    const c = i % 2 ? dark : shade(col, 0.95);
+    // front/back faces (slope towards ±Z)
+    const zf = hd * (1 - t) * (along ? 1 : 1) - (along ? 0 : 0);
+    const xHalfF = along ? hw - t * short : hw * (1 - t);
+    const angF = Math.atan2(rise, short);
+    for (const s of [1, -1]) B.add('solid', rbox(Math.max(0.2, xHalfF * 2 - 0.1), 0.07, 0.16, 0.03), c, T(0, y, s * (along ? short * (1 - t) : zf)).multiply(T(0, 0, 0, 0, s * angF)), { ao: false, jitter: 0.04 });
+    const zHalfS = along ? hd * (1 - t) : hd - t * short;
+    for (const s of [1, -1]) B.add('solid', rbox(0.16, 0.07, Math.max(0.2, zHalfS * 2 - 0.1), 0.03), c, T(s * (along ? hw - t * short : short * (1 - t)), y, 0).multiply(T(0, 0, 0, 0, 0, -s * angF)), { ao: false, jitter: 0.04 });
   }
-  B.add('solid', sphere(0.2, 10, 8), shade(color, 0.7), T(0, rise + 0.05, 0), { ao: false });
+  // Ridge + hip caps.
+  const cap = shade(col, 0.7);
+  if (along) B.add('solid', cyl(0.13, 0.13, rl * 2 + 0.2, 8), cap, T(0, rise + 0.06, 0, 0, 0, Math.PI / 2), { ao: false });
+  else B.add('solid', cyl(0.13, 0.13, rd * 2 + 0.2, 8), cap, T(0, rise + 0.06, 0, 0, Math.PI / 2), { ao: false });
+  for (const [cx, cz, rx, rz] of [[hw, hd, rl, rd], [-hw, hd, -rl, rd], [hw, -hd, rl, -rd], [-hw, -hd, -rl, -rd]] as const) {
+    const a = new Vector3(cx, 0.05, cz);
+    const b = new Vector3(along ? rx : 0, rise + 0.06, along ? 0 : rz);
+    const mid = a.clone().add(b).multiplyScalar(0.5);
+    const dir = b.clone().sub(a);
+    const len = dir.length();
+    const q = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize());
+    B.add('solid', cyl(0.11, 0.11, len, 8), cap, new Matrix4().compose(mid, q, new Vector3(1, 1, 1)), { ao: false });
+  }
+  for (const s of [-1, 1]) B.add('solid', sphere(0.2, 10, 8), cap, T(along ? s * rl : 0, rise + 0.08, along ? 0 : s * rd), { ao: false });
 }
 
 // ---------------------------------------------------------------------------

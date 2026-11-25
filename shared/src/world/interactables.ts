@@ -190,6 +190,8 @@ function pickup(id: string, itemId: ItemId, name: string, locationId: LocationId
 const SQUARE = v(0, 2);
 const RES_CENTER = v(-36, 18);
 const UNKNOWN = v(-10, -61);
+/** The arch stands between two runes on the west side and faces east-north-east, towards the camera side. */
+const ARCH_FACING = v(-1, -56.6);
 
 const doors: DoorInteractable[] = BUILDINGS.map((b) => ({
   id: b.doorId,
@@ -319,7 +321,7 @@ export const INTERACTABLES: readonly Interactable[] = [
 
   // --- The Unknown --------------------------------------------------------
   sign('sign_unknown', 'the_unknown', v(-19.6, -53.6), facing(v(-19.6, -53.6), UNKNOWN), 'Beyond This Point', 'The Unknown.\nNo one remembers who raised these stones.'),
-  { id: 'portal_arch', kind: 'portal', name: 'Dormant Arch', locationId: 'the_unknown', position: add(UNKNOWN, rotateOffset(v(0, -3.2), facing(UNKNOWN, v(-16, -57)))), yaw: facing(UNKNOWN, v(-16, -57)), prompt: 'Touch the arch', synced: true, radius: 3 },
+  { id: 'portal_arch', kind: 'portal', name: 'Dormant Arch', locationId: 'the_unknown', position: add(UNKNOWN, rotateOffset(v(0, -3.2), facing(UNKNOWN, ARCH_FACING))), yaw: facing(UNKNOWN, ARCH_FACING), prompt: 'Touch the arch', synced: true, radius: 3 },
   ...[0, 1, 2].map((i): RuneInteractable => {
     const deg = 146 + 120 * (i + 1); // equilateral triangle: two flank the arch, one greets the entrance
     const pos = polar(UNKNOWN, 4.2, deg);

@@ -63,6 +63,14 @@
   --hud-top: calc(var(--safe-t) + 64px);
   /* On-screen keyboard height (set from visualViewport). */
   --kb: 0px;
+  /* Touch joystick / action button clear the bottom nav (player/TouchControls reads these). */
+  --ew-touch-bottom: 104px;
+}
+@media (max-width: 720px) {
+  :root { --ew-touch-bottom: 92px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  :root { --ew-touch-bottom: 18px; }
 }
 
 *,

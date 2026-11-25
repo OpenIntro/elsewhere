@@ -224,12 +224,12 @@ function hall(B: GeoBuilder, b: Building): void {
       B.add('solid', rbox(0.66, 0.3, 0.66, 0.08), P.stone, T(x, ch - 0.15, d / 2 - 0.05));
     }
     B.add('solid', rbox(6.6, 0.5, 0.9, 0.08), '#e8e0cf', T(0, ch + 0.25, d / 2 - 0.05), { ao: false });
-    // pediment triangle
-    B.at(T(0, ch + 0.5, d / 2 - 0.3, Math.PI / 2), () => {
-      roof(B, { span: 6.8, rise: 1.5, length: 1.4, color: '#7a6a7c', tiles: 'none', overhang: 0.25, thickness: 0.25, curve: 0.02 });
+    // portico gable projecting from the façade: pediment + cornice
+    B.at(T(0, ch + 0.5, d / 2 + 0.05), () => {
+      roof(B, { span: 6.8, rise: 1.45, length: 1.1, color: b.roofColor, tiles: 'strips', overhang: 0.3, thickness: 0.24, curve: 0.02, courses: 5 });
     });
-    B.add('solid', gableTri(6.4, 1.38), '#e8e0cf', T(0, ch + 0.5, d / 2 + 0.38));
-    B.at(T(0, ch + 1.05, d / 2 + 0.48), () => windowUnit(B, 0.62, 0.62, { round: true, frame: '#c8bca6', lit: 0.9 }));
+    B.add('solid', gableTri(6.6, 1.38), '#e8e0cf', T(0, ch + 0.5, d / 2 + 0.52));
+    B.at(T(0, ch + 0.95, d / 2 + 0.62), () => windowUnit(B, 0.62, 0.62, { round: true, frame: '#c8bca6', lit: 0.9 }));
     // door
     B.at(onFace('front', w, d, 0, y0), () => doorway(B, b.doorId, 1.7, 2.75, { frame: '#c8bca6', color: '#5a4636', double: true, style: 'panel', arched: true, step: false }));
     sign(B, 'hall', 2.6, onFace('front', w, d, 0, y0 + 3.25, 0.05), '#c8bca6');
@@ -243,7 +243,7 @@ function hall(B: GeoBuilder, b: Building): void {
       B.at(onFace('left', w, d, u, y0 + 0.9), () => windowUnit(B, 0.9, 2.2, { arched: true, frame: '#efe7d6', mullions: 'grid', lit: 0.7 }));
       if (u < 0.5) B.at(onFace('right', w, d, u - 1.4, y0 + 0.9), () => windowUnit(B, 0.9, 2.2, { arched: true, frame: '#efe7d6', mullions: 'grid', lit: 0.7 }));
     }
-    B.at(T(0, h + 0.15, 0), () => pavilionRoof(B, w, d, 2.6, b.roofColor, 0.45));
+    B.at(T(0, h + 0.15, 0), () => pavilionRoof(B, w, d, 3.6, b.roofColor, 0.45));
     // cupola-free roof: two chimneys
     chimney(B, -4.2, h + 0.8, -2.2, 1.6, '#b9ad98', true);
 

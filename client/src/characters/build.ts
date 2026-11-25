@@ -239,7 +239,7 @@ const FaceKit = {
     const y = c.eye.y * c.p.headRy;
     const k = 1 + (side > 0 ? 0.03 : -0.03);
     // On deep skin tones a soft cream rim keeps painted eyes readable at small size.
-    if (luminance(c.skin) < 0.12) paint(c, bone, sphere('lo'), mix(c.skin, '#f4e8d8', 0.55), { x, y, lift: -R * 0.006, local: S(w * R * k * 1.22, h * R * k * 1.16, R * 0.05) }, 0.2);
+    if (luminance(c.skin) < 0.12) paint(c, bone, sphere('lo'), mix(c.skin, '#f4e8d8', 0.38), { x, y, lift: -R * 0.006, local: S(w * R * k * 1.16, h * R * k * 1.12, R * 0.05) }, 0.2);
     paint(c, bone, sphere('mid'), ink, { x, y, local: S(w * R * k, h * R * k, R * 0.05) }, 1);
     paint(c, bone, sphere('lo'), WHITE, { x, y, local: S(w * R * 0.33, h * R * 0.26, R * 0.03, w * R * 0.32, h * R * 0.42, R * 0.035) }, 1);
     if (highlights > 1) paint(c, bone, sphere('lo'), WHITE, { x, y, local: S(w * R * 0.16, w * R * 0.16, R * 0.02, -w * R * 0.35, -h * R * 0.4, R * 0.035) }, 1);
@@ -462,7 +462,7 @@ export const HAIR_BUILDERS: Record<HairStyleId, HairBuilder> = {
     k.cap({ front: 0.52, side: 0.05, back: -0.42, thick: 0.04 });
   },
   bob(k, c) {
-    k.cap({ front: 0.5, side: -0.62, back: -0.72, thick: 0.07, bulk: 0.16 });
+    k.cap({ front: 0.5, side: -0.62, back: -0.72, thick: 0.07, bulk: 0.12 });
     k.part(0, 0.66, 0.46, 0.86, 0.26, 0.42, { top: true });
     // chunky side panels framing the face
     for (const s of [1, -1]) k.part(s * 0.86, -0.28, -0.02, 0.28, 0.5, 0.42, { rz: s * 0.08 });
@@ -497,7 +497,8 @@ export const HAIR_BUILDERS: Record<HairStyleId, HairBuilder> = {
   long(k, c) {
     k.cap({ front: 0.52, side: -0.5, back: -0.8, thick: 0.07, bulk: 0.1 });
     k.part(0.12, 0.66, 0.44, 0.84, 0.25, 0.42, { top: true, rz: -0.18 });
-    k.part(0, -0.55, -0.52, 0.95, 0.85, 0.42, { bone: B.hairBack });
+    k.part(0, -0.72, -0.66, 0.92, 0.82, 0.4, { bone: B.hairBack });
+    k.part(0, -1.18, -0.6, 0.7, 0.4, 0.32, { bone: B.hairBack });
     for (const s of [1, -1]) k.part(s * 0.84, -0.55, 0.02, 0.24, 0.6, 0.28, { rz: s * 0.06 });
   },
   ponytail(k) {

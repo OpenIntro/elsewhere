@@ -154,6 +154,20 @@ async function segmentWalkable(page, a, b) {
     [a, b],
   );
 }
+/** Count of non-walkable points (one round trip). */
+async function countUnwalkable(page, pts) {
+  return page.evaluate((pts) => pts.filter((q) => !window.__ELSEWHERE__.query('isWalkable', q.x, q.z)).length, pts.map((q) => ({ x: q.x, z: q.z })));
+}
+/** Distance along `d` from `o` to the first non-ground point (step `step`, up to `max`), Infinity if none. */
+async function distToWater(page, o, d, max, step) {
+  return page.evaluate(
+    ([o, d, max, step]) => {
+      for (let t = 0; t <= max; t += step) if (!window.__ELSEWHERE__.query('groundWalkable', o.x + d.x * t, o.z + d.z * t)) return t;
+      return null;
+    },
+    [{ x: o.x, z: o.z }, d, max, step],
+  ).then((v) => (v === null ? Infinity : v));
+}
 /** World direction for screen-relative key input at camera yaw. */
 function keyDir(key, yaw) {
   const s = Math.sin(yaw);
@@ -338,8 +352,7 @@ async function testCannotPassBuilding(page, b) {
   await page.keyboard.up(best);
   await page.keyboard.up('ShiftLeft');
   const inside = samples.filter((q) => insideBox(q, b, 0.3)).length;
-  let walk = true;
-  for (const q of samples) if (!(await query(page, 'isWalkable', q.x, q.z))) walk = false;
+  const walk = (await countUnwalkable(page, samples)) === 0;
   record('cannot walk through a building', inside === 0 && walk, `pushed ${best} toward ${b.id} for 2.5 s: ${samples.length} samples, inside=${inside}, all walkable=${walk}`);
 }
 
@@ -358,13 +371,7 @@ async function testCannotEnterSea(page) {
   }
   let best = null;
   for (const o of dirs) {
-    let dist = Infinity;
-    for (let t = 1; t < 90; t += 1) {
-      if (!(await query(page, 'groundWalkable', s.local.x + o.d.x * t, s.local.z + o.d.z * t))) {
-        dist = t;
-        break;
-      }
-    }
+    const dist = await distToWater(page, s.local, o.d, 90, 1);
     if (!best || dist < best.dist) best = { ...o, dist };
   }
   await page.keyboard.down('ShiftLeft');
@@ -381,17 +388,10 @@ async function testCannotEnterSea(page) {
   );
   for (const k of best.keys) await page.keyboard.up(k);
   await page.keyboard.up('ShiftLeft');
-  let walk = true;
-  for (const q of samples) if (!(await query(page, 'isWalkable', q.x, q.z))) walk = false;
+  const walk = (await countUnwalkable(page, samples)) === 0;
   const end = samples.at(-1);
   // Distance from the end point to the water along the run direction.
-  let toWater = Infinity;
-  for (let t = 0; t < 6; t += 0.25) {
-    if (!(await query(page, 'groundWalkable', end.x + best.d.x * t, end.z + best.d.z * t))) {
-      toWater = t;
-      break;
-    }
-  }
+  const toWater = await distToWater(page, end, best.d, 6, 0.25);
   const ran = Math.hypot(end.x - samples[0].x, end.z - samples[0].z);
   record('cannot walk into the sea', walk && ran > 3, `ran ${best.keys.join('+')} toward water ${best.dist} m away; covered ${ran.toFixed(1)} m in ${(end.t / 1000).toFixed(1)} s; ${samples.length} samples all walkable=${walk}; end is ${toWater === Infinity ? '>6' : toWater.toFixed(2)} m from water${toWater > 2 ? ' (stopped by an obstacle before the shore)' : ''}`);
 
@@ -406,8 +406,7 @@ async function testCannotEnterSea(page) {
     const goal = after.motion?.path?.goal;
     const exact = after.motion?.path?.exact;
     const samples2 = await sampleUntil(page, (sn, out) => out.length > 3 && !sn.motion?.path && sn.local.speed < 0.05, 15_000);
-    let walk2 = true;
-    for (const q of samples2) if (!(await query(page, 'isWalkable', q.x, q.z))) walk2 = false;
+    const walk2 = (await countUnwalkable(page, samples2)) === 0;
     record('clicking the sea walks to the nearest reachable shore point', walk2 && exact === false, `goal ${goal ? `(${goal.x.toFixed(1)}, ${goal.z.toFixed(1)})` : 'none'} exact=${exact}; samples all walkable=${walk2}`);
   }
 }

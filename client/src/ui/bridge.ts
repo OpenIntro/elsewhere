@@ -53,6 +53,9 @@ export function installUiBridge(): () => void {
   offs.push(
     net.on(S2C.welcome, (w) => {
       for (const m of w.recentChat ?? []) pushChatOnce(m);
+      // History you arrive to isn't "unread".
+      const last = (w.recentChat ?? []).reduce((t, m) => Math.max(t, m.ts), 0);
+      if (last) for (const k of ['town', 'nearby']) useChatUi.getState().markRead(k, last);
     }),
     net.on(S2C.chat, (m) => {
       pushChatOnce(m);

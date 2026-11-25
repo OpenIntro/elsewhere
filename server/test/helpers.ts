@@ -78,6 +78,9 @@ export interface World {
   interact(sessionId: string, id: string, action?: string): Promise<S2CPayloads['interact_result']>;
   received(sessionId: string, type: S2CType): unknown[];
   clearSent(): void;
+  /** A second (third, …) room instance of the SAME world, sharing all services. */
+  openRoom(roomId: string): Promise<World>;
+  dispose(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -92,7 +95,17 @@ export async function makeWorld(opts: { persistence?: PersistenceService; tunabl
   await collective.load();
   const interactions = createInteractions({ persistence, memory, collective, moderation, now: clock.now });
   const hooks: RoomHooks[] = [moderation, chat, collective, interactions];
+  const services = { clock, persistence, moderation, chat, memory, collective, interactions, hooks };
+  return openRoomWith(services, 'test');
+}
 
+let sessionCounter = 0;
+
+async function openRoomWith(
+  services: Pick<World, 'clock' | 'persistence' | 'moderation' | 'chat' | 'memory' | 'collective' | 'interactions' | 'hooks'>,
+  roomId: string,
+): Promise<World> {
+  const { clock, persistence, collective, interactions, hooks } = services;
   const state = new WorldState();
   state.clockEpoch = collective.facts().clockEpochMs;
   state.dayLengthMs = DAY_MS;
@@ -100,10 +113,9 @@ export async function makeWorld(opts: { persistence?: PersistenceService; tunabl
   const profiles = new Map<string, StoredProfile>();
   const sent: Sent[] = [];
   const kicked: string[] = [];
-  let n = 0;
 
   const ctx: RoomContext = {
-    roomId: 'test',
+    roomId,
     state,
     now: clock.now,
     worldTime: () => worldTimeAt(clock.t, { epochMs: state.clockEpoch, dayLengthMs: DAY_MS }),
@@ -140,20 +152,13 @@ export async function makeWorld(opts: { persistence?: PersistenceService; tunabl
   for (const h of hooks) await h.onRoomCreate?.(ctx);
 
   const world: World = {
-    clock,
-    persistence,
-    moderation,
-    chat,
-    memory,
-    collective,
-    interactions,
-    hooks,
+    ...services,
     ctx,
     state,
     sent,
     kicked,
     async join(name, x, z, profile) {
-      const sid = `s${++n}`;
+      const sid = `s${++sessionCounter}`;
       const p = profile ?? newGuestProfile(name);
       p.visits += 1;
       await persistence.profiles.save(p);
@@ -185,6 +190,10 @@ export async function makeWorld(opts: { persistence?: PersistenceService; tunabl
     },
     received: (sid, type) => sent.filter((s) => s.to === sid && s.type === type).map((s) => s.payload),
     clearSent: () => void sent.splice(0, sent.length),
+    openRoom: (id) => openRoomWith(services, id),
+    async dispose() {
+      for (const h of hooks) await h.onRoomDispose?.(ctx);
+    },
     close: () => persistence.close(),
   };
   return world;

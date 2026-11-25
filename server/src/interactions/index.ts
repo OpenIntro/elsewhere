@@ -86,14 +86,29 @@ const PERSISTED_OBJECTS = new Set(['bell_town_hall']);
 export function createInteractions(deps: InteractionDeps): InteractionService {
   const { persistence, memory, collective, moderation } = deps;
   const now = deps.now ?? Date.now;
-  const doorTimers = new Map<string, TimerHandle>();
-  const respawnTimers = new Map<string, TimerHandle>();
-  const lightToggledAt = new Map<string, number>();
-  const bellCooldown = new Map<string, number>();
-  const bellMemo = new Map<string, number>();
-  const satTogetherAt = new Map<string, number>();
-  let lightsOn: boolean | null = null;
-  let lightAcc = 0;
+  const ws = persistence.forWorld(collective.worldId);
+  /** Transient state per ROOM instance (keyed by ctx.roomId), never shared between rooms. */
+  interface RoomScope {
+    doorTimers: Map<string, TimerHandle>;
+    respawnTimers: Map<string, TimerHandle>;
+    lightToggledAt: Map<string, number>;
+    bellCooldown: Map<string, number>;
+    bellMemo: Map<string, number>;
+    satTogetherAt: Map<string, number>;
+    lightsOn: boolean | null;
+    lightAcc: number;
+  }
+  const scopes = new Map<string, RoomScope>();
+  const S = (ctx: RoomContext): RoomScope => {
+    let sc = scopes.get(ctx.roomId);
+    if (!sc) {
+      sc = { doorTimers: new Map(), respawnTimers: new Map(), lightToggledAt: new Map(), bellCooldown: new Map(), bellMemo: new Map(), satTogetherAt: new Map(), lightsOn: null, lightAcc: 0 };
+      scopes.set(ctx.roomId, sc);
+    }
+    return sc;
+  };
+  /** Persistent per-world bell ring total (all rooms of the world add to it). */
+  let bellTotal: number | null = null;
 
   const ev = (ctx: RoomContext, id: string, kind: ObjectEvent['kind'], sessionId: string, data?: ObjectEvent['data']) => {
     const p = ctx.getPlayer(sessionId);
@@ -113,7 +128,7 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
   const persistObject = (ctx: RoomContext, id: string) => {
     const o = ctx.getObject(id);
     if (!o || !PERSISTED_OBJECTS.has(id)) return;
-    void persistence.worldState.saveObject({ id, active: o.active, value: o.value, data: {}, updatedAt: o.updatedAt }).catch((e) => console.error('[interactions] persist object', e));
+    void ws.saveObject({ id, active: o.active, value: o.value, data: {}, updatedAt: o.updatedAt }).catch((e) => console.error('[interactions] persist object', e));
   };
 
   // --- seats -----------------------------------------------------------------
@@ -164,14 +179,14 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
     ctx.teleport(sessionId, choice.s.position.x, choice.s.position.z, 'seated');
     bump(ctx, sessionId, 'seatsTaken');
     // Everyone on a full multi-seat bench, distinct people → a small moment worth remembering.
-    if (target.seats.length > 1 && (o.value as number) === (1 << target.seats.length) - 1 && now() - (satTogetherAt.get(target.id) ?? 0) > SAT_TOGETHER_COOLDOWN_MS) {
+    if (target.seats.length > 1 && (o.value as number) === (1 << target.seats.length) - 1 && now() - (S(ctx).satTogetherAt.get(target.id) ?? 0) > SAT_TOGETHER_COOLDOWN_MS) {
       const sitters = ctx
         .sessionIds()
         .map((sid) => ctx.getPlayer(sid))
         .filter((pl) => pl && parseSeatRef(pl.seat)?.interactableId === target.id);
       const actors = [...new Map(sitters.map((pl) => [pl!.profileId, { profileId: pl!.profileId, name: pl!.name }])).values()];
       if (actors.length > 1) {
-        satTogetherAt.set(target.id, now());
+        S(ctx).satTogetherAt.set(target.id, now());
         void memory.record({ kind: 'sat_together', actors, locationId: target.locationId, objectId: target.id, significance: 0, data: { count: actors.length } });
       }
     }
@@ -196,11 +211,11 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
       o.active = true;
     } else {
       o.active = false;
-      respawnTimers.get(it.id)?.clear();
-      respawnTimers.set(
+      S(ctx).respawnTimers.get(it.id)?.clear();
+      S(ctx).respawnTimers.set(
         it.id,
         ctx.setTimeout(() => {
-          respawnTimers.delete(it.id);
+          S(ctx).respawnTimers.delete(it.id);
           const cur = ctx.getObject(it.id);
           if (cur && !cur.holder) {
             cur.active = true;
@@ -251,8 +266,8 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
       prof.discoveries.push(def.id);
       prof.stats.discoveries = prof.discoveries.length;
       await ctx.saveProfile(sessionId);
-      const firstOnIsland = await persistence.worldState.addToSet('discovery:first', def.id);
-      await persistence.worldState.addToSet(`discovery:${def.id}`, prof.id);
+      const firstOnIsland = await ws.addToSet('discovery:first', def.id);
+      await ws.addToSet(`discovery:${def.id}`, prof.id);
       const event = {
         kind: 'secret_found' as const,
         actors: [{ profileId: prof.id, name: p.name }],
@@ -317,14 +332,14 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
           const o = touch(ctx, target.id);
           if (!o) return { id: target.id, ok: false, error: 'not_found' };
           o.active = !o.active;
-          doorTimers.get(target.id)?.clear();
-          doorTimers.delete(target.id);
+          S(ctx).doorTimers.get(target.id)?.clear();
+          S(ctx).doorTimers.delete(target.id);
           ev(ctx, target.id, o.active ? 'door_opened' : 'door_closed', sessionId);
           if (o.active) {
-            doorTimers.set(
+            S(ctx).doorTimers.set(
               target.id,
               ctx.setTimeout(() => {
-                doorTimers.delete(target.id);
+                S(ctx).doorTimers.delete(target.id);
                 const cur = ctx.getObject(target.id);
                 if (cur?.active) {
                   cur.active = false;
@@ -341,8 +356,8 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
         case 'lantern': {
           const o = ctx.getObject(target.id);
           if (!o) return { id: target.id, ok: false, error: 'not_found' };
-          if (now() - (lightToggledAt.get(target.id) ?? 0) < CONFIG.interaction.lightToggleCooldownMs) return { id: target.id, ok: false, error: 'cooldown' };
-          lightToggledAt.set(target.id, now());
+          if (now() - (S(ctx).lightToggledAt.get(target.id) ?? 0) < CONFIG.interaction.lightToggleCooldownMs) return { id: target.id, ok: false, error: 'cooldown' };
+          S(ctx).lightToggledAt.set(target.id, now());
           o.active = !o.active;
           o.updatedAt = now();
           ev(ctx, target.id, o.active ? 'light_on' : 'light_off', sessionId);
@@ -353,15 +368,16 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
           const o = ctx.getObject(target.id);
           if (!o) return { id: target.id, ok: false, error: 'not_found' };
           const key = `${p.profileId}:${target.id}`;
-          if (now() - (bellCooldown.get(key) ?? 0) < CONFIG.interaction.bellCooldownMs) return { id: target.id, ok: false, error: 'cooldown' };
-          bellCooldown.set(key, now());
-          o.value = (o.value as number) + 1;
+          if (now() - (S(ctx).bellCooldown.get(key) ?? 0) < CONFIG.interaction.bellCooldownMs) return { id: target.id, ok: false, error: 'cooldown' };
+          S(ctx).bellCooldown.set(key, now());
+          bellTotal = Math.max(bellTotal ?? 0, o.value as number) + 1;
+          o.value = bellTotal;
           o.updatedAt = now();
           persistObject(ctx, target.id);
           ev(ctx, target.id, 'bell_rung', sessionId, { rings: o.value });
           bump(ctx, sessionId, 'bellRings');
-          if (now() - (bellMemo.get(p.profileId) ?? 0) > BELL_MEMORY_THROTTLE_MS) {
-            bellMemo.set(p.profileId, now());
+          if (now() - (S(ctx).bellMemo.get(p.profileId) ?? 0) > BELL_MEMORY_THROTTLE_MS) {
+            S(ctx).bellMemo.set(p.profileId, now());
             await memory.record({ kind: 'bell_rung', actors: [{ profileId: p.profileId, name: p.name }], locationId: target.locationId, objectId: target.id, significance: 0, data: { rings: o.value } });
           }
           await collective.signal(ctx, { type: 'bell_rung', sessionId, profileId: p.profileId });
@@ -436,7 +452,7 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
     },
 
     async onRoomCreate(ctx) {
-      for (const s of await persistence.worldState.loadObjects()) {
+      for (const s of await ws.loadObjects()) {
         if (!PERSISTED_OBJECTS.has(s.id)) continue;
         const o = ctx.getObject(s.id);
         if (o) {
@@ -445,21 +461,24 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
           o.updatedAt = s.updatedAt;
         }
       }
-      lightsOn = lightsShouldBeOn(ctx.worldTime().phase);
+      const sc = S(ctx);
+      bellTotal = Math.max(bellTotal ?? 0, ctx.getObject('bell_town_hall')?.value ?? 0);
+      sc.lightsOn = lightsShouldBeOn(ctx.worldTime().phase);
       for (const it of INTERACTABLES) {
         if (it.kind !== 'streetlight' && it.kind !== 'lantern') continue;
         const o = ctx.getObject(it.id);
-        if (o) o.active = lightsOn;
+        if (o) o.active = sc.lightsOn;
       }
     },
 
     tick(ctx, dtMs) {
-      lightAcc += dtMs;
-      if (lightAcc < 1000) return;
-      lightAcc = 0;
+      const sc = S(ctx);
+      sc.lightAcc += dtMs;
+      if (sc.lightAcc < 1000) return;
+      sc.lightAcc = 0;
       const want = lightsShouldBeOn(ctx.worldTime().phase);
-      if (want === lightsOn) return;
-      lightsOn = want;
+      if (want === sc.lightsOn) return;
+      sc.lightsOn = want;
       for (const it of INTERACTABLES) {
         if (it.kind !== 'streetlight' && it.kind !== 'lantern') continue;
         const o = ctx.getObject(it.id);
@@ -475,10 +494,10 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
       release(ctx, sessionId, false);
     },
 
-    onRoomDispose() {
-      for (const t of [...doorTimers.values(), ...respawnTimers.values()]) t.clear();
-      doorTimers.clear();
-      respawnTimers.clear();
+    onRoomDispose(ctx) {
+      const sc = scopes.get(ctx.roomId);
+      if (sc) for (const t of [...sc.doorTimers.values(), ...sc.respawnTimers.values()]) t.clear();
+      scopes.delete(ctx.roomId);
     },
   };
   return service;

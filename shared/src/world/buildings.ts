@@ -101,7 +101,8 @@ export const BUILDINGS: readonly Building[] = [
     locationId: 'workshop',
     style: 'workshop',
     position: { x: 34.5, z: 11 },
-    yaw: facing({ x: 34.5, z: 11 }, { x: 26, z: 12 }),
+    // Faces south-south-west so its big doors read from the isometric camera.
+    yaw: facing({ x: 34.5, z: 11 }, { x: 31, z: 22 }),
     width: 9,
     depth: 7,
     height: 4.2,

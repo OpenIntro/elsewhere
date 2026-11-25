@@ -40,6 +40,10 @@ function at(B: GeoBuilder, p: Vec2, yaw: number, fn: () => void): void {
   B.at(T(p.x, groundHeight(p.x, p.z), p.z, yaw), fn);
 }
 
+function crateGeoPlaceholder() {
+  return rbox(0.45, 0.4, 0.45, 0.05);
+}
+
 function mushroom(B: GeoBuilder, s: number, cap: string): void {
   B.add('solid', cyl(0.05 * s, 0.07 * s, 0.24 * s, 8), '#efe6d2', T(0, 0.12 * s, 0));
   B.add('solid', sphere(0.16 * s, 10, 6), cap, T(0, 0.25 * s, 0, 0, 0, 0, 1, 0.6, 1), { ao: false });
@@ -75,15 +79,27 @@ export function buildDressing(get: (key: string) => GeoBuilder): void {
       S.at(T(0, 0.06, 0.02), () => flowerPatch(S, 3.5, 0.65, 24));
     });
   }
-  // little bird-feeder tree planters at the plaza mouths
-  for (const deg of [10, -15]) {
-    const a = (deg * Math.PI) / 180;
-    const p = { x: sq.x + Math.cos(a) * 9.5, z: sq.z + Math.sin(a) * 9.5 };
-    if (!clearSpot(p, 0.6, 0.5)) continue;
-    at(S, p, 0, () => {
-      S.add('solid', cyl(0.45, 0.4, 0.45, 14), P.stone, T(0, 0.22, 0));
-      S.at(T(0, 0.45, 0), () => shrub(S, 0.4, P.leaf, 5));
-    });
+  // flower cart at the plaza rim (between the café and workshop path mouths)
+  {
+    const a = (2 * Math.PI) / 180;
+    const p = { x: sq.x + Math.cos(a) * 9.6, z: sq.z + Math.sin(a) * 9.6 };
+    if (clearSpot(p, 0.7, 0.4)) {
+      at(S, p, Math.atan2(sq.x - p.x, sq.z - p.z), () => {
+        S.add('solid', rbox(1.6, 0.45, 0.9, 0.06), '#7a5c46', T(0, 0.55, 0));
+        for (const s2 of [-1, 1]) {
+          S.add('solid', torus(0.32, 0.05, 6, 16), '#5e4636', T(s2 * 0.85, 0.34, 0, Math.PI / 2));
+          for (let k = 0; k < 4; k++) S.add('solid', rbox(0.04, 0.6, 0.04, 0.01), '#6a5040', T(s2 * 0.85, 0.34, 0, Math.PI / 2, 0, (k / 4) * Math.PI));
+        }
+        S.add('solid', rbox(0.05, 0.05, 1.2, 0.02), '#6a5040', T(0, 0.45, -0.95, 0, -0.25));
+        for (let k = 0; k < 3; k++) {
+          S.add('solid', rbox(0.46, 0.2, 0.7, 0.04), '#b98f66', T(-0.52 + k * 0.52, 0.88 + (k === 1 ? 0.12 : 0), 0));
+          S.at(T(-0.52 + k * 0.52, 0.98 + (k === 1 ? 0.12 : 0), 0), () => flowerPatch(S, 0.38, 0.6, 9, [P.petals[k]!, P.petals[(k + 3) % 6]!, '#f4efe6']));
+        }
+        S.add('solid', cyl(0.025, 0.025, 1.6, 6), '#e8e0cf', T(0.75, 1.4, 0.35));
+        for (let k = 0; k < 8; k++) S.add('solid', cone(0.9, 0.35, 3), k % 2 ? '#5f8f99' : '#efe3cf', T(0.75, 2.25, 0.35, (k / 8) * Math.PI * 2, 0, 0, 0.42, 1, 1), { ao: false });
+        S.add('solid', crateGeoPlaceholder(), '#7a5c46', T(-1.2, 0.2, 0.3, 0.3));
+      });
+    }
   }
 
   // --- Woods: mushroom rings, logs, a fairy door, a teacup, glowing caps ----------

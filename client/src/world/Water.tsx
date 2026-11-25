@@ -116,9 +116,14 @@ void main(){
   vec3 Ns = normalize(vec3(N.x * 0.35, 1.0, N.z * 0.35));
   float spec = pow(max(dot(Ns, H), 0.0), 320.0);
   // sparse twinkling glints on wave crests
-  vec2 cell = floor(p * 1.6);
-  float tw = step(0.985, wHash(cell + floor(uTime * 1.5 + wHash(cell) * 3.0)));
-  float crest = smoothstep(0.72, 0.9, h0 / 1.5);
+  vec2 gp = p * 1.3;
+  vec2 cell = floor(gp);
+  float seed = wHash(cell);
+  float phase = fract(uTime * (0.25 + seed * 0.3) + seed * 7.0);
+  vec2 cpos = vec2(wHash(cell + 3.7), wHash(cell + 9.1)) * 0.8 + 0.1;
+  float dd = length(fract(gp) - cpos);
+  float tw = step(0.93, seed) * smoothstep(0.09, 0.0, dd) * sin(phase * 3.14159);
+  float crest = 1.0;
   vec3 glintCol = mix(uSunColor, vec3(0.75, 0.82, 1.0), uNight);
   float glintAmt = (uSunIntensity * 0.25 + uNight * 0.35);
   col += glintCol * (spec * 0.5 + tw * crest * 0.9) * glintAmt * (0.4 + 0.6 * smoothstep(0.05, 0.4, depth));

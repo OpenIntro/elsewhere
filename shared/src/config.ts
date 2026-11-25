@@ -107,8 +107,11 @@ export const CONFIG = {
     fountainStages: [5, 15, 40] as readonly number[],
     /** Minimum DISTINCT profiles that must have contributed for each stage (same length as fountainStages). Server override: FOUNTAIN_STAGE_DISTINCT. */
     fountainStageDistinct: [3, 8, 20] as readonly number[],
-    /** Number of distinct players who must each hold a rune stone at the same time. */
-    portalRunesRequired: 3,
+    /**
+     * Number of distinct players who must each light a different rune stone at the same time
+     * (2 so the secret is discoverable by two people; there are 3 stones). Server override: PORTAL_RUNES_REQUIRED.
+     */
+    portalRunesRequired: 2,
     /** All runes must be activated within this window. */
     portalWindowMs: 20_000,
     /** How long the portal stays awake once woken. */

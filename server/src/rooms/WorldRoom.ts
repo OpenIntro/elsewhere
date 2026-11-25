@@ -78,6 +78,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   private profiles = new Map<string, StoredProfile>();
   private joinCounter = 0;
   private joinedAt = new Map<string, number>();
+  private kicked = new Set<string>();
   private animTimers = new Map<string, TimerHandle>();
 
   override async onCreate(): Promise<void> {
@@ -173,7 +174,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       profile: toProfileSummary(profile),
       blocked: [...profile.blocked],
       muted: [...profile.muted],
-      recentChat: this.svc.chat.recent(profile.id),
+      recentChat: this.svc.chat.recent(profile.id, this.roomId),
       world: {
         fountainStage: facts.fountainStage,
         fountainContributors: facts.fountainContributors,
@@ -201,6 +202,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   }
 
   override async onDrop(client: Client): Promise<void> {
+    // Kicked/banned sessions get no reconnection grace: onLeave runs right away.
+    if (this.kicked.delete(client.sessionId)) return;
     // Keep the player's body in the world briefly so a flaky connection can resume.
     const player = this.state.players.get(client.sessionId);
     if (player) player.anim = 'idle';
@@ -218,6 +221,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     for (const h of this.svc.hooks) await h.onPlayerLeave?.(this.ctx, sid);
     await this.saveProfile(sid);
     this.joinedAt.delete(sid);
+    this.kicked.delete(sid);
     this.animTimers.get(sid)?.clear();
     this.animTimers.delete(sid);
     this.state.players.delete(sid);
@@ -458,6 +462,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       kick: (sid, reason) => {
         const c = room.clients.getById(sid);
         if (!c) return;
+        room.kicked.add(sid);
         c.send(S2C.notice, { level: 'error', code: 'kicked', text: reason === 'banned' ? 'You have been removed from the island.' : 'You have been disconnected by a moderator.' });
         c.leave(KICK_CLOSE_CODE, reason);
       },

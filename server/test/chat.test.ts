@@ -112,4 +112,30 @@ describe('chat + moderation', { timeout: 60_000 }, () => {
     expect(w.received(b, 'moderation')[0]).toMatchObject({ action: 'reported' });
     await w.close();
   });
+
+  it('timed chat-mute sanction expires on time, also after a restart (reloaded from storage on join)', async () => {
+    const w = await makeWorld();
+    const a = await w.join('Muted', 0, 10);
+    const b = await w.join('Listener', 1, 10);
+    const pid = w.ctx.getProfile(a)!.id;
+    const s = await w.moderation.sanction({ profileId: pid, kind: 'chat_mute', minutes: 2, reason: 'admin test', createdBy: 'admin' });
+    expect(s.expiresAt).toBe(w.clock.t + 120_000);
+    w.chat.handleChat(w.ctx, a, { channel: 'global', text: 'one' });
+    expect(texts(w.received(b, 'chat'))).toEqual([]);
+    expect(w.received(a, 'error').at(-1)).toMatchObject({ code: 'forbidden' });
+
+    // "Restart": fresh services on the same storage + clock; the mute is reloaded when the player joins.
+    const profile = (await w.persistence.profiles.get(pid))!;
+    const w2 = await makeWorld({ persistence: w.persistence, clock: w.clock });
+    const a2 = await w2.join('Muted', 0, 10, profile);
+    const b2 = await w2.join('Listener', 1, 10);
+    w.clock.advance(60_000);
+    w2.chat.handleChat(w2.ctx, a2, { channel: 'global', text: 'two' });
+    expect(texts(w2.received(b2, 'chat'))).toEqual([]);
+    w.clock.advance(60_001);
+    w2.chat.handleChat(w2.ctx, a2, { channel: 'global', text: 'three' });
+    expect(texts(w2.received(b2, 'chat'))).toEqual(['three']);
+    expect(await w2.persistence.sanctions.active(w.clock.t, pid)).toEqual([]);
+    await w.close();
+  });
 });

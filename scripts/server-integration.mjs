@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
  * Multi-client server integration test (Node + @colyseus/sdk, no browser).
- * Runs against an ALREADY RUNNING server started with small collective
- * thresholds and an admin token, e.g.:
+ * Runs against an ALREADY RUNNING server started with an admin token and
+ * small fountain thresholds (the portal needs no override: the default
+ * CONFIG.collective.portalRunesRequired is 2), e.g.:
  *
  *   PORT=2601 DATA_DIR=/tmp/elsewhere-it ADMIN_TOKEN=integration-admin-token \
- *   PORTAL_RUNES_REQUIRED=2 FOUNTAIN_STAGES=2,4 FOUNTAIN_STAGE_DISTINCT=2,3 \
+ *   FOUNTAIN_STAGES=2,4 FOUNTAIN_STAGE_DISTINCT=2,3 \
  *   npx tsx --conditions=source server/src/index.ts
  *
  *   node scripts/server-integration.mjs [url] [--save state.json]
@@ -117,10 +118,17 @@ class Player {
   send(type, payload) {
     this.room.send(type, payload);
   }
-  async interact(id, action) {
+  async interact(id, action, retry = true) {
     this.clear(S2C.interactResult);
     this.send(C2S.interact, action === undefined ? { id } : { id, action });
-    return this.next(S2C.interactResult, (r) => r.id === id, 3000);
+    const r = await this.next(S2C.interactResult, (x) => x.id === id, 3000);
+    if (retry && r?.error === 'too_far') {
+      // The walker's view can lag the server by a patch; step closer once and retry.
+      log(`   (${this.name}: ${id} too far, stepping closer)`);
+      await this.walkToInteractable(id, 0.8);
+      return this.interact(id, action, false);
+    }
+    return r;
   }
   /** Walk (server-validated moves) until within `range` of the target point. */
   async walkTo(target, range = 1.2) {
@@ -146,9 +154,9 @@ class Player {
     const now = this.me();
     return Math.hypot(now.x - target.x, now.z - target.z);
   }
-  async walkToInteractable(id) {
+  async walkToInteractable(id, margin = 0.3) {
     const it = getInteractable(id);
-    const r = (it.radius ?? CONFIG.interaction.radius) - 0.3;
+    const r = (it.radius ?? CONFIG.interaction.radius) - margin;
     const d = await this.walkTo(it.position, r);
     if (d > r + CONFIG.interaction.serverSlack) throw new Error(`${this.name}: could not reach ${id} (d=${d.toFixed(2)})`);
   }
@@ -212,7 +220,7 @@ async function phaseOne() {
   const world = await rest('/api/world');
   const fountainRule = world.rules.find((r) => r.id === 'fountain');
   log('server rules:', JSON.stringify(fountainRule.stages), 'fountain stage now', world.fountainStage, 'portal awakenings', world.portalAwakenings);
-  if (fountainRule.stages[world.fountainStage]?.distinct > 2) throw new Error('Start the server with FOUNTAIN_STAGES=2,4 FOUNTAIN_STAGE_DISTINCT=2,3 PORTAL_RUNES_REQUIRED=2 (see header)');
+  if (fountainRule.stages[world.fountainStage]?.distinct > 2) throw new Error('Start the server with FOUNTAIN_STAGES=2,4 FOUNTAIN_STAGE_DISTINCT=2,3 (see header)');
 
   const A = await new Player('Alder').connect();
   const B = await new Player('Birch').connect();
@@ -279,8 +287,11 @@ async function phaseOne() {
 
   log('6. B steps through the arch → far away; proximity out of range');
   await B.walkToInteractable('portal_arch');
-  await B.interact('portal_arch');
+  const arch = getInteractable('portal_arch');
+  log(`   B at (${B.me().x.toFixed(2)}, ${B.me().z.toFixed(2)}), arch at (${arch.position.x.toFixed(2)}, ${arch.position.z.toFixed(2)}), d=${Math.hypot(B.me().x - arch.position.x, B.me().z - arch.position.z).toFixed(2)}`);
+  const through = await B.interact('portal_arch');
   await B.until(() => B.me().z > 50, 'B carried to the dock', 3000).catch(() => null);
+  check(through?.ok === true && !through.ui, 'awake arch accepts B (no dormant text)', through);
   const d = Math.hypot(A.me().x - B.me().x, A.me().z - B.me().z);
   check(d > CONFIG.chat.proximityRadius, `players now ${d.toFixed(0)} m apart (> ${CONFIG.chat.proximityRadius})`);
   B.clear(S2C.chat);

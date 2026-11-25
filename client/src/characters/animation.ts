@@ -204,14 +204,14 @@ const POSES: Record<BaseState | OneShot, (o: Pose, c: PoseCtx) => void> = {
     // arms: A = alternating overhead pumps, B = bent-arm shimmy
     const pumpL = 0.5 + 0.5 * Math.sin(b);
     const pumpR = 0.5 - 0.5 * Math.sin(b);
-    const aLz = 2.3 + 0.35 * pumpL;
-    const aRz = -(2.3 + 0.35 * pumpR);
+    const aLz = 1.75 + 0.45 * pumpL;
+    const aRz = -(1.75 + 0.45 * pumpR);
     const bLx = -0.9 + 0.5 * Math.sin(half);
     const bRx = -0.9 - 0.5 * Math.sin(half);
     set(o, B.shoulderL, RZ, k * aLz + (1 - k) * 0.5);
     set(o, B.shoulderR, RZ, k * aRz - (1 - k) * 0.5);
-    set(o, B.shoulderL, RX, k * -0.2 + (1 - k) * bLx);
-    set(o, B.shoulderR, RX, k * -0.2 + (1 - k) * bRx);
+    set(o, B.shoulderL, RX, k * -0.45 + (1 - k) * bLx);
+    set(o, B.shoulderR, RX, k * -0.45 + (1 - k) * bRx);
     set(o, B.elbowL, RX, k * (-0.4 - 0.6 * pumpL) + (1 - k) * -1.5);
     set(o, B.elbowR, RX, k * (-0.4 - 0.6 * pumpR) + (1 - k) * -1.5);
     squash(o, B.root, -0.05 * bounce + 0.02);
@@ -220,10 +220,10 @@ const POSES: Record<BaseState | OneShot, (o: Pose, c: PoseCtx) => void> = {
   wave(o, c) {
     const t = c.oneShotT;
     // right arm up and out, forearm wags side to side
-    set(o, B.shoulderR, RZ, -2.55);
-    set(o, B.shoulderR, RX, -0.25);
-    set(o, B.elbowR, RZ, -0.35 + 0.55 * Math.sin(t * TAU * 2.6));
-    set(o, B.elbowR, RX, -0.25);
+    // Upper arm out to the side, forearm up and wagging: keeps the hand clear of the big head's silhouette.
+    set(o, B.shoulderR, RZ, -1.6 - 0.08 * Math.sin(t * TAU * 1.3));
+    set(o, B.shoulderR, RY, 0.3);
+    set(o, B.elbowR, RZ, -1.15 + 0.4 * Math.sin(t * TAU * 2.6));
     set(o, B.shoulderL, RZ, 0.2);
     set(o, B.elbowL, RX, -0.15);
     set(o, B.spine, RZ, 0.1);
@@ -373,10 +373,11 @@ export class Animator {
     if (this.holdW > 0.002) {
       const h = this.holdW * (1 - this.weights.dance * 0.7);
       const i = B.shoulderL * CH;
-      pose[i + RX] = pose[i + RX]! * (1 - h) + (-0.55 + pose[i + RX]! * 0.25) * h;
-      pose[i + RZ] = pose[i + RZ]! * (1 - h) + 0.12 * h;
+      pose[i + RX] = pose[i + RX]! * (1 - h) + (-0.5 + pose[i + RX]! * 0.25) * h;
+      pose[i + RZ] = pose[i + RZ]! * (1 - h) + 0.05 * h;
+      pose[i + RY] = pose[i + RY]! * (1 - h) + -0.35 * h;
       const e = B.elbowL * CH;
-      pose[e + RX] = pose[e + RX]! * (1 - h) + -1.05 * h;
+      pose[e + RX] = pose[e + RX]! * (1 - h) + -1.25 * h;
     }
 
     // look-around (idle / sit)

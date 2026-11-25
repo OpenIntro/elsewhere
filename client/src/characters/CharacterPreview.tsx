@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { CanvasTexture, PCFSoftShadowMap, type Group, type OrthographicCamera, type PerspectiveCamera } from 'three';
 import type { AnimState, Appearance, ItemId } from '@elsewhere/shared';
 import { Character } from './Character.js';
-import { layoutFor } from './rig.js';
+import { getCharacter } from './cache.js';
 
 export interface CharacterPreviewProps {
   appearance: Appearance;
@@ -53,8 +53,8 @@ function Framing({ height }: { height: number }) {
     const cam = camera as PerspectiveCamera | OrthographicCamera;
     if (!('fov' in cam)) return;
     const aspect = size.width / Math.max(1, size.height);
-    const target = height * 0.52;
-    const fitH = height * 1.28; // vertical extent incl. margins
+    const target = height * 0.5;
+    const fitH = height * 1.18; // vertical extent incl. margins
     const fitW = 1.7; // arms out / dance
     const vfov = (cam.fov * Math.PI) / 180;
     const distH = fitH / 2 / Math.tan(vfov / 2);
@@ -87,7 +87,8 @@ export function CharacterPreview({ appearance, anim = 'idle', animSeq = 0, spin 
   const drag = useRef<Drag>({ active: false, lastX: 0, vel: 0, yaw, idle: 10 });
   const blob = useMemo(() => (typeof document !== 'undefined' ? blobTexture() : null), []);
   useEffect(() => () => blob?.dispose(), [blob]);
-  const height = layoutFor(appearance.body).height;
+  // Frame the actual silhouette (hair / hats included), with headroom for raised arms.
+  const height = getCharacter(appearance).built.topY + 0.12;
 
   const onDown = (e: React.PointerEvent) => {
     drag.current.active = true;

@@ -127,6 +127,7 @@ export const Character = memo(function Character({
     if (!held) return null;
     const m = new Mesh(heldGeometry(held), toyMaterial('player', highlighted));
     m.name = 'held';
+    m.scale.setScalar(1.6);
     return m;
   }, [held, highlighted]);
   useEffect(() => {

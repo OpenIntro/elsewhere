@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BUILDINGS, CREEK_POINTS, DECKS, FOUNTAIN, LOCATIONS, PATHS, TREES, islandOutline, type Location, type LocationId } from '@elsewhere/shared';
-import { useCameraStore, BASE_YAW } from '../../player/camera.js';
+import { useCameraStore, BASE_YAW } from '../../player/index.js';
 import { useGameStore } from '../../state/gameStore.js';
 import { runtime } from '../../state/runtime.js';
 import { useUiPrefs } from '../localState.js';

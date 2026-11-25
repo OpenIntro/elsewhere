@@ -68,7 +68,7 @@ function waterMaterial(kind: 'flow' | 'pool', magic: { value: number }): ShaderM
              c += vec3(1.0) * sp * 0.6 * (1.0 - uNight * 0.5);
              a = 0.82;`}
         // daylight tint + night glow (stronger with magic)
-        c *= mix(vec3(1.0), uSunColor, 0.12) * (1.0 - uNight * 0.45);
+        c *= mix(vec3(1.0), uSunColor, 0.12) * (1.0 - uNight * 0.72);
         float glow = clamp(uMagic - 1.0, 0.0, 2.0) * 0.5;
         c += base * glow * (0.25 + 0.75 * uNight) * 0.9;
         gl_FragColor = vec4(c, a);
@@ -103,7 +103,7 @@ interface Stage {
 }
 
 function buildStages(): Stage[] {
-  const basinProf: [number, number][] = [[0.001, 0.12], [2.5, 0.12], [2.58, 0.7], [2.7, 0.8], [3.0, 0.8], [3.1, 0.72], [3.04, 0.12], [3.16, 0.0]];
+  const basinProf: [number, number][] = [[0.001, 0.12], [2.5, 0.12], [2.55, 0.68], [2.62, 0.8], [2.72, 0.86], [3.0, 0.86], [3.12, 0.78], [3.12, 0.62], [3.04, 0.56], [3.06, 0.18], [3.2, 0.1], [3.22, 0.0]];
   const stages: Stage[] = [];
   for (let s = 0; s <= FOUNTAIN_MAX_STAGE; s++) {
     const B = new GeoBuilder(31 + s);
@@ -118,9 +118,12 @@ function buildStages(): Stage[] {
         const a = k * 0.97;
         B.add('plant', sphere(0.16 + (k % 3) * 0.05, 8, 6), '#6f8a4c', T(Math.cos(a) * 2.86, 0.8, Math.sin(a) * 2.86, 0, 0, 0, 1.4, 0.45, 1));
       }
-      column(B, '0', 1.15, '#a39c8e');
-      bowl(B, '0', 0.65, 1.15, '#a39c8e');
-      flows.push(curtain('0', 0.62, 1.2, 0.75, WATER_Y - 1.2 - 0.02));
+      column(B, '0', 1.55, '#a39c8e');
+      bowl(B, '0', 0.95, 1.5, '#a39c8e');
+      B.add('glazed', sphere(0.16, 10, 8), '#a39c8e', T(0, 1.7, 0), { ao: false });
+      flows.push(curtain('0', 0.92, 1.55, 1.05, WATER_Y - 1.55 - 0.02));
+      // a few fallen leaves floating
+      for (let k = 0; k < 6; k++) B.add('solid', sphere(0.08, 6, 4), k % 2 ? '#b0703d' : '#c9a23f', T(Math.cos(k * 2.1) * 1.9, WATER_Y + 0.02, Math.sin(k * 2.1) * 1.9, k, 0, 0, 1, 0.15, 1.5), { ao: false });
     }
     if (s >= 1) {
       const colH = s === 1 ? 2.05 : 2.6;

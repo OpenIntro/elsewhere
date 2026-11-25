@@ -40,7 +40,7 @@ export function useChatUnread(): { count: number; mention: boolean } {
   }, [log, sid, readAt, hidden, me]);
 }
 
-const Line = memo(function Line({ m, myName, mySid, grouped, onName }: { m: ChatMessage; myName: string | null; mySid: string | null; grouped: boolean; onName(sid: string): void }) {
+const Line = memo(function Line({ m, myName, mySid, myProfileId, grouped, onName }: { m: ChatMessage; myName: string | null; mySid: string | null; myProfileId: string | null; grouped: boolean; onName(sid: string): void }) {
   if (m.channel === 'system' || !m.from) {
     return (
       <li className="line line--system">
@@ -48,7 +48,7 @@ const Line = memo(function Line({ m, myName, mySid, grouped, onName }: { m: Chat
       </li>
     );
   }
-  const mine = m.from === mySid;
+  const mine = m.from === mySid || (!!myProfileId && m.fromProfileId === myProfileId);
   const self = !mine && mentionsName(m.mentions, m.text, myName);
   const segs = segmentMentions(m.text, myName);
   return (
@@ -176,6 +176,7 @@ export function Chat() {
   const setTextFocus = useUiStore((s) => s.setTextInputFocused);
   const sid = useGameStore((s) => s.sessionId);
   const myName = useGameStore((s) => s.profile?.name ?? null);
+  const myProfileId = useGameStore((s) => s.profile?.profileId ?? null);
   const players = useGameStore((s) => s.players);
   const connected = useGameStore((s) => s.connection === 'connected');
   const { tab, peer, readAt, focusSeq, setTab, openWhisper, markRead } = useChatUi();
@@ -383,7 +384,7 @@ export function Chat() {
             lines.map((m, i) => {
               const prev = lines[i - 1];
               const grouped = !!prev && prev.from === m.from && !!m.from && prev.channel === m.channel && m.ts - prev.ts < 120_000;
-              return <Line key={m.id} m={m} myName={myName} mySid={sid} grouped={grouped} onName={onName} />;
+              return <Line key={m.id} m={m} myName={myName} mySid={sid} myProfileId={myProfileId} grouped={grouped} onName={onName} />;
             })
           ) : (
             <li className="chat__empty">

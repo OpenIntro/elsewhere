@@ -2,7 +2,7 @@
 import { useId, useState } from 'react';
 import { C2S } from '@elsewhere/shared';
 import { net } from '../../net/index.js';
-import { cameraControls, useCameraStore } from '../../player/camera.js';
+import { cameraControls, useCameraStore } from '../../player/index.js';
 import { useGameStore } from '../../state/gameStore.js';
 import { useSettingsStore, type GraphicsQuality } from '../../state/settingsStore.js';
 import { useUiStore } from '../../state/uiStore.js';

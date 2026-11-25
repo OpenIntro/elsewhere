@@ -11,7 +11,6 @@ import {
   COLLIDERS,
   CREEK_BANK_HALF_WIDTH,
   CREEK_POINTS,
-  LOCATIONS,
   PATHS,
   TREES,
   WORLD_BOUNDS,
@@ -19,7 +18,6 @@ import {
   getBuilding,
   getLocation,
   inlandDistance,
-  rotateOffset,
   smoothstep,
   terrainHeight,
   type PathSurface,
@@ -81,7 +79,7 @@ const PAL = {
 };
 
 const SURFACE: Record<PathSurface, { color: Color; cell: number; grain: number; scale: number }> = {
-  cobble: { color: PAL.cobble, cell: 0.9, grain: 0.3, scale: 2.3 },
+  cobble: { color: PAL.cobble, cell: 0.9, grain: 0.3, scale: 3.1 },
   gravel: { color: PAL.gravel, cell: 0, grain: 1, scale: 1 },
   dirt: { color: PAL.dirt, cell: 0, grain: 0.7, scale: 1 },
   sand: { color: PAL.pathSand, cell: 0, grain: 0.5, scale: 1 },
@@ -235,7 +233,7 @@ export function groundColor(x: number, z: number, h: number, out: Color, pave: P
     // radial "rays" of darker stone between the bench spokes
     out.lerp(tmp, sqW);
     pave.cell = Math.max(pave.cell, sqW);
-    pave.scale = sq < 4.6 ? 2.8 : 1.75;
+    pave.scale = sq < 4.6 ? 3.4 : 2.5;
   }
   const lh = toLocal(HALL, x, z);
   const hallW = Math.max(rectMask(lh.x, lh.z, -7.2, 7.2, 3.5, 9.2, 0.5), rectMask(lh.x, lh.z, -1.6, 1.6, 9, 12, 0.6));
@@ -355,11 +353,11 @@ vec3 voro(vec2 p){
   if (vPave.x > 0.01) {
     vec3 v = voro(vWPos.xz * vPave.z);
     float edge = v.y - v.x;
-    float mortar = 1.0 - smoothstep(0.03, 0.13, edge);
-    float tone = 0.86 + 0.26 * v.z;
+    float mortar = 1.0 - smoothstep(0.025, 0.09, edge);
+    float tone = 0.9 + 0.16 * v.z;
     vec3 paved = col * tone * (0.94 + 0.12 * smoothstep(0.05, 0.45, edge));
     // moss / grass creeping in the joints near the plaza edges
-    vec3 joint = mix(col * 0.6, vec3(0.42, 0.5, 0.3), 0.35 * (1.0 - vPave.x));
+    vec3 joint = mix(col * 0.72, vec3(0.42, 0.5, 0.3), 0.35 * (1.0 - vPave.x));
     paved = mix(paved, joint, mortar);
     col = mix(col, paved, smoothstep(0.0, 0.5, vPave.x) * (0.55 + 0.45 * vPave.x));
   }
@@ -404,7 +402,3 @@ export function Terrain({ resolution = 0.7 }: { resolution?: number }) {
 
   return <mesh name="terrain" geometry={geometry} material={terrainMaterial} receiveShadow />;
 }
-
-/** Rotate helper re-exported for other modules that place things relative to buildings. */
-export { rotateOffset };
-export { LOCATIONS };

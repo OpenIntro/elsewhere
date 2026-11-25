@@ -119,6 +119,18 @@ function DevHook() {
         return { msPerFrame: ms, calls: r.calls, triangles: r.triangles };
       },
       coverage: coverageReport,
+      /** Heaviest meshes by triangle count (instancing included). */
+      breakdown(top = 15) {
+        const rows: { name: string; tris: number; count: number }[] = [];
+        scene.traverse((o) => {
+          const m = o as unknown as { isMesh?: boolean; geometry?: { index: { count: number } | null; attributes: { position: { count: number } } }; count?: number; name: string; parent: { name: string } | null };
+          if (!m.isMesh || !m.geometry) return;
+          const n = (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+          const c = m.count ?? 1;
+          rows.push({ name: `${m.parent?.name ?? ''}/${m.name}`, tris: Math.round(n * c), count: c });
+        });
+        return rows.sort((a, b) => b.tris - a.tris).slice(0, top);
+      },
       env: () => ({ hours: env.hours, phase: env.phase, night: env.night, glow: env.glow, lightsOn: env.lightsOn }),
     };
     (window as unknown as { __ELSEWHERE_WORLD__?: typeof hook }).__ELSEWHERE_WORLD__ = hook;

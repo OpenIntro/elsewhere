@@ -80,15 +80,14 @@ try {
 
     // Volumes → bus gains (via the persisted settings store: use the zustand store from the module graph).
     const vol = await page.evaluate(async () => {
-      const { useSettingsStore } = await import('/src/state/settingsStore.ts');
-      const s = useSettingsStore.getState();
+      const s = window.__ELSEWHERE_AUDIO__.settings();
       const out = [];
       const read = () => new Promise((r) => setTimeout(() => r(window.__ELSEWHERE_AUDIO__.debug().busGains), 700));
       s.setVolume('music', 0.2);
       s.setVolume('ambience', 0.9);
       s.setVolume('sfx', 0.35);
       s.setMasterVolume(0.6);
-      out.push({ set: { music: 0.2, ambience: 0.9, sfx: 0.35, master: 0.6 }, bus: await read(), gainFor: { music: window.__ELSEWHERE_AUDIO__.gainFor('music'), ambience: window.__ELSEWHERE_AUDIO__.gainFor('ambience'), sfx: window.__ELSEWHERE_AUDIO__.gainFor('sfx') } });
+      out.push({ set: { music: 0.2, ambience: 0.9, sfx: 0.35, master: 0.6 }, store: { ...window.__ELSEWHERE_AUDIO__.settings().volumes }, bus: await read(), gainFor: { music: window.__ELSEWHERE_AUDIO__.gainFor('music'), ambience: window.__ELSEWHERE_AUDIO__.gainFor('ambience'), sfx: window.__ELSEWHERE_AUDIO__.gainFor('sfx') } });
       s.setMuted(true);
       out.push({ set: { muted: true }, bus: await read() });
       s.setMuted(false);
@@ -99,7 +98,7 @@ try {
       out.push({ set: 'defaults', bus: await read() });
       return out;
     });
-    for (const v of vol) log('volume', JSON.stringify(v.set), '→ bus', JSON.stringify(v.bus), v.gainFor ? `gainFor ${JSON.stringify(v.gainFor)}` : '');
+    for (const v of vol) log('volume', JSON.stringify(v.set), v.store ? 'store ' + JSON.stringify(v.store) : '', '→ bus', JSON.stringify(v.bus), v.gainFor ? `gainFor ${JSON.stringify(v.gainFor)}` : '');
 
     // Simulated activity: walk in patterns + a storm of synthetic events through the public API.
     const samples = [];
@@ -110,7 +109,7 @@ try {
       const k = keys[i++ % 4];
       await page.keyboard.down(k);
       await page.evaluate(async () => {
-        const { audio } = await import('/src/audio/AudioManager.ts');
+        const audio = window.__ELSEWHERE_AUDIO__;
         const names = ['bell', 'door_open', 'door_close', 'light_toggle', 'pickup', 'drop', 'sit', 'splash', 'chat_message', 'reaction', 'ui_click', 'ui_open', 'ui_close', 'rune', 'discovery', 'chime', 'bell_chorus', 'fountain_stage', 'world_shimmer', 'portal_wake'];
         for (let n = 0; n < 12; n++) audio.playSfx(names[Math.floor(Math.random() * names.length)], { x: Math.random() * 30 - 15, y: 0, z: Math.random() * 30 - 15 });
       });

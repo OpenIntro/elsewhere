@@ -157,13 +157,13 @@ const KEYS: Key[] = [
   { h: 0, ...NIGHT },
   { h: 4.6, ...NIGHT, hemiSky: '#5c64a0', bgBottom: '#3a3c6e', fog: '#2c3058' },
   { h: 5.6, sun: '#ff9f7a', sunI: 0, moonI: 0.35, hemiSky: '#8d84b0', hemiGround: '#3c3440', hemiI: 0.95, bgTop: '#4a5590', bgBottom: '#e3a59a', fog: '#8a7b9a', waterShallow: '#5c7a96', waterDeep: '#263a5c', glow: 0.8 },
-  { h: 6.6, sun: '#ffb38a', sunI: 1.5, moonI: 0, hemiSky: '#e3c0c0', hemiGround: '#6a5a50', hemiI: 0.9, bgTop: '#9fb3d8', bgBottom: '#f6c9a8', fog: '#e9c6b6', waterShallow: '#88b3b6', waterDeep: '#3e6789', glow: 0.25 },
-  { h: 8.5, sun: '#ffe6c8', sunI: 2.6, moonI: 0, hemiSky: '#d5e3ee', hemiGround: '#8a7d62', hemiI: 0.95, bgTop: '#bcd6ea', bgBottom: '#f4e9d8', fog: '#e4e9e6', waterShallow: '#84c6c2', waterDeep: '#3d7f99', glow: 0 },
+  { h: 6.6, sun: '#ffc39a', sunI: 1.8, moonI: 0, hemiSky: '#dcd0e2', hemiGround: '#7a7066', hemiI: 1.05, bgTop: '#a9bde0', bgBottom: '#f6d2b8', fog: '#ead4ca', waterShallow: '#8cbcbc', waterDeep: '#41708f', glow: 0.25 },
+  { h: 8.5, sun: '#fff0dc', sunI: 2.7, moonI: 0, hemiSky: '#d8e8f2', hemiGround: '#8c8a6c', hemiI: 1.05, bgTop: '#bcd8ec', bgBottom: '#f3eedf', fog: '#e4ece9', waterShallow: '#84c8c2', waterDeep: '#3d7f99', glow: 0 },
   { h: 12, sun: '#fff5e6', sunI: 2.9, moonI: 0, hemiSky: '#d9e8f2', hemiGround: '#8f8a6a', hemiI: 1.0, bgTop: '#b4d3ea', bgBottom: '#eef2e8', fog: '#e3ecee', waterShallow: '#86ccc6', waterDeep: '#3a7fa0', glow: 0 },
   { h: 15.5, sun: '#ffecd2', sunI: 2.8, moonI: 0, hemiSky: '#dfe4ea', hemiGround: '#8f8466', hemiI: 0.95, bgTop: '#bcd3e6', bgBottom: '#f3ead8', fog: '#e8e6de', waterShallow: '#88c6bf', waterDeep: '#3d7b98', glow: 0 },
-  { h: 17.4, sun: '#ffbf7a', sunI: 2.7, moonI: 0, hemiSky: '#f0d0b0', hemiGround: '#74604a', hemiI: 0.85, bgTop: '#e8c4a8', bgBottom: '#f8d29a', fog: '#f2cfa6', waterShallow: '#9ec4b0', waterDeep: '#4a7088', glow: 0.1 },
-  { h: 18.6, sun: '#ff9458', sunI: 1.7, moonI: 0, hemiSky: '#d79c9a', hemiGround: '#55424a', hemiI: 0.8, bgTop: '#9c8fb8', bgBottom: '#f2a27e', fog: '#d9a092', waterShallow: '#8c9aa8', waterDeep: '#3b4a6e', glow: 0.45 },
-  { h: 19.6, sun: '#ff8a6a', sunI: 0.15, moonI: 0.2, hemiSky: '#8a7aaa', hemiGround: '#3a3044', hemiI: 0.95, bgTop: '#4d4c86', bgBottom: '#c98a98', fog: '#6e6290', waterShallow: '#56688c', waterDeep: '#22304f', glow: 0.85 },
+  { h: 17.4, sun: '#ffc27c', sunI: 2.8, moonI: 0, hemiSky: '#f2d6bc', hemiGround: '#8a7458', hemiI: 1.0, bgTop: '#e8c4a8', bgBottom: '#f8d29a', fog: '#f2cfa6', waterShallow: '#9ec4b0', waterDeep: '#4a7088', glow: 0.1 },
+  { h: 18.6, sun: '#ff9a5e', sunI: 1.9, moonI: 0, hemiSky: '#dca8a8', hemiGround: '#63505a', hemiI: 0.95, bgTop: '#9c8fb8', bgBottom: '#f2a27e', fog: '#d9a092', waterShallow: '#8c9aa8', waterDeep: '#3b4a6e', glow: 0.45 },
+  { h: 19.6, sun: '#ff8a6a', sunI: 0.15, moonI: 0.25, hemiSky: '#a08cc0', hemiGround: '#4a3c52', hemiI: 1.25, bgTop: '#4d4c86', bgBottom: '#c98a98', fog: '#6e6290', waterShallow: '#56688c', waterDeep: '#22304f', glow: 0.85 },
   { h: 21, ...NIGHT, moonI: 0.55, hemiSky: '#5f6aa4', bgTop: '#18204a', bgBottom: '#3c3f78', fog: '#2a3060' },
   { h: 24, ...NIGHT },
 ];
@@ -307,7 +307,7 @@ export function updateEnvironment(timeOfDay: number, dt: number): void {
   env.sunElevation = elevation;
   const a = (timeOfDay - 0.25) * Math.PI * 2; // 0 at sunrise, PI at sunset
   const yaw = Math.PI / 2 + Math.max(-0.3, Math.min(Math.PI + 0.3, a)) * 0.95;
-  const el = Math.max(0.24, elevation);
+  const el = Math.max(0.4, elevation);
   env.sunDir.set(Math.sin(yaw) * Math.cos(el), Math.sin(el), Math.cos(yaw) * Math.cos(el)).normalize();
   if (env.sunIntensity > 0.05 || elevation > 0) {
     env.keyDir.copy(env.sunDir);

@@ -134,6 +134,23 @@ CREATE TABLE IF NOT EXISTS sanctions (
 CREATE INDEX IF NOT EXISTS sanctions_profile_idx ON sanctions (profile_id);
 `,
   },
+  {
+    id: 2,
+    name: 'world_instance_keys',
+    sql: `
+ALTER TABLE world_kv ADD COLUMN IF NOT EXISTS world_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE world_kv DROP CONSTRAINT IF EXISTS world_kv_pkey;
+ALTER TABLE world_kv ADD CONSTRAINT world_kv_pkey PRIMARY KEY (world_id, key);
+ALTER TABLE world_sets ADD COLUMN IF NOT EXISTS world_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE world_sets DROP CONSTRAINT IF EXISTS world_sets_pkey;
+ALTER TABLE world_sets ADD CONSTRAINT world_sets_pkey PRIMARY KEY (world_id, set_name, member);
+ALTER TABLE object_states ADD COLUMN IF NOT EXISTS world_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE object_states DROP CONSTRAINT IF EXISTS object_states_pkey;
+ALTER TABLE object_states ADD CONSTRAINT object_states_pkey PRIMARY KEY (world_id, id);
+ALTER TABLE world_events ADD COLUMN IF NOT EXISTS world_id TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS world_events_world_idx ON world_events (world_id, id)
+`,
+  },
 ];
 
 /** Apply pending migrations. Returns the ids applied this run. */

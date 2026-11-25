@@ -13,6 +13,7 @@ import { makeBillboards } from './billboard.js';
 import { cone, cyl, GeoBuilder, rbox, sphere, T, torus } from './geom.js';
 import { env } from './env.js';
 import { solidMaterial } from './materials.js';
+import { runtime } from '../state/runtime.js';
 import { TILE } from './Water.js';
 
 const _m = new Matrix4();
@@ -95,21 +96,25 @@ function Clouds({ shadows }: { shadows: boolean }) {
 }
 
 function Birds({ density }: { density: number }) {
-  const n = Math.max(4, Math.round(9 * density));
+  const n = Math.max(3, Math.round(6 * density));
   const { body, wingL, wingR, birds } = useMemo(() => {
     const B = new GeoBuilder(3);
-    B.add('b', sphere(0.12, 8, 6), '#3d3a3a', T(0, 0, 0, 0, 0, 0, 0.8, 0.7, 1.8), { ao: false });
+    B.add('b', sphere(0.12, 8, 6), '#f2efe8', T(0, 0, 0, 0, 0, 0, 0.8, 0.7, 2.0), { ao: false });
     B.add('b', cone(0.05, 0.12, 4), '#d9a03f', T(0, 0, 0.25, 0, Math.PI / 2), { ao: false });
     const bodyGeo = B.build().get('b')!;
     const W = new GeoBuilder(4);
-    W.add('w', rbox(0.5, 0.02, 0.18, 0.01), '#4a4646', T(0.25, 0, 0), { ao: false });
+    W.add('w', rbox(0.34, 0.02, 0.2, 0.01), '#ece8e0', T(0.17, 0, 0.02, 0, 0, 0.25), { ao: false });
+    W.add('w', rbox(0.3, 0.02, 0.14, 0.01), '#8f8a86', T(0.48, 0.07, -0.02, 0.25, 0, -0.35), { ao: false });
     const wingGeo = W.build().get('w')!;
     const body = new InstancedMesh(bodyGeo, solidMaterial, n);
     const wingL = new InstancedMesh(wingGeo, solidMaterial, n);
     const wingR = new InstancedMesh(wingGeo, solidMaterial, n);
-    for (const m of [body, wingL, wingR]) m.frustumCulled = false;
+    for (const m of [body, wingL, wingR]) {
+      m.frustumCulled = false;
+      m.castShadow = true;
+    }
     const rnd = mulberry32(23);
-    const birds = Array.from({ length: n }, (_, i) => ({ r: 6 + rnd() * 6, phase: rnd() * 6.28, y: 13 + rnd() * 4, flap: 5 + rnd() * 3, cx: (rnd() - 0.5) * 3, cz: (rnd() - 0.5) * 3, i }));
+    const birds = Array.from({ length: n }, (_, i) => ({ s: 1.5 + rnd() * 0.4, r: 7 + rnd() * 7, phase: rnd() * 6.28, y: 19 + rnd() * 5, flap: 5 + rnd() * 3, cx: (rnd() - 0.5) * 3, cz: (rnd() - 0.5) * 3, i }));
     return { body, wingL, wingR, birds };
   }, [n]);
   useFrame(() => {
@@ -124,7 +129,7 @@ function Birds({ density }: { density: number }) {
       const z = fz + b.cz + Math.sin(a) * b.r;
       const y = b.y + Math.sin(t * 0.7 + b.phase) * 0.6;
       const yaw = Math.atan2(-Math.sin(a), Math.cos(a)) + Math.PI;
-      const s = day ? 1 : 0;
+      const s = day ? b.s : 0;
       _q.setFromAxisAngle(UP, yaw);
       _m.compose(_v.set(x, y, z), _q, _s.set(s, s, s));
       body.setMatrixAt(b.i, _m);
@@ -265,6 +270,67 @@ function Leaves({ density }: { density: number }) {
   return <primitive object={mesh} />;
 }
 
+/** Pigeons pottering about the plaza; they flutter away from the local player. */
+function Pigeons({ density }: { density: number }) {
+  const n = Math.max(3, Math.round(9 * density));
+  const { mesh, birds } = useMemo(() => {
+    const B = new GeoBuilder(12);
+    const no = { ao: false };
+    B.add('p', sphere(0.11, 10, 8), '#8d8f98', T(0, 0.12, 0, 0, 0, 0, 0.85, 0.8, 1.25), no);
+    B.add('p', sphere(0.065, 8, 6), '#6f7a86', T(0, 0.22, 0.1), no);
+    B.add('p', sphere(0.045, 6, 5), '#7f9a8a', T(0, 0.17, 0.07, 0, 0, 0, 1.2, 0.8, 0.6), no);
+    B.add('p', cone(0.02, 0.05, 4), '#d9a03f', T(0, 0.22, 0.17, 0, Math.PI / 2), no);
+    B.add('p', rbox(0.1, 0.03, 0.12, 0.01), '#6f7280', T(0, 0.12, -0.16, 0, -0.3), no);
+    const mesh = new InstancedMesh(B.build().get('p')!, solidMaterial, n);
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+    const sq = getLocation('town_square').center;
+    const rnd = mulberry32(88);
+    const birds = Array.from({ length: n }, (_, i) => {
+      const a = rnd() * Math.PI * 2;
+      const r = 5.8 + rnd() * 4.5;
+      return { hx: sq.x + Math.cos(a) * r, hz: sq.z + Math.sin(a) * r, x: 0, z: 0, yaw: rnd() * 6.28, phase: rnd() * 6.28, fly: 0, i };
+    });
+    for (const b of birds) {
+      b.x = b.hx;
+      b.z = b.hz;
+    }
+    return { mesh, birds };
+  }, [n]);
+  useFrame((_, dt) => {
+    const t = env.time;
+    const lp = runtime.localPlayer;
+    for (const b of birds) {
+      const d = lp.ready ? Math.hypot(lp.x - b.x, lp.z - b.z) : 99;
+      if (d < 1.8) b.fly = 1;
+      b.fly = Math.max(0, b.fly - dt * 0.4);
+      if (b.fly > 0) {
+        const away = Math.atan2(b.x - lp.x, b.z - lp.z);
+        b.x += Math.sin(away) * dt * 3 * b.fly;
+        b.z += Math.cos(away) * dt * 3 * b.fly;
+        b.yaw = away;
+      } else {
+        // wander slowly back home, pecking
+        const wx = Math.sin(t * 0.3 + b.phase) * 0.8;
+        const wz = Math.cos(t * 0.23 + b.phase) * 0.8;
+        b.x += (b.hx + wx - b.x) * dt * 0.3;
+        b.z += (b.hz + wz - b.z) * dt * 0.3;
+        b.yaw += Math.sin(t * 0.7 + b.phase) * dt * 0.8;
+      }
+      const g = terrainHeight(b.x, b.z);
+      const hop = b.fly > 0 ? Math.sin(Math.min(1, b.fly) * Math.PI) * 1.4 : 0;
+      const peck = b.fly > 0 ? 0 : Math.max(0, Math.sin(t * 4 + b.phase * 5)) ** 6 * 0.5;
+      _eul.set(peck, b.yaw, 0);
+      _q.setFromEuler(_eul);
+      const vis = env.night > 0.7 ? 0 : 1;
+      _m.compose(_v.set(b.x, g + hop, b.z), _q, _s.set(vis, vis, vis));
+      mesh.setMatrixAt(b.i, _m);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  });
+  return <primitive object={mesh} />;
+}
+
 function Harbour() {
   const boat = useRef<Group>(null);
   const buoys = useRef<Group>(null);
@@ -323,6 +389,7 @@ export function Life({ density, shadows }: { density: number; shadows: boolean }
       <Fireflies density={density} />
       <Leaves density={density} />
       <Harbour />
+      <Pigeons density={density} />
     </group>
   );
 }

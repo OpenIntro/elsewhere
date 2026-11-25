@@ -30,7 +30,7 @@ import { fbm, groundColor, vnoise } from './Terrain.js';
 
 const blobCache = new Map<string, BufferGeometry>();
 /** Lumpy soft sphere (smooth normals) for canopies and bushes. */
-function blob(r: number, seed: number, amp = 0.14, ws = 14, hs = 10): BufferGeometry {
+function blob(r: number, seed: number, amp = 0.14, ws = 11, hs = 8): BufferGeometry {
   const key = `${r},${seed},${amp},${ws}`;
   let g = blobCache.get(key);
   if (g) return g;
@@ -179,13 +179,14 @@ function bushGeometry(kind: 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft', var
       if (k % 3 === 0) B.add('t', cyl(0.035, 0.035, 0.22, 6), '#6e5242', T(Math.cos(a) * r, h * 0.85, Math.sin(a) * r), no);
     }
   } else {
-    // grass tuft: a few curved blades (white = tinted per instance)
+    // grass tuft: a soft clump of short, broad blades (tinted per instance to the ground colour)
     const rnd = mulberry32(500 + variant);
-    for (let k = 0; k < 6; k++) {
-      const a = (k / 6) * Math.PI * 2 + rnd();
-      const h = 0.22 + rnd() * 0.2;
-      B.add('t', cone(0.04, h, 3), new Color(1, 1, 1).multiplyScalar(0.8 + 0.25 * (h / 0.42)), T(Math.cos(a) * 0.06, h / 2, Math.sin(a) * 0.06, a, Math.sin(a) * 0.35, Math.cos(a) * 0.35, 1, 1, 0.45), no);
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI * 2 + rnd();
+      const h = 0.16 + rnd() * 0.16;
+      B.add('t', cone(0.075, h, 4), new Color(1, 1, 1).multiplyScalar(0.92 + 0.2 * (h / 0.32)), T(Math.cos(a) * 0.07, h / 2 - 0.02, Math.sin(a) * 0.07, a, Math.sin(a) * 0.3, Math.cos(a) * 0.3, 1, 1, 0.55), no);
     }
+    B.add('t', blob(0.12, 520 + variant, 0.1, 7, 5), new Color(0.95, 0.95, 0.95), T(0, 0.02, 0, 0, 0, 0, 1.3, 0.5, 1.3), no);
   }
   return B.build().get('t')!;
 }
@@ -256,6 +257,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
       const mesh = makeInstanced(rockGeometry(v * 7.3 + 1), barkMaterial, list, shadows);
       if (mesh) out.push(mesh);
     }
+    const pave0 = { cell: 0, grain: 0, scale: 1 };
     // Bushes from data.
     const bushLists = new Map<string, Inst[]>();
     const pushB = (key: string, it: Inst) => {
@@ -263,9 +265,14 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
       if (!l) bushLists.set(key, (l = []));
       l.push(it);
     };
+    const sqC = getLocation('town_square').center;
     BUSHES.forEach((b, idx) => {
       const y = terrainHeight(b.position.x, b.position.z);
       if (y < 0.05 && b.kind !== 'reeds') return;
+      // Decorative only: keep plazas, paths and terraces clear.
+      if (Math.hypot(b.position.x - sqC.x, b.position.z - sqC.z) < 13.2) return;
+      groundColor(b.position.x, b.position.z, y, tmpC, pave0);
+      if (pave0.cell > 0.25 || pathDist(b.position.x, b.position.z) < 0.4) return;
       const s = b.scale;
       const m = T(b.position.x, Math.max(y, -0.2) - 0.03, b.position.z, rnd() * 6.28, 0, 0, s, s * (0.85 + rnd() * 0.3), s);
       const key = b.kind === 'flowers' ? `flowers${idx % 4}` : `${b.kind}${idx % 2}`;
@@ -277,7 +284,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
     const square = getLocation('town_square');
     const unknown = getLocation('the_unknown');
     const pave = { cell: 0, grain: 0, scale: 1 };
-    const tuftTarget = Math.round(2600 * density);
+    const tuftTarget = Math.round(1800 * density);
     const flowerTarget = Math.round(420 * density);
     const fernTarget = Math.round(160 * density);
     let tufts = 0;
@@ -309,10 +316,10 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
         flowers++;
         const s = 0.5 + rnd() * 0.45;
         pushB(`flowers${flowers % 4}`, { m: T(x, h - 0.02, z, rnd() * 6.28, 0, 0, s), c: jitterColor(rnd, 0.1, 0.02) });
-      } else if (tufts < tuftTarget && (clump > 0.38 || rnd() < 0.35)) {
+      } else if (tufts < tuftTarget && (clump > 0.48 || rnd() < 0.15)) {
         tufts++;
         const s = 0.8 + rnd() * 0.9;
-        const c = tmpC.clone().multiplyScalar(1.02 + rnd() * 0.12);
+        const c = tmpC.clone().multiplyScalar(1.18 + rnd() * 0.14);
         pushB(`tuft${tufts % 3}`, { m: T(x, h - 0.02, z, rnd() * 6.28, 0, 0, s, s * (0.8 + rnd() * 0.6), s), c });
       }
     }

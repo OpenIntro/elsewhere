@@ -96,7 +96,7 @@ describe('interactables', () => {
     expect(count('pickup')).toBeGreaterThanOrEqual(4);
     expect(INTERACTABLES.filter((i) => i.kind === 'hidden' && i.locationId === 'woods').length).toBeGreaterThanOrEqual(4);
     expect(count('portal')).toBe(1);
-    expect(count('rune')).toBe(CONFIG.collective.portalRunesRequired);
+    expect(count('rune')).toBeGreaterThanOrEqual(CONFIG.collective.portalRunesRequired);
     expect(DECKS.some((d) => d.kind === 'dock')).toBe(true);
     for (const b of BUILDINGS) expect(getInteractable(b.doorId)?.kind).toBe('door');
     const signs = INTERACTABLES.filter((i) => i.kind === 'sign');

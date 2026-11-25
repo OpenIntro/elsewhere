@@ -602,8 +602,14 @@ export function buildUnknownStatics(B: GeoBuilder): void {
     B.at(T(s.position.x, g, s.position.z, s.yaw), () => {
       B.add('solid', ico(s.radius * 1.2, 1), '#7e7a70', T(0, 0.1, 0, 0, 0, 0, 1.1, 0.35, 0.9), { grad: 0.2 });
       B.at(T(0, 0, 0, 0, s.lean, s.lean * 0.6), () => {
-        B.add('solid', rbox(s.radius * 1.5, s.height, s.radius * 0.95, 0.22, 3), '#9a958a', T(0, s.height / 2, 0), { grad: 0.35 });
-        B.add('solid', rbox(s.radius * 1.62, 0.34, s.radius * 1.05, 0.14), '#8a867b', T(0, s.height * 0.62, 0, 0.05), { grad: 0.1 });
+        // monolith: broad base tapering to a weathered, tilted crown
+        B.add('solid', rbox(s.radius * 1.6, s.height * 0.62, s.radius * 1.0, 0.26, 2), '#98938a', T(0, s.height * 0.31, 0), { grad: 0.35 });
+        B.add('solid', rbox(s.radius * 1.38, s.height * 0.5, s.radius * 0.9, 0.24, 2), '#a19c91', T(0.03, s.height * 0.7, 0, 0.06, 0, 0.03), { grad: 0.2 });
+        B.add('solid', rbox(s.radius * 1.1, s.height * 0.16, s.radius * 0.8, 0.12), '#aaa598', T(-0.05, s.height * 0.97, 0.02, 0.1, 0.05, -0.08));
+        // lichen + carved spiral
+        for (let k = 0; k < 4; k++) B.add('solid', sphere(0.12 + (k % 2) * 0.06, 6, 4), k % 2 ? '#b9c08a' : '#c9c79a', T((k - 1.5) * 0.18, s.height * (0.25 + k * 0.17), s.radius * 0.5, 0, 0, 0, 1, 1, 0.25), { ao: false });
+        B.add('solid', torus(0.16, 0.025, 4, 14, Math.PI * 1.6), '#7f7a70', T(0, s.height * 0.5, s.radius * 0.47), { ao: false });
+        B.add('solid', torus(0.08, 0.022, 4, 10, Math.PI * 1.4), '#7f7a70', T(0.02, s.height * 0.5, s.radius * 0.48, 0, 0, 1.2), { ao: false });
         B.add('plant', sphere(s.radius * 0.6, 8, 6), '#6f8a4c', T(s.radius * 0.3, s.height - 0.05, 0, 0, 0, 0, 1.2, 0.35, 1));
         B.add('plant', sphere(s.radius * 0.45, 8, 6), '#7d9a55', T(-s.radius * 0.5, 0.25, s.radius * 0.3, 0, 0, 0, 1.2, 0.6, 1));
         if (s.id === 'standing_stone_4') {
@@ -612,6 +618,29 @@ export function buildUnknownStatics(B: GeoBuilder): void {
         }
       });
     });
+  }
+  // ruins: a toppled stone, lintel fragments and a ring of kerb stones around the flagstones
+  const U = { x: -10, z: -61 };
+  const ruins: [number, number, number][] = [[-3.2, -66.0, 0.6], [-16.6, -66.4, 2.1], [-4.0, -57.2, 1.2]];
+  ruins.forEach(([x, z, yaw], k) => {
+    const g = terrainHeight(x, z);
+    B.at(T(x, g, z, yaw), () => {
+      if (k === 0) {
+        B.add('solid', rbox(0.9, 0.7, 2.6, 0.24), '#98938a', T(0, 0.3, 0, 0, 0.05, 0.08), { grad: 0.3 });
+        B.add('plant', sphere(0.4, 8, 6), '#7d9a55', T(0.2, 0.62, 0.4, 0, 0, 0, 1.4, 0.35, 1.8));
+      } else {
+        B.add('solid', rbox(1.3, 0.5, 0.6, 0.14), '#a19c91', T(0, 0.2, 0, 0.3, 0.1, 0.12), { grad: 0.3 });
+        B.add('solid', rbox(0.6, 0.4, 0.5, 0.12), '#98938a', T(0.9, 0.15, 0.4, 1.0, 0.2, 0), { grad: 0.3 });
+      }
+    });
+  });
+  for (let k = 0; k < 28; k++) {
+    const a = (k / 28) * Math.PI * 2;
+    const x = U.x + Math.cos(a) * 6.0;
+    const z = U.z + Math.sin(a) * 6.0;
+    const g = terrainHeight(x, z);
+    if (k % 7 === 3) continue; // gaps worn by feet
+    B.add('solid', rbox(0.9, 0.16, 0.4, 0.07), k % 2 ? '#a8a597' : '#9a958a', T(x, g + 0.03, z, -a + Math.PI / 2, 0, 0.04 * Math.sin(k * 3)), { jitter: 0.08 });
   }
   // portal pillars + dais
   const [a, b] = archPillars();

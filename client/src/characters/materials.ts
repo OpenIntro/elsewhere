@@ -50,6 +50,8 @@ function makeToyMaterial(name: string, o: ToyMaterialOptions): MeshStandardMater
           vec3 vdir = isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(vViewPosition);
           float fr = pow(1.0 - saturate(dot(normalize(normal), vdir)), uRimPower);
           outgoingLight += uRimColor * fr * uRimStrength * (0.6 + 0.4 * diffuseColor.rgb);
+          // Small self-lit floor so the toys stay readable at night / in deep shade.
+          outgoingLight = max(outgoingLight, diffuseColor.rgb * 0.16);
         }
         #include <opaque_fragment>`,
       );
@@ -61,10 +63,10 @@ function makeToyMaterial(name: string, o: ToyMaterialOptions): MeshStandardMater
 
 export const TOY_MATERIALS = {
   player: makeToyMaterial('toy-player', { roughness: 0.74, rimColor: '#fff1dc', rimStrength: 0.16, rimPower: 2.6 }),
-  playerHighlight: makeToyMaterial('toy-player-hl', { roughness: 0.74, rimColor: '#ffd27a', rimStrength: 0.95, rimPower: 1.7, emissive: '#1c1206' }),
+  playerHighlight: makeToyMaterial('toy-player-hl', { roughness: 0.74, rimColor: '#ffd27a', rimStrength: 0.85, rimPower: 2.6, emissive: '#120b04' }),
   // NPCs: glazed-ceramic finish (glossier, cooler sheen, a touch desaturated).
   npc: makeToyMaterial('toy-npc', { roughness: 0.32, rimColor: '#cfe6ff', rimStrength: 0.42, rimPower: 2.2, saturation: 0.82 }),
-  npcHighlight: makeToyMaterial('toy-npc-hl', { roughness: 0.32, rimColor: '#ffd27a', rimStrength: 1.0, rimPower: 1.7, saturation: 0.82, emissive: '#1c1206' }),
+  npcHighlight: makeToyMaterial('toy-npc-hl', { roughness: 0.32, rimColor: '#ffd27a', rimStrength: 0.9, rimPower: 2.6, saturation: 0.82, emissive: '#120b04' }),
 } as const;
 
 export type CharacterVariant = 'player' | 'npc';

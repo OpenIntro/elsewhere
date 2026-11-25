@@ -18,6 +18,11 @@ import { Chat, Hud, Onboarding, Wordmark, enter, hasSavedSession, installUiBridg
  */
 let flowStarted = false;
 
+/** Shown once the arrival veil has lifted. */
+function welcomeBack(name: string): void {
+  setTimeout(() => toasts.push({ level: 'info', text: name ? `Welcome back, ${name}.` : 'Welcome back.', ttlMs: 5000 }), 1100);
+}
+
 function startFlow(setResumeError: (msg: string | null) => void): void {
   if (flowStarted) return;
   flowStarted = true;
@@ -38,7 +43,7 @@ function startFlow(setResumeError: (msg: string | null) => void): void {
     .then((name) => {
       if (name === null) return ui.setPhase('onboarding');
       ui.setPhase('playing');
-      toasts.push({ level: 'info', text: name ? `Welcome back, ${name}.` : 'Welcome back.', ttlMs: 4200 });
+      welcomeBack(name);
     })
     .catch((err: unknown) => setResumeError(err instanceof Error ? err.message : 'Couldn’t reach the island.'));
 }
@@ -98,8 +103,7 @@ export function App() {
     await enter(req);
     useUiStore.getState().setPhase('playing');
     if (req.mode === 'login') {
-      const name = useGameStore.getState().profile?.name;
-      toasts.push({ level: 'info', text: name ? `Welcome back, ${name}.` : 'Welcome back.', ttlMs: 4200 });
+      welcomeBack(useGameStore.getState().profile?.name ?? '');
     }
   };
 

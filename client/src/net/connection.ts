@@ -54,6 +54,8 @@ function serverEndpoint(): string {
 }
 
 const ALL_S2C = Object.values(S2C) as S2CType[];
+/** Close code the server uses for kick / ban (see server moderation). */
+const KICK_CLOSE_CODE = 4003;
 
 /** Network-level / server-unavailable failures worth retrying (not protocol mismatch, bans, bad input). */
 function isTransient(err: unknown): boolean {
@@ -164,7 +166,7 @@ export class NetClient {
       if (isRejoin) this.stats.rejoins++;
       store.setSession(room.sessionId, session.profile);
       store.setConnection('connected');
-      useGameStore.setState({ reconnectAttempt: 0 });
+      useGameStore.setState({ reconnectAttempt: 0, kicked: null });
       this.emitLifecycle('joined');
     } catch (err) {
       if (isRejoin) {
@@ -353,7 +355,7 @@ export class NetClient {
     const onPatch = (state: WorldStateView) => {
       this.stats.patches++;
       snap.t = performance.now();
-      state.players.forEach((p, id) => {
+      state.players?.forEach((p, id) => {
         if (id === local) return;
         const r = runtime.remotes.get(id);
         if (!r) return;
@@ -380,12 +382,35 @@ export class NetClient {
       useGameStore.setState({ reconnectAttempt: 0 });
       this.emitLifecycle('resumed');
     });
+    // Kick / ban: the server sends a `kicked` notice, then closes with 4003. Never auto-reconnect after that.
+    let kickedText: string | null = null;
+    this.detach.push(
+      this.on(S2C.notice, (n) => {
+        if (n.code === 'kicked') kickedText = n.text || 'You were removed from the island.';
+      }),
+    );
+    let wasLive = true;
+    room.onDrop(() => {
+      wasLive = false;
+    });
+    room.onReconnect(() => {
+      wasLive = true;
+    });
     room.onLeave((code) => {
       if (this.room !== room) return;
       this.unbind();
       this.emitLifecycle('left');
       if (this.intentionalLeave) {
         store().setConnection('disconnected', `left (${code})`);
+        return;
+      }
+      // 4003 is also the SDK's own "failed to reconnect" code; it means a kick only when it arrives
+      // on a live connection (or after the kicked notice).
+      if (code === KICK_CLOSE_CODE && (kickedText !== null || wasLive)) {
+        this.intentionalLeave = true;
+        console.warn('[net] removed by the server (kick/ban); not reconnecting');
+        store().setConnection('disconnected', 'kicked');
+        useGameStore.setState({ kicked: { reason: kickedText ?? 'You were removed from the island.', at: Date.now() } });
         return;
       }
       // Server restart / failed automatic reconnection / kicked by a crash: rejoin fresh.

@@ -14,6 +14,9 @@ import type { Appearance, DiscoveryId, GazetteIssue, ItemId, MailNote, Persisten
 import { openDb, type Db, type DbOptions } from './db.js';
 import { migrate } from './migrations.js';
 
+/** The single world instance for now; more can be added by id (all world tables carry world_id). */
+export const DEFAULT_WORLD_ID = 'default';
+
 export interface StoredProfile {
   id: string;
   kind: 'guest' | 'registered';
@@ -161,7 +164,10 @@ export interface PersistenceService {
   sessions: SessionRepository;
   events: WorldEventRepository;
   gazette: GazetteRepository;
+  /** The default world instance's state (= forWorld(DEFAULT_WORLD_ID)). */
   worldState: WorldStateRepository;
+  /** State of a specific world instance. */
+  forWorld(worldId: string): WorldStateRepository;
   mail: MailRepository;
   reports: ReportRepository;
   relations: RelationRepository;
@@ -415,55 +421,59 @@ export function createPersistence(opts: PersistenceOptions = { dataDir: 'memory:
     },
   };
 
-  const worldState: WorldStateRepository = {
-    async load() {
-      return worldState.getKv<PersistentWorldState>('facts');
-    },
-    async save(s) {
-      await worldState.setKv('facts', s);
-    },
-    async getKv<T>(key: string) {
-      const r = (await q('SELECT value FROM world_kv WHERE key = $1', [key]))[0];
-      return r ? parsed<T | null>(r.value, null) : null;
-    },
-    async setKv(key, value) {
-      await w('INSERT INTO world_kv (key, value, updated_at) VALUES ($1,$2,$3) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at', [
-        key,
-        json(value),
-        Date.now(),
-      ]);
-    },
-    async addToSet(setName, member) {
-      const rows = await w('INSERT INTO world_sets (set_name, member, added_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING member', [setName, member, Date.now()]);
-      return rows.length > 0;
-    },
-    async hasInSet(setName, member) {
-      return (await q('SELECT 1 FROM world_sets WHERE set_name = $1 AND member = $2', [setName, member])).length > 0;
-    },
-    async setSize(setName) {
-      const rows = await q<{ n: unknown }>('SELECT COUNT(*) AS n FROM world_sets WHERE set_name = $1', [setName]);
-      return num(rows[0]?.n);
-    },
-    async setMembers(setName, limit) {
-      return (await q<{ member: string }>('SELECT member FROM world_sets WHERE set_name = $1 ORDER BY added_at ASC LIMIT $2', [setName, limit])).map((r) => r.member);
-    },
-    async loadObjects() {
-      return (await q('SELECT * FROM object_states')).map((r) => ({
-        id: String(r.id),
-        active: Boolean(r.active),
-        value: num(r.value),
-        data: parsed<Record<string, unknown>>(r.data, {}),
-        updatedAt: num(r.updated_at),
-      }));
-    },
-    async saveObject(s) {
-      await w(
-        `INSERT INTO object_states (id, active, value, data, updated_at) VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (id) DO UPDATE SET active = EXCLUDED.active, value = EXCLUDED.value, data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-        [s.id, s.active, s.value, json(s.data), s.updatedAt],
-      );
-    },
+  /** World-instance-scoped facts, kv, sets and object states (every row carries world_id). */
+  const forWorld = (worldId: string): WorldStateRepository => {
+    const repo: WorldStateRepository = {
+      async load() {
+        return repo.getKv<PersistentWorldState>('facts');
+      },
+      async save(st) {
+        await repo.setKv('facts', st);
+      },
+      async getKv<T>(key: string) {
+        const r = (await q('SELECT value FROM world_kv WHERE world_id = $1 AND key = $2', [worldId, key]))[0];
+        return r ? parsed<T | null>(r.value, null) : null;
+      },
+      async setKv(key, value) {
+        await w(
+          'INSERT INTO world_kv (world_id, key, value, updated_at) VALUES ($1,$2,$3,$4) ON CONFLICT (world_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at',
+          [worldId, key, json(value), Date.now()],
+        );
+      },
+      async addToSet(setName, member) {
+        const rows = await w('INSERT INTO world_sets (world_id, set_name, member, added_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING member', [worldId, setName, member, Date.now()]);
+        return rows.length > 0;
+      },
+      async hasInSet(setName, member) {
+        return (await q('SELECT 1 FROM world_sets WHERE world_id = $1 AND set_name = $2 AND member = $3', [worldId, setName, member])).length > 0;
+      },
+      async setSize(setName) {
+        const rows = await q<{ n: unknown }>('SELECT COUNT(*) AS n FROM world_sets WHERE world_id = $1 AND set_name = $2', [worldId, setName]);
+        return num(rows[0]?.n);
+      },
+      async setMembers(setName, limit) {
+        return (await q<{ member: string }>('SELECT member FROM world_sets WHERE world_id = $1 AND set_name = $2 ORDER BY added_at ASC LIMIT $3', [worldId, setName, limit])).map((r) => r.member);
+      },
+      async loadObjects() {
+        return (await q('SELECT * FROM object_states WHERE world_id = $1', [worldId])).map((r) => ({
+          id: String(r.id),
+          active: Boolean(r.active),
+          value: num(r.value),
+          data: parsed<Record<string, unknown>>(r.data, {}),
+          updatedAt: num(r.updated_at),
+        }));
+      },
+      async saveObject(o) {
+        await w(
+          `INSERT INTO object_states (world_id, id, active, value, data, updated_at) VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (world_id, id) DO UPDATE SET active = EXCLUDED.active, value = EXCLUDED.value, data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
+          [worldId, o.id, o.active, o.value, json(o.data), o.updatedAt],
+        );
+      },
+    };
+    return repo;
   };
+  const worldState = forWorld(DEFAULT_WORLD_ID);
 
   const mail: MailRepository = {
     async add(n) {
@@ -560,6 +570,7 @@ export function createPersistence(opts: PersistenceOptions = { dataDir: 'memory:
     events,
     gazette,
     worldState,
+    forWorld,
     mail,
     reports,
     relations,

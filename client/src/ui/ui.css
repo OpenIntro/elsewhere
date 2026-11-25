@@ -555,7 +555,7 @@ kbd {
 }
 .customize--panel .customize__panel { background: transparent; border: 0; box-shadow: none; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .customize--panel .customize__stage { min-height: 320px; }
-.customize__options { display: flex; flex-direction: column; gap: 18px; overflow-y: auto; min-height: 0; flex: 1; padding: 2px 2px 4px; scrollbar-width: thin; }
+.customize__options { display: flex; flex-direction: column; gap: 18px; overflow-y: auto; min-height: 0; flex: 1; padding: 2px 2px 18px; scrollbar-width: thin; -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); }
 .customize__actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
 .customize__actions .btn--primary { min-width: 140px; }
 .slot { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -565,7 +565,7 @@ kbd {
 /* ==========================================================================
    HUD
    ========================================================================== */
-.hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+.hud { position: fixed; inset: 0; z-index: 25; pointer-events: none; } /* above the touch joystick (z 20) so sheets cover it */
 .hud > * { pointer-events: auto; }
 
 .reveal {
@@ -1092,7 +1092,7 @@ kbd {
 .issue-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
 /* Timeline (World Memory) */
-.timeline { display: flex; flex-direction: column; gap: 18px; padding: 4px 4px 0; }
+.timeline { display: flex; flex-direction: column; gap: 18px; padding: 4px 4px 0; width: 100%; max-width: 680px; margin: 0 auto; }
 .timeline__date { margin: 0 0 8px; font: 600 15px/1.2 var(--font-display); color: var(--accent-2); display: flex; align-items: center; gap: 10px; }
 .timeline__date::after { content: ''; flex: 1; height: 1px; background: var(--glass-line); }
 .timeline__list { margin: 0; padding: 0 0 0 4px; list-style: none; }
@@ -1112,7 +1112,7 @@ kbd {
    ========================================================================== */
 .chat {
   position: fixed;
-  z-index: 12;
+  z-index: 26;
   left: calc(var(--safe-l) + 16px);
   bottom: calc(var(--safe-b) + 16px);
   width: 384px;
@@ -1197,7 +1197,7 @@ kbd {
 
 .chat-peek {
   position: fixed;
-  z-index: 11;
+  z-index: 24;
   left: calc(var(--safe-l) + 18px);
   bottom: calc(var(--safe-b) + 22px);
   display: flex;
@@ -1308,7 +1308,7 @@ kbd {
 
   .onboard, .loading { padding-left: calc(var(--safe-l) + 14px); padding-right: calc(var(--safe-r) + 14px); }
   .card { padding: 22px 18px; border-radius: 22px; }
-  .auth-choice__row { flex-direction: column-reverse; }
+  .auth-choice__row { flex-direction: column; }
   .intro__choices { padding-bottom: 2vh; }
   .onboard__customize { gap: 10px; }
   .customize--screen, .customize--panel { grid-template-columns: 1fr; grid-template-rows: auto auto; gap: 10px; }
@@ -1319,13 +1319,16 @@ kbd {
   .customize__actions { position: sticky; bottom: 0; padding: 10px 0 calc(var(--safe-b) + 2px); margin: 0 -14px -14px; padding-inline: 14px; background: linear-gradient(180deg, transparent, rgba(29, 24, 20, 0.96) 30%); border-radius: 0 0 22px 22px; }
   .customize--panel .customize__actions { margin: 0; padding-inline: 0; background: linear-gradient(180deg, transparent, rgba(29, 24, 20, 0.98) 30%); }
   .customize__actions .btn { flex: 1; }
-  .camctl { top: auto; bottom: calc(var(--hud-bottom) + 70px); transform: none; }
-  .hint { bottom: calc(var(--hud-bottom) + 70px); border-radius: 20px; }
+  .camctl { top: calc(var(--hud-top) + 52px); transform: none; gap: 6px; }
+  .hint { bottom: calc(var(--hud-bottom) + 176px); border-radius: 20px; }
   .placecard { top: 20%; }
   .pcard { grid-template-columns: 112px 1fr; }
   .pcard__preview { height: 136px; }
 }
 
+@media (max-width: 440px) {
+  .pill--clock .pill__item + .pill__sep + .pill__item .pill__label { display: none; }
+}
 @media (max-width: 380px) {
   .hide-xs { display: none !important; }
   .nav__label { display: none; }
@@ -1366,6 +1369,10 @@ kbd {
   .chat { left: calc(var(--safe-l) + 8px); right: auto; top: 8px; bottom: 8px; width: min(400px, 52vw); height: auto; border-radius: 20px; border-bottom: 1px solid var(--glass-line); padding-bottom: 0; }
   .kb-open .chat { bottom: calc(var(--kb) + 4px); height: auto; }
   .chat-peek { bottom: calc(var(--hud-bottom) + 10px); left: calc(var(--safe-l) + 12px); right: auto; max-width: 40vw; }
+  .onboard { padding-top: calc(var(--safe-t) + 8px); padding-bottom: calc(var(--safe-b) + 8px); }
+  .onboard__steps { display: none; }
+  .customize--screen .customize__panel { height: calc(100dvh - var(--safe-t) - var(--safe-b) - 16px); padding: 12px; gap: 10px; }
+  .customize .tabs button { min-height: 36px; }
   .customize--screen, .customize--panel { grid-template-columns: 0.8fr 1.2fr; grid-template-rows: none; }
   .customize--screen .customize__stage, .customize--panel .customize__stage { height: auto; min-height: 220px; }
   .customize__options { overflow-y: auto; }

@@ -268,9 +268,22 @@ export const audio: AudioManager & { resumeSystems(): void; readonly mix: Ambien
 declare global {
   interface Window {
     /** Read-only audio debug accessor (tests / manual inspection). */
-    __ELSEWHERE_AUDIO__?: { debug(): AudioDebugInfo; gainFor(c: VolumeChannel): number; mix(): AmbienceMix | null };
+    __ELSEWHERE_AUDIO__?: {
+      debug(): AudioDebugInfo;
+      gainFor(c: VolumeChannel): number;
+      mix(): AmbienceMix | null;
+      /** Test helpers (same effect as the settings UI / any game code calling audio). */
+      settings(): ReturnType<typeof useSettingsStore.getState>;
+      playSfx(name: SfxName, position?: Vec3): void;
+    };
   }
 }
 if (typeof window !== 'undefined') {
-  window.__ELSEWHERE_AUDIO__ = { debug: () => manager.debug(), gainFor: (c) => manager.gainFor(c), mix: () => manager.mix };
+  window.__ELSEWHERE_AUDIO__ = {
+    debug: () => manager.debug(),
+    gainFor: (c) => manager.gainFor(c),
+    mix: () => manager.mix,
+    settings: () => useSettingsStore.getState(),
+    playSfx: (name, position) => manager.playSfx(name, position),
+  };
 }
