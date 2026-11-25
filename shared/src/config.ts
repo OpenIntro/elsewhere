@@ -93,6 +93,10 @@ export const CONFIG = {
     build: { capacity: 8, refillPerSecond: 2 },
     /** "Unstuck" teleport to the Town Square. */
     unstuck: { capacity: 1, refillPerSecond: 1 / 30 },
+    /** Building activity actions (order, pin, vote, sign, take…). */
+    activity: { capacity: 6, refillPerSecond: 1.5 },
+    /** Café piano notes (a quick run of notes is fine; a flood is not). */
+    piano: { capacity: 16, refillPerSecond: 8 },
   } satisfies Record<string, RateLimitRule>,
 
   clock: {
@@ -179,6 +183,53 @@ export const CONFIG = {
   profile: {
     displayNameMin: 2,
     displayNameMax: 20,
+  },
+
+  /**
+   * Building activities (shared/src/activities.ts is the rulebook; server/src/activities enforces).
+   * Server env overrides are listed in README ("Environment variables").
+   */
+  activities: {
+    /** A café drink lasts this long in hand (env DRINK_MINUTES) … */
+    drinkDurationMs: 4 * 60_000,
+    /** … or this many sips. */
+    drinkSips: 6,
+    /** One order per profile per this long. */
+    drinkCooldownMs: 20_000,
+    sipCooldownMs: 1_500,
+    /** Curiosities a profile may take from the store per world-day (env STORE_TAKES_PER_DAY). */
+    storeTakesPerDay: 1,
+    /** Notice board (env NOTICE_*). */
+    noticeMaxLength: 160,
+    noticeMaxPerProfile: 2,
+    noticeExpiryMs: 72 * 60 * 60_000,
+    noticeMaxVisible: 24,
+    /** Guest books / tide log: one signature per profile per book per world-day. */
+    guestbookMaxLength: 120,
+    guestbookMaxVisible: 30,
+    /** World-days per town poll (env POLL_PERIOD_DAYS). */
+    pollPeriodDays: 1,
+    /**
+     * Workshop town project: per stage, contributions needed and DISTINCT contributors needed
+     * (env WORKSHOP_STAGE_CONTRIBUTIONS / WORKSHOP_STAGE_DISTINCT; one entry per stage).
+     */
+    projectStageContributions: [6, 10, 14] as readonly number[],
+    projectStageDistinct: [2, 3, 4] as readonly number[],
+    /** Contributions one profile may make per world-day (env WORKSHOP_DAILY_CONTRIBUTIONS). */
+    projectDailyPerProfile: 3,
+    /** Seconds between one profile's contributions. */
+    projectCooldownMs: 4_000,
+    /** A lit hearth burns this long (env HEARTH_MINUTES). */
+    hearthBurnMs: 20 * 60_000,
+    /** Kettle: time to boil, then it stays "ready" this long. */
+    kettleBoilMs: 18_000,
+    kettleReadyMs: 90_000,
+    /** Boathouse nets: sections per net (env NET_SECTIONS); one mend per profile per world-day. */
+    netSections: 5,
+    /** Café piano / stage: heard / carried this far outside the café walls. */
+    pianoHearingRadius: 22,
+    /** World Memory throttle for small repeatable things (piano, hearth). */
+    memoryThrottleMs: 10 * 60_000,
   },
 
   /** Player building (shared/src/building.ts is the rulebook; the server enforces, the client previews). */

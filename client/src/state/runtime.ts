@@ -82,13 +82,24 @@ export interface ViewRuntime {
   free: boolean;
 }
 
+/** A keeper's authoritative pose (net/) and what the renderer drew (activities/Keepers). World characters, not players. */
+export interface KeeperRuntime {
+  x: number;
+  z: number;
+  rot: number;
+  render?: RemoteRenderState;
+}
+
 export const runtime = {
   localPlayer: { ready: false, x: 0, y: 0, z: 0, rot: 0, anim: 'idle', seq: 0, lastCorrectionAt: 0 } as LocalPlayerRuntime,
   remotes: new Map<string, RemoteRuntime>(),
+  /** Keepers (activities.ts): positions from room state, NOT players (never in `remotes`). */
+  keepers: new Map<string, KeeperRuntime>(),
   view: { focusX: 0, focusY: 0, focusZ: 0, yaw: Math.PI / 4, zoom: 38, halfWidth: 12, halfHeight: 8, free: false } as ViewRuntime,
 };
 
 export function resetRuntime(): void {
   Object.assign(runtime.localPlayer, { ready: false, x: 0, y: 0, z: 0, rot: 0, anim: 'idle', seq: 0, lastCorrectionAt: 0 });
   runtime.remotes.clear();
+  runtime.keepers.clear();
 }

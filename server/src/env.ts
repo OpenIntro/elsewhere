@@ -80,8 +80,23 @@ export const ENV = {
       refillPerSecond: Math.max(0.01, num('BUILD_RATE_PER_SECOND', CONFIG.rateLimits.build.refillPerSecond)),
     },
   },
+  /** Building activities (defaults in CONFIG.activities). */
+  activities: {
+    drinkDurationMs: Math.max(0.1, num('DRINK_MINUTES', CONFIG.activities.drinkDurationMs / 60_000)) * 60_000,
+    storeTakesPerDay: Math.max(1, Math.round(num('STORE_TAKES_PER_DAY', CONFIG.activities.storeTakesPerDay))),
+    noticeMaxPerProfile: Math.max(1, Math.round(num('NOTICE_MAX_PER_PLAYER', CONFIG.activities.noticeMaxPerProfile))),
+    noticeExpiryMs: Math.max(0.01, num('NOTICE_EXPIRY_HOURS', CONFIG.activities.noticeExpiryMs / 3_600_000)) * 3_600_000,
+    pollPeriodDays: Math.max(1, Math.round(num('POLL_PERIOD_DAYS', CONFIG.activities.pollPeriodDays))),
+    projectStageContributions: numList('WORKSHOP_STAGE_CONTRIBUTIONS', CONFIG.activities.projectStageContributions),
+    projectStageDistinct: numList('WORKSHOP_STAGE_DISTINCT', CONFIG.activities.projectStageDistinct),
+    projectDailyPerProfile: Math.max(1, Math.round(num('WORKSHOP_DAILY_CONTRIBUTIONS', CONFIG.activities.projectDailyPerProfile))),
+    hearthBurnMs: Math.max(0.1, num('HEARTH_MINUTES', CONFIG.activities.hearthBurnMs / 60_000)) * 60_000,
+    netSections: Math.max(1, Math.round(num('NET_SECTIONS', CONFIG.activities.netSections))),
+  },
   version: process.env.npm_package_version ?? '0.1.0',
 } as const;
+
+export type ActivityTunables = (typeof ENV)['activities'];
 
 export type BuildingTunables = (typeof ENV)['building'];
 

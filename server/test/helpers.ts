@@ -4,11 +4,12 @@
  * manual timers. No network.
  */
 import { CONFIG, SYNCED_INTERACTABLES, createCollisionWorld, getInteractable, groundHeight, worldTimeAt, type CollisionWorld, type S2CPayloads, type S2CType } from '@elsewhere/shared';
+import { createActivities, type ActivityService } from '../src/activities/index.js';
 import { newGuestProfile } from '../src/auth/index.js';
 import { createBuilding, type BuildingOptions, type BuildingService } from '../src/building/index.js';
 import { createChat, type ChatService } from '../src/chat/index.js';
 import { createCollective, type CollectiveService } from '../src/collective/index.js';
-import type { CollectiveTunables } from '../src/env.js';
+import type { ActivityTunables, CollectiveTunables } from '../src/env.js';
 import { createInteractions, type InteractionService } from '../src/interactions/index.js';
 import { createMemory, type MemoryService } from '../src/memory/index.js';
 import { createModeration, RateLimiter, type ModerationService } from '../src/moderation/index.js';
@@ -26,6 +27,19 @@ export const TEST_TUNABLES: CollectiveTunables = {
   portalAwakeMs: 60_000,
   bellChorusPlayers: 3,
   gatheringThreshold: 6,
+};
+
+export const TEST_ACTIVITY_TUNABLES: ActivityTunables = {
+  drinkDurationMs: CONFIG.activities.drinkDurationMs,
+  storeTakesPerDay: 1,
+  noticeMaxPerProfile: 2,
+  noticeExpiryMs: CONFIG.activities.noticeExpiryMs,
+  pollPeriodDays: 1,
+  projectStageContributions: [3, 3],
+  projectStageDistinct: [2, 2],
+  projectDailyPerProfile: 3,
+  hearthBurnMs: CONFIG.activities.hearthBurnMs,
+  netSections: 3,
 };
 
 export interface Sent {
@@ -66,6 +80,7 @@ export interface World {
   memory: MemoryService;
   collective: CollectiveService;
   interactions: InteractionService;
+  activities: ActivityService;
   /** Only when makeWorld({ building }) was used. */
   building: BuildingService | undefined;
   /** This world's own collision world (static island + its dynamic layer; building writes into it). */
@@ -89,17 +104,31 @@ export interface World {
   close(): Promise<void>;
 }
 
-export async function makeWorld(opts: { persistence?: PersistenceService; tunables?: Partial<CollectiveTunables>; clock?: FakeClock; building?: Partial<BuildingOptions> | true } = {}): Promise<World> {
+export async function makeWorld(
+  opts: { persistence?: PersistenceService; tunables?: Partial<CollectiveTunables>; activityTunables?: Partial<ActivityTunables>; clock?: FakeClock; building?: Partial<BuildingOptions> | true; random?: () => number } = {},
+): Promise<World> {
   const clock = opts.clock ?? new FakeClock();
   const persistence = opts.persistence ?? createPersistence({ dataDir: 'memory://' });
   await persistence.init();
   const moderation = createModeration(persistence, { now: clock.now, rateLimiter: new RateLimiter(CONFIG.rateLimits, clock.now) });
-  const chat = createChat(moderation);
+  let activitiesRef: ActivityService | null = null;
+  const chat = createChat(moderation, { reach: (ctx, sid) => activitiesRef?.chatReach(ctx, sid) ?? null });
   const memory = createMemory(persistence);
   const collective = createCollective(persistence, memory, { tunables: { ...TEST_TUNABLES, ...opts.tunables }, dayLengthMs: DAY_MS, now: clock.now });
   await collective.load();
   const interactions = createInteractions({ persistence, memory, collective, moderation, now: clock.now });
-  const hooks: RoomHooks[] = [moderation, chat, collective, interactions];
+  const activities = createActivities({
+    persistence,
+    memory,
+    moderation,
+    worldId: collective.worldId,
+    clock: () => ({ epochMs: collective.facts().clockEpochMs, dayLengthMs: DAY_MS }),
+    tunables: { ...TEST_ACTIVITY_TUNABLES, ...opts.activityTunables },
+    now: clock.now,
+    ...(opts.random ? { random: opts.random } : {}),
+  });
+  activitiesRef = activities;
+  const hooks: RoomHooks[] = [moderation, chat, collective, interactions, activities];
   const collision = createCollisionWorld();
   let building: BuildingService | undefined;
   if (opts.building) {
@@ -107,14 +136,14 @@ export async function makeWorld(opts: { persistence?: PersistenceService; tunabl
     await building.load();
     hooks.push(building);
   }
-  const services = { clock, persistence, moderation, chat, memory, collective, interactions, building, collision, hooks };
+  const services = { clock, persistence, moderation, chat, memory, collective, interactions, activities, building, collision, hooks };
   return openRoomWith(services, 'test');
 }
 
 let sessionCounter = 0;
 
 async function openRoomWith(
-  services: Pick<World, 'clock' | 'persistence' | 'moderation' | 'chat' | 'memory' | 'collective' | 'interactions' | 'building' | 'collision' | 'hooks'>,
+  services: Pick<World, 'clock' | 'persistence' | 'moderation' | 'chat' | 'memory' | 'collective' | 'interactions' | 'activities' | 'building' | 'collision' | 'hooks'>,
   roomId: string,
 ): Promise<World> {
   const { clock, persistence, collective, interactions, hooks } = services;
@@ -198,6 +227,7 @@ async function openRoomWith(
         p.x = it.position.x;
         p.z = it.position.z + 0.5;
       }
+      if (it.kind === 'station' || it.kind === 'keeper') return services.activities.interact(ctx, sid, it);
       return interactions.interact(ctx, sid, it, action === undefined ? { id } : { id, action });
     },
     received: (sid, type) => sent.filter((s) => s.to === sid && s.type === type).map((s) => s.payload),

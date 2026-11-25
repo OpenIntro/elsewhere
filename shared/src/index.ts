@@ -11,3 +11,4 @@ export * from './memory.js';
 export * from './collision.js';
 export * from './building.js';
 export * from './world/index.js';
+export * from './activities.js';

@@ -3,7 +3,16 @@
  * Written by net/ (from room state + messages); read everywhere.
  */
 import { create } from 'zustand';
-import type { Appearance, AnimState, ItemId, LocationId, ObjectStateView, ProfileSummary } from '@elsewhere/shared';
+import type { ActivityStateView, Appearance, AnimState, ItemId, LocationId, ObjectStateView, ProfileSummary } from '@elsewhere/shared';
+
+/** Low-frequency keeper info (positions live in runtime.keepers). Keepers are world characters, never players. */
+export interface KeeperInfo {
+  id: string;
+  present: boolean;
+  anim: string;
+  animSeq: number;
+  task: string;
+}
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
 
@@ -44,6 +53,12 @@ export interface GameState {
   reconnectAttempt: number;
   /** Set by net/ when the server kicked/banned this client (socket closed with 4003): no auto-reconnect. connection = 'disconnected', connectionError = 'kicked'. */
   kicked: { reason: string; at: number } | null;
+  /** Building keepers (NOT players: never counted, never in `players`). */
+  keepers: Record<string, KeeperInfo>;
+  /** Shared building-activity state (activities.ts ACTIVITY_KEYS). */
+  activities: Record<string, ActivityStateView>;
+  setKeeper(info: KeeperInfo): void;
+  setActivity(state: ActivityStateView): void;
 
   setConnection(status: ConnectionStatus, error?: string | null): void;
   setSession(sessionId: string | null, profile?: ProfileSummary | null): void;
@@ -71,6 +86,8 @@ const initial = {
   muted: [],
   reconnectAttempt: 0,
   kicked: null,
+  keepers: {} as Record<string, KeeperInfo>,
+  activities: {} as Record<string, ActivityStateView>,
 };
 
 export const useGameStore = create<GameState>()((set) => ({
@@ -92,6 +109,8 @@ export const useGameStore = create<GameState>()((set) => ({
       return { players: rest };
     }),
   setObject: (o) => set((s) => ({ objects: { ...s.objects, [o.id]: o } })),
+  setKeeper: (k) => set((s) => ({ keepers: { ...s.keepers, [k.id]: k } })),
+  setActivity: (a) => set((s) => ({ activities: { ...s.activities, [a.id]: a } })),
   setClock: (clock) => set((s) => ({ clock: { ...s.clock, ...clock } })),
   setWorld: (world) => set((s) => ({ world: { ...s.world, ...world } })),
   setLists: ({ blocked, muted }) => set((s) => ({ blocked: blocked ?? s.blocked, muted: muted ?? s.muted })),

@@ -29,7 +29,24 @@ export type WorldEventKind =
   /** A resident placed their very first building piece. */
   | 'first_build'
   /** A player-built structure (walls incl. a doorway) got its roof. */
-  | 'structure_roofed';
+  | 'structure_roofed'
+  // --- Building activities (server/src/activities) — always real players' actions ---
+  /** Someone played the café piano (throttled per player). */
+  | 'piano_played'
+  /** A notice was pinned on the Town Hall board (the text itself is never recorded here). */
+  | 'notice_pinned'
+  /** A town poll period ended with at least one real vote. */
+  | 'poll_closed'
+  /** The Workshop's town project reached a new stage. */
+  | 'project_stage'
+  /** A town project was finished; a permanent change appeared outside. */
+  | 'project_completed'
+  /** Someone lit a hearth in one of the homes (throttled). */
+  | 'hearth_lit'
+  /** Someone signed a guest book / the boathouse tide log (the text is never recorded here). */
+  | 'guestbook_signed'
+  /** A net was fully mended at the boathouse. */
+  | 'nets_mended';
 
 /** Who did it. profileId is stable across sessions; name is the display name at the time. */
 export interface EventActor {

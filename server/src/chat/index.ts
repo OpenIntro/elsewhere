@@ -8,7 +8,7 @@
  * cap → duplicate-spam check → block/mute delivery filters → deliver.
  */
 import { randomUUID } from 'node:crypto';
-import { CONFIG, S2C, extractMentions, type ChatMessage, type ChatPayload, type TypingPayload, type WhisperPayload } from '@elsewhere/shared';
+import { CONFIG, S2C, extractMentions, interiorAt, type ChatMessage, type ChatPayload, type TypingPayload, type WhisperPayload } from '@elsewhere/shared';
 import type { ModerationService } from '../moderation/index.js';
 import type { RoomContext, RoomHooks } from '../rooms/RoomContext.js';
 
@@ -25,7 +25,15 @@ export interface ChatService extends RoomHooks {
 let seq = 0;
 const newId = (ts: number) => `m_${ts.toString(36)}${(seq++ % 1296).toString(36).padStart(2, '0')}_${randomUUID().slice(0, 6)}`;
 
-export function createChat(moderation: ModerationService): ChatService {
+export interface ChatOptions {
+  /**
+   * Whose proximity chat carries through a whole building right now (the café stage, the
+   * Town Hall lectern): listeners inside that interior hear it whatever the distance.
+   */
+  reach?: (ctx: RoomContext, sessionId: string) => { interiorId: string; stage: 'cafe_stage' | 'hall_lectern' } | null;
+}
+
+export function createChat(moderation: ModerationService, options: ChatOptions = {}): ChatService {
   /** Global/system history per room instance (keyed by ctx.roomId). */
   const histories = new Map<string, ChatMessage[]>();
   const lastLines = new Map<string, { text: string; ts: number }[]>();
@@ -98,6 +106,8 @@ export function createChat(moderation: ModerationService): ChatService {
       const ts = ctx.now();
       const msg: ChatMessage = { id: newId(ts), channel, from: sessionId, fromProfileId: g.profileId, fromName: sender.name, text: g.text, ts, mentions: extractMentions(g.text) };
       const r2 = CONFIG.chat.proximityRadius * CONFIG.chat.proximityRadius;
+      const reach = channel === 'proximity' ? (options.reach?.(ctx, sessionId) ?? null) : null;
+      if (reach) msg.stage = reach.stage;
       ctx.broadcast(S2C.chat, msg, {
         filter: (sid) => {
           if (sid === sessionId) return true;
@@ -105,6 +115,7 @@ export function createChat(moderation: ModerationService): ChatService {
           if (channel === 'global') return true;
           const l = ctx.getPlayer(sid);
           if (!l) return false;
+          if (reach && interiorAt(l)?.id === reach.interiorId) return true;
           const dx = l.x - sender.x;
           const dz = l.z - sender.z;
           return dx * dx + dz * dz <= r2;

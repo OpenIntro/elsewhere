@@ -9,7 +9,8 @@
  */
 import { rotateOffset, yawFromDirection, type Vec2 } from '../math.js';
 import { BUILDINGS, buildingLocal, doorPosition, getBuilding, type Building } from './buildings.js';
-import { INTERIOR_SEATS, interiorAnchor, type InteriorSeatSpec } from './interiors.js';
+import { KEEPERS, STATIONS } from '../activities.js';
+import { INTERIOR_SEATS, getInterior, interiorAnchor, type InteriorSeatSpec } from './interiors.js';
 import type { DiscoveryId, ItemId } from './items.js';
 import type { LocationId } from './locations.js';
 
@@ -29,7 +30,11 @@ export type InteractableKind =
   | 'rune'
   | 'inspect'
   | 'newsstand'
-  | 'archive';
+  | 'archive'
+  /** A building activity (activities.ts STATIONS): piano, notice board, workbench, hearth… */
+  | 'station'
+  /** Talk to a building's keeper (a world character, never a player — activities.ts KEEPERS). */
+  | 'keeper';
 
 export interface Seat {
   /** Where the seated character's root is placed. */
@@ -90,6 +95,14 @@ export interface RuneInteractable extends Base<'rune'> {
   index: number;
 }
 export type SimpleInteractable = Base<'bell' | 'fountain' | 'portal' | 'newsstand' | 'archive'>;
+export interface StationInteractable extends Base<'station'> {
+  stationId: string;
+  interiorId: string;
+}
+export interface KeeperInteractable extends Base<'keeper'> {
+  keeperId: string;
+  interiorId: string;
+}
 
 export type Interactable =
   | SeatInteractable
@@ -101,7 +114,9 @@ export type Interactable =
   | PickupInteractable
   | HiddenInteractable
   | RuneInteractable
-  | SimpleInteractable;
+  | SimpleInteractable
+  | StationInteractable
+  | KeeperInteractable;
 
 // ---------------------------------------------------------------------------
 // Builders
@@ -259,6 +274,43 @@ const inside = (interior: string, anchor: string, toward = 0): Vec2 => {
   return add(a.position, rotateOffset(v(0, toward), a.yaw));
 };
 
+/** Building activities (activities.ts): stations on interior anchors. */
+const stations: StationInteractable[] = STATIONS.map((st) => {
+  const a = interiorAnchor(st.interiorId, st.anchor);
+  const interior = getInterior(st.interiorId)!;
+  return {
+    id: st.id,
+    kind: 'station',
+    name: st.name,
+    locationId: interior.locationId,
+    position: inside(st.interiorId, st.anchor, st.toward),
+    yaw: a.yaw + Math.PI,
+    prompt: st.prompt,
+    synced: false,
+    radius: st.radius,
+    stationId: st.id,
+    interiorId: st.interiorId,
+  };
+});
+/** Keepers: talked to across their counter / at their spot (the keeper walks around behind it). */
+const keepers: KeeperInteractable[] = KEEPERS.map((k) => {
+  const a = interiorAnchor(k.interiorId, k.talkAnchor);
+  const interior = getInterior(k.interiorId)!;
+  return {
+    id: k.interactableId,
+    kind: 'keeper',
+    name: `${k.name}, ${k.role.toLowerCase()}`,
+    locationId: interior.locationId,
+    position: inside(k.interiorId, k.talkAnchor, k.talkToward),
+    yaw: a.yaw + Math.PI,
+    prompt: `Talk to ${k.name}`,
+    synced: false,
+    radius: k.talkRadius,
+    keeperId: k.id,
+    interiorId: k.interiorId,
+  };
+});
+
 export const INTERACTABLES: readonly Interactable[] = [
   // --- Town Square -------------------------------------------------------
   {
@@ -288,8 +340,6 @@ export const INTERACTABLES: readonly Interactable[] = [
   inspect('inspect_cafe_window', 'Café window', 'cafe', front(cafe, 2.4, 0.2), cafe.yaw, 'Café window',
     'Through the glass: a chalkboard, a hissing espresso machine, and a cat asleep on a stack of newspapers.', 'Peek inside'),
 
-  inspect('inspect_cafe_piano', 'Upright piano', 'cafe', inside('cafe', 'piano', 0.75), interiorAnchor('cafe', 'piano').yaw + Math.PI, 'Upright piano',
-    'Slightly out of tune, lovingly so. Someone has pencilled "play me" above middle C.', 'Look at the piano'),
 
   // --- General Store ------------------------------------------------------
   { id: 'mailbox_post_office', kind: 'mailbox', name: 'Post Box', locationId: 'general_store', position: front(store, 3.6, 1.35), yaw: store.yaw, prompt: 'Use post box', synced: false, owner: 'public' },
@@ -305,8 +355,6 @@ export const INTERACTABLES: readonly Interactable[] = [
     'Seat of no government in particular.\nThe bell may be rung by anyone, at any hour, for any reason.\nThe archive inside records everything the island remembers.'),
   lantern('lantern_hall_left', 'town_hall', front(hall, -2.65, 0.8), 2.4, 'Hall lamp'),
   lantern('lantern_hall_right', 'town_hall', front(hall, 2.65, 0.8), 2.4, 'Hall lamp'),
-  inspect('inspect_hall_notices', 'Notice board', 'town_hall', inside('town_hall', 'notice_board', 0.6), interiorAnchor('town_hall', 'notice_board').yaw + Math.PI, 'Hall notices',
-    'MEETINGS: whenever enough people turn up.\nAGENDA: 1. the bell rope is fraying  2. who keeps leaving acorns on the stump  3. the arch.\nAll are welcome. Chairs are first come, first sat.', 'Read the notices'),
 
   // --- Workshop -----------------------------------------------------------
   inspect('inspect_workbench', 'Workbench', 'workshop', inside('workshop', 'workbench_1', 0.45), interiorAnchor('workshop', 'workbench_1').yaw + Math.PI, 'Workbench',
@@ -371,6 +419,8 @@ export const INTERACTABLES: readonly Interactable[] = [
 
   // --- Indoors ------------------------------------------------------------
   ...indoorSeats,
+  ...stations,
+  ...keepers,
   ...doors,
 ];
 

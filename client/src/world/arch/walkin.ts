@@ -37,6 +37,7 @@ import {
   signBoard,
   stovepipe,
   windowUnit,
+  worldPoint,
   type Face,
   type WindowOpts,
 } from './kit.js';
@@ -671,7 +672,9 @@ function home(B: GeoBuilder, b: Building, n: number): void {
           B.at(T(0, 0.05, 0.41), () => windowUnit(B, 0.55, 0.55, { frame: v.trim, sill: false, lit: 1 }));
         });
       }
-      chimney(B, v.chimneyX, h + 0.4, -2.82 + 0.25, 2.0, n % 2 ? '#a8705a' : '#9a8f84');
+      // Smoke follows the hearth inside (lit by players, burns down): client/src/activities.
+      chimney(B, v.chimneyX, h + 0.4, -2.82 + 0.25, 2.0, n % 2 ? '#a8705a' : '#9a8f84', false);
+      anchors.hearthChimneys.push({ buildingId: b.id, position: worldPoint(B, v.chimneyX, h + 0.4 + 2.0 + 0.4, -2.82 + 0.25) });
     });
     stoop(B, b, P.stoneMid);
     for (const s of [-1, 1]) {

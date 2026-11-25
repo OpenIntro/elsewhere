@@ -116,7 +116,8 @@ export type FurnitureKind =
   | 'chalkboard'
   | 'mic_stand'
   | 'sawhorses'
-  | 'tackle';
+  | 'tackle'
+  | 'mirror';
 
 export type FurnitureShape = { type: 'circle'; radius: number } | { type: 'box'; halfWidth: number; halfDepth: number };
 
@@ -321,6 +322,7 @@ const STORE: InteriorSpec = {
     { id: 'sacks', kind: 'sacks', at: [1.9, 3.35], yaw: 0.2, box: [0.5, 0.32], h: 0.6 },
     { id: 'stove', kind: 'stove', at: [-4.15, 3.2], r: 0.42, h: 1.2 },
     { id: 'rug', kind: 'rug', at: [-2.6, 2.6], h: 0.02, v: 1 },
+    { id: 'mirror', kind: 'mirror', at: [4.72, -0.15], yaw: LEFT, h: 2.0 },
   ],
   seats: [
     { id: 'chair_store_stove', kind: 'chair', name: 'Chair by the stove', style: 'wood_chair', at: [-2.9, 2.55], yaw: -2.2, exit: [-2.2, 1.95] },
@@ -335,6 +337,7 @@ const STORE: InteriorSpec = {
     display: { at: [-1.9, 1.75], face: [-1.9, 0.75] },
     crates: { at: [2.6, 1.6], face: [3.7, 1.25] },
     stove: { at: [-3.1, 1.9], face: [-4.15, 3.2] },
+    mirror: { at: [3.95, -0.15], face: [4.8, -0.15] },
   },
   lights: [[-1.6, 0.8, 2.8], [2.5, -1.6, 2.8]],
 };
@@ -381,6 +384,7 @@ const HALL: InteriorSpec = {
     archive: { at: [-5.6, -4.0], face: [-5.6, -4.9] },
     archive_shelves: { at: [-5.9, -0.2], face: [-6.95, -0.2] },
     meeting_table: { at: [5.5, 0.25], face: [5.5, -1.8] },
+    clerk_desk: { at: [-4.2, -0.9], face: [-5.6, -1.4] },
   },
   platforms: [{ id: 'dais', at: [0, -4.64], half: [2.3, 1.07], h: 0.18 }],
   lights: [[0, -0.5, 4.0], [-5.4, -1.2, 3.6], [5.2, -2.2, 3.6]],
@@ -416,6 +420,7 @@ const WORKSHOP: InteriorSpec = {
     anvil: { at: [2.9, -0.8], face: [2.9, -1.75] },
     project_1: { at: [-2.6, 3.3], face: [-2.6, 1.85] },
     lumber_rack: { at: [-4.1, 0.6], face: [-5.1, 0.6] },
+    sawhorses: { at: [3.0, 1.75], face: [2.9, 2.75] },
   },
   lights: [[-2.0, -1.0, 3.2], [2.4, 0.6, 3.2]],
 };

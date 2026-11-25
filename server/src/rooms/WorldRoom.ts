@@ -370,6 +370,9 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     // Building rate-limits per profile inside the service (survives reconnects).
     this.on(C2S.buildPlace, null, (sid, m) => s.building.place(this.ctx, sid, m));
     this.on(C2S.buildRemove, null, (sid, m) => s.building.remove(this.ctx, sid, m));
+    // Building activities (server/src/activities): actions + piano notes, each with its own rate limit.
+    this.on(C2S.activity, 'activity', (sid, m) => s.activities.handle(this.ctx, sid, m));
+    this.on(C2S.pianoNote, 'piano', (sid, m) => s.activities.pianoNote(this.ctx, sid, m));
     this.on(C2S.unstuck, 'unstuck', (sid) => {
       if (this.state.players.get(sid)?.seat) s.interactions.stand(this.ctx, sid);
       s.building.unstuck(this.ctx, sid);
@@ -444,7 +447,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       this.sendTo(sid, S2C.interactResult, { id: target.id, ok: false, error: 'too_far' });
       return;
     }
-    const result = await this.svc.interactions.interact(this.ctx, sid, target, m);
+    const result = target.kind === 'station' || target.kind === 'keeper' ? await this.svc.activities.interact(this.ctx, sid, target) : await this.svc.interactions.interact(this.ctx, sid, target, m);
     this.sendTo(sid, S2C.interactResult, result);
   }
 

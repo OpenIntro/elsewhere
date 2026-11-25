@@ -5,7 +5,7 @@
  * so recompiling the same period yields the same text.
  *
  * Placeholders: {names} {name} {count} {stage} {place} {time} (mid-sentence) / {Time} (sentence start) {item} {voices}
- * {awakenings} {discovery} {milestone} {n}
+ * {awakenings} {discovery} {milestone} {n} {project} {outcome} {stages} {stageName} {question} {result} {tallies}
  */
 import type { GazetteSection } from '@elsewhere/shared';
 
@@ -154,6 +154,57 @@ export const TEMPLATES = {
     section: 'town_news',
     headlines: ['{count} Pieces and Counting', 'The Island Builds'],
     bodies: ['With a piece placed by {name} {time}, residents have now placed {count} building pieces on the island.'],
+  },
+  project_completed: {
+    id: 'project_completed',
+    section: 'front_page',
+    headlines: ['Finished at the Workshop: {project}', 'Many Hands: {project}', 'A New Sight in Town'],
+    bodies: [
+      '{Time}, the Workshop finished {project}. {outcome}. {n} resident(s) lent a hand: {names}.',
+      'It took {n} pair(s) of hands, but {time} {project} was finished. {outcome}. With thanks to {names}.',
+    ],
+  },
+  project_stage: {
+    id: 'project_stage',
+    section: 'town_news',
+    headlines: ['Workshop Progress', '{stageName}', 'Sawdust and Progress'],
+    bodies: ['{Time}, work on {project} reached stage {stage} of {stages} ({stageName}). Working on it: {names}.'],
+  },
+  poll_closed: {
+    id: 'poll_closed',
+    section: 'town_news',
+    headlines: ['The Town Has Voted', 'Poll Result: {result}', 'From the Ballot Box'],
+    bodies: ['The question was “{question}”. {count} resident(s) voted and the answer was {result} ({tallies}). Voters: {names}.'],
+  },
+  nets_mended: {
+    id: 'nets_mended',
+    section: 'town_news',
+    headlines: ['Nets Mended at the Boathouse', 'Knot by Knot'],
+    bodies: ['{Time}, a whole fishing net was mended at the boathouse — net number {count}. Menders: {names}.'],
+  },
+  notices: {
+    id: 'notices',
+    section: 'small_moments',
+    headlines: ['On the Notice Board', 'Pinned at the Town Hall'],
+    bodies: ['{count} notice(s) went up on the Town Hall board this period, from {names}.'],
+  },
+  guestbooks: {
+    id: 'guestbooks',
+    section: 'small_moments',
+    headlines: ['Guests Were Here', 'Names in the Book'],
+    bodies: ['{count} signature(s) were left in the island’s guest books and tide log, by {names}.'],
+  },
+  piano: {
+    id: 'piano',
+    section: 'small_moments',
+    headlines: ['Music at the Café', 'Someone at the Piano'],
+    bodies: ['The café piano was played by {names}.'],
+  },
+  hearths: {
+    id: 'hearths',
+    section: 'small_moments',
+    headlines: ['Smoke from the Chimneys', 'Warm Hearths'],
+    bodies: ['Hearths were lit in the homes by {names}.'],
   },
   numbers: {
     id: 'numbers',

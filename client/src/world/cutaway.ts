@@ -128,3 +128,9 @@ export function isHiddenIndoors(x: number, z: number): boolean {
   if (!it) return false;
   return roofFade(it.id) < 0.5;
 }
+
+/** Current fade (0..1) of one cut part of a walk-in building (wall-mounted dynamic dressing hides with its wall). */
+export function slotFade(buildingId: string, part: CutPart): number {
+  const i = INDEX.get(buildingId);
+  return i === undefined ? 0 : fades[i * SLOTS_PER_BUILDING + PART_OFFSET[part]]!;
+}

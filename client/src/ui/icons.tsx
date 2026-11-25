@@ -369,6 +369,36 @@ export function ItemGlyph({ item, size = 40 }: { item: ItemDef; size?: number })
             <path d="M20 11v17M14 13l3 14M26 13l-3 14M10 19l5 8M30 19l-5 8" stroke="#b8927a" strokeWidth="1.2" />
           </>
         );
+      case 'cup':
+        return (
+          <>
+            <path d="M15 9c0-2 2-2 2-4M21 9c0-2 2-2 2-4" stroke="#b9ad98" strokeWidth="1.4" fill="none" strokeLinecap="round" opacity="0.8" />
+            <path d="M10 13h18l-2 15a4 4 0 0 1-4 3.5h-6A4 4 0 0 1 12 28Z" fill={c} />
+            <path d="M28 16c4 0 4 7 0 7" stroke={c} strokeWidth="2.6" fill="none" />
+            <ellipse cx="19" cy="13.5" rx="8.5" ry="1.8" fill="#5a3a26" opacity="0.55" />
+          </>
+        );
+      case 'card':
+        return (
+          <>
+            <rect x="8" y="11" width="24" height="18" rx="2" fill={c} transform="rotate(-6 20 20)" />
+            <path d="M12 16h8M12 20h10M12 24h6" stroke="#6b5a4a" strokeWidth="1.3" opacity="0.6" transform="rotate(-6 20 20)" />
+          </>
+        );
+      case 'key':
+        return (
+          <>
+            <circle cx="14" cy="14" r="6" fill="none" stroke={c} strokeWidth="3" />
+            <path d="M18.5 18.5 31 31m-4-4 3-3m-6 0 3-3" stroke={c} strokeWidth="3" strokeLinecap="round" />
+          </>
+        );
+      case 'trinket':
+        return (
+          <>
+            <circle cx="20" cy="21" r="10" fill={c} />
+            <ellipse cx="16.5" cy="17.5" rx="3" ry="2.2" fill="#fff" opacity="0.3" />
+          </>
+        );
       case 'lantern':
         return (
           <>

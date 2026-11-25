@@ -35,6 +35,19 @@ export const SFX_NAMES = [
   'reaction',
   'notification',
   'chime',
+  // Building activities (client/src/activities/sound.ts)
+  'piano',
+  'cup',
+  'saw',
+  'hammer',
+  'kiln',
+  'hearth',
+  'kettle',
+  'kettle_whistle',
+  'pin',
+  'page',
+  'ballot',
+  'net',
 ] as const;
 export type SfxName = (typeof SFX_NAMES)[number];
 
@@ -47,6 +60,10 @@ export interface SfxOptions {
   category?: string;
   /** Start time in ctx seconds (default now). */
   at?: number;
+  /** Piano: note index (0 = C4, semitones). */
+  note?: number;
+  /** Extra low-pass muffling 0..1 (a wall between the sound and the listener). */
+  muffle?: number;
 }
 
 type Recipe = (g: AudioGraph, pos: Vec2 | undefined, o: SfxOptions) => void;
@@ -166,7 +183,8 @@ const bellChorus: Recipe = (g, pos, o) => {
 // Everything else
 // ---------------------------------------------------------------------------
 
-const RECIPES: Record<Exclude<SfxName, 'footstep'>, Recipe> = {
+type ActivitySfx = 'piano' | 'cup' | 'saw' | 'hammer' | 'kiln' | 'hearth' | 'kettle' | 'kettle_whistle' | 'pin' | 'page' | 'ballot' | 'net';
+const RECIPES: Record<Exclude<SfxName, 'footstep' | ActivitySfx>, Recipe> = {
   ui_click: (g, _p, o) => {
     const v = voice(g, undefined, o, { category: 'ui', priority: 0, duration: 0.06, gain: 0.08 });
     if (!v) return;
@@ -349,7 +367,125 @@ const RECIPES: Record<Exclude<SfxName, 'footstep'>, Recipe> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Building activities. Muffle = a wall between source and listener: duller, quieter.
+// ---------------------------------------------------------------------------
+
+/** Voice whose input runs through a low-pass when muffled (indoors ↔ outdoors). */
+function activityVoice(g: AudioGraph, pos: Vec2 | undefined, o: SfxOptions, base: Omit<VoiceOptions, 'channel'>) {
+  const m = Math.max(0, Math.min(1, o.muffle ?? 0));
+  const v = voice(g, pos, o, { ...base, gain: (base.gain ?? 1) * (1 - m * 0.55) });
+  if (!v) return null;
+  const dest = m > 0 ? filter(v, 'lowpass', 5200 - m * 4400, 0.6) : v.input;
+  return { v, t: v.t0, dest };
+}
+
+const ACTIVITY_RECIPES: Record<ActivitySfx, Recipe> = {
+  piano: (g, pos, o) => {
+    const n = Math.max(0, Math.min(24, Math.round(o.note ?? 12)));
+    const f = 261.6256 * Math.pow(2, n / 12);
+    const a = activityVoice(g, pos, o, { category: 'piano', priority: 2, duration: 2.6, gain: 0.34, wet: 0.35, spatial: { ref: 4, max: 34 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    // Felted hammer: soft thump + slightly inharmonic, quickly decaying upper partials, a long fundamental.
+    for (const [r, amp, d] of [[1, 0.62, 2.2], [2.001, 0.3, 1.2], [3.004, 0.14, 0.7], [4.01, 0.07, 0.4], [5.02, 0.04, 0.25]] as const) partial(v, { freq: f * r, t, attack: 0.004, decay: d * (1.15 - n / 60), peak: amp, dest });
+    partial(v, { freq: f * 1.0015, t, attack: 0.006, decay: 1.9, peak: 0.16, dest });
+    noise(v, g.noise('pink'), { t, attack: 0.001, decay: 0.03, peak: 0.08, filter: 'lowpass', freq: 1200, dest });
+  },
+  cup: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 1, duration: 0.8, gain: 0.2, wet: 0.2, spatial: { ref: 4, max: 22 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    // Porcelain on saucer: two bright inharmonic tinks.
+    for (const [dt, f] of [[0, rand(2900, 3300)], [rand(0.06, 0.11), rand(3500, 3900)]] as const) {
+      partial(v, { freq: f, t: t + dt, attack: 0.001, decay: 0.25, peak: 0.4, dest });
+      partial(v, { freq: f * 2.35, t: t + dt, attack: 0.001, decay: 0.08, peak: 0.12, dest });
+    }
+  },
+  saw: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 1, duration: 1.4, gain: 0.22, wet: 0.15, spatial: { ref: 4, max: 26 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    for (let i = 0; i < 4; i++) noise(v, g.noise('white'), { t: t + i * 0.3, attack: 0.05, hold: 0.08, decay: 0.12, peak: 0.32, filter: 'bandpass', freq: i % 2 ? 2600 : 1900, q: 2.2, dest });
+  },
+  hammer: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 1, duration: 1.4, gain: 0.26, wet: 0.25, spatial: { ref: 4, max: 30 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    // Anvil: bright ringing strikes.
+    for (let i = 0; i < 3; i++) {
+      const tt = t + i * 0.36;
+      noise(v, g.noise('white'), { t: tt, attack: 0.001, decay: 0.02, peak: 0.5, filter: 'highpass', freq: 2500, dest });
+      for (const [r, amp] of [[1, 0.35], [2.76, 0.2], [5.4, 0.1]] as const) partial(v, { freq: 1180 * r, t: tt, attack: 0.001, decay: 0.45, peak: amp, dest });
+    }
+  },
+  kiln: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 1, duration: 2, gain: 0.24, wet: 0.2, spatial: { ref: 4, max: 24 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    noise(v, g.noise('brown'), { t, attack: 0.25, hold: 0.6, decay: 0.9, peak: 0.6, filter: 'lowpass', freq: 380, toFreq: 700, dest });
+    for (let i = 0; i < 6; i++) noise(v, g.noise('white'), { t: t + rand(0.1, 1.4), decay: 0.015, peak: rand(0.1, 0.2), filter: 'bandpass', freq: rand(2000, 4000), q: 2, dest });
+  },
+  hearth: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 1, duration: 2.4, gain: 0.22, wet: 0.15, spatial: { ref: 3, max: 20 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    // Match strike, then catching kindling: a soft whoomph and crackles.
+    noise(v, g.noise('white'), { t, attack: 0.002, decay: 0.12, peak: 0.35, filter: 'bandpass', freq: 3200, q: 1, dest });
+    noise(v, g.noise('brown'), { t: t + 0.25, attack: 0.3, decay: 1.2, peak: 0.45, filter: 'lowpass', freq: 500, dest });
+    for (let i = 0; i < 10; i++) noise(v, g.noise('white'), { t: t + rand(0.3, 2.1), decay: rand(0.006, 0.02), peak: rand(0.12, 0.3), filter: 'bandpass', freq: rand(1800, 5200), q: 1.6, dest });
+  },
+  kettle: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 1, duration: 1.2, gain: 0.18, wet: 0.15, spatial: { ref: 3, max: 18 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    // Lid clink + water pouring.
+    partial(v, { freq: 1650, t, attack: 0.001, decay: 0.18, peak: 0.3, dest });
+    noise(v, g.noise('pink'), { t: t + 0.15, attack: 0.08, hold: 0.4, decay: 0.3, peak: 0.3, filter: 'bandpass', freq: 900, q: 0.9, dest });
+  },
+  kettle_whistle: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 2, duration: 3, gain: 0.12, wet: 0.2, spatial: { ref: 4, max: 26 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    partial(v, { freq: 1320, toFreq: 1760, glideTime: 0.9, t, attack: 0.5, hold: 1.2, decay: 0.8, peak: 0.45, dest });
+    partial(v, { freq: 1336, toFreq: 1778, glideTime: 0.9, t, attack: 0.5, hold: 1.2, decay: 0.8, peak: 0.2, dest });
+    noise(v, g.noise('white'), { t, attack: 0.4, hold: 1.2, decay: 0.8, peak: 0.08, filter: 'highpass', freq: 3500, dest });
+  },
+  pin: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 0, duration: 0.5, gain: 0.2, wet: 0.2, spatial: { ref: 3, max: 18 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    noise(v, g.noise('pink'), { t, attack: 0.01, decay: 0.12, peak: 0.25, filter: 'bandpass', freq: 2400, q: 0.8, dest });
+    const body = filter(v, 'bandpass', 700, 5, dest);
+    noise(v, g.noise('white'), { t: t + 0.14, attack: 0.001, decay: 0.03, peak: 0.6, dest: body });
+  },
+  page: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 0, duration: 0.9, gain: 0.16, wet: 0.15, spatial: { ref: 3, max: 16 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    noise(v, g.noise('pink'), { t, attack: 0.04, decay: 0.2, peak: 0.3, filter: 'bandpass', freq: 3000, q: 0.7, dest });
+    for (let i = 0; i < 5; i++) noise(v, g.noise('white'), { t: t + 0.25 + i * 0.09, decay: 0.05, peak: 0.08, filter: 'bandpass', freq: rand(3500, 5000), q: 2, dest });
+  },
+  ballot: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 0, duration: 0.6, gain: 0.2, wet: 0.25, spatial: { ref: 3, max: 18 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    noise(v, g.noise('pink'), { t, attack: 0.01, decay: 0.08, peak: 0.2, filter: 'bandpass', freq: 2600, dest });
+    const body = filter(v, 'bandpass', 260, 4, dest);
+    noise(v, g.noise('white'), { t: t + 0.12, attack: 0.001, decay: 0.05, peak: 0.7, dest: body });
+  },
+  net: (g, pos, o) => {
+    const a = activityVoice(g, pos, o, { category: 'activity', priority: 0, duration: 1.2, gain: 0.16, wet: 0.15, spatial: { ref: 3, max: 16 } });
+    if (!a) return;
+    const { v, t, dest } = a;
+    for (let i = 0; i < 3; i++) partial(v, { type: 'triangle', freq: rand(180, 240), toFreq: rand(120, 160), glideTime: 0.25, t: t + i * 0.3, attack: 0.05, decay: 0.25, peak: 0.25, dest });
+    noise(v, g.noise('pink'), { t, attack: 0.1, decay: 0.8, peak: 0.12, filter: 'bandpass', freq: 1400, dest });
+  },
+};
+
 export function playSfxOn(g: AudioGraph, name: SfxName, pos?: Vec2, o: SfxOptions = {}): void {
+  const act = (ACTIVITY_RECIPES as Partial<Record<SfxName, Recipe>>)[name];
+  if (act) return act(g, pos, o);
   if (name === 'footstep') footstep(g, pos, o);
-  else RECIPES[name]?.(g, pos, o);
+  else (RECIPES as Partial<Record<SfxName, Recipe>>)[name]?.(g, pos, o);
 }

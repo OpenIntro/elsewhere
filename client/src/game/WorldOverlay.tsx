@@ -16,7 +16,8 @@
  *
  * Label convention: `.ew-label[data-kind="player"]` (solid pill with a dot in
  * the player's shirt colour) vs `[data-kind="npc"]` (italic, no dot, leaf
- * glyph, dashed edge) — NPCs register via `registerOverlayActor()`.
+ * glyph, dashed edge, a small "keeper" badge) — the building keepers (client/src/activities)
+ * register via `registerOverlayActor()`; they are world characters, never players.
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
@@ -93,6 +94,7 @@ const CSS = `
 .ew-label[data-kind="npc"]{background:rgba(54,48,36,.5);color:#f1dfae;font-style:italic;font-weight:500;border:1px dashed rgba(241,223,174,.45);padding-left:8px}
 .ew-label[data-kind="npc"] .ew-dot{display:none}
 .ew-label[data-kind="npc"]::before{content:"❦";font-style:normal;opacity:.8}
+.ew-label[data-kind="npc"]::after{content:"keeper";font-style:normal;font-weight:700;font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;line-height:1;padding:2px 5px 2px;border-radius:5px;background:rgba(241,223,174,.2);color:#f6e7bf;margin-left:2px}
 .ew-label.ew-off{opacity:0}
 .ew-bubble{max-width:200px;padding:6px 10px;border-radius:12px;background:rgba(253,248,238,.95);color:#2b2621;font-size:13px;line-height:1.3;box-shadow:0 2px 8px rgba(0,0,0,.16);position:relative;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;transition:opacity .25s}
 .ew-bubble::after{content:"";position:absolute;left:50%;bottom:-5px;margin-left:-5px;border:5px solid transparent;border-bottom:0;border-top-color:rgba(253,248,238,.95)}

@@ -407,6 +407,11 @@ export function createInteractions(deps: InteractionDeps): InteractionService {
           return r.error ? { id: target.id, ok: false, error: r.error } : { id: target.id, ok: true };
         }
 
+        case 'station':
+        case 'keeper':
+          // Routed to the activities service by WorldRoom; never reaches here.
+          return { id: target.id, ok: false, error: 'not_implemented' };
+
         case 'portal': {
           const o = ctx.getObject(target.id);
           if (!o?.active) return { id: target.id, ok: true, ui: { panel: 'inspect', title: target.name, text: PORTAL_DORMANT } };

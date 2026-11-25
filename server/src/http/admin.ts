@@ -13,6 +13,8 @@
  *   DELETE /api/admin/build/pieces/:id             remove a piece (+ what rests on it)
  *   DELETE /api/admin/build/profiles/:profileId    remove every piece of a profile
  *   GET    /api/admin/build/stats?bench=1          counts, validation/collision timing, event-loop delay
+ *   GET    /api/admin/notes?board=&limit=          notices / guest-book / tide-log entries (removed included)
+ *   DELETE /api/admin/notes/:id                    remove one entry (moderation)
  * Sanction kinds: chat_mute | ban | build_ban (may play and chat, may not build).
  */
 import { timingSafeEqual } from 'node:crypto';
@@ -154,6 +156,23 @@ export function createAdminRouter(): Router {
   r.delete(
     API.adminBuildProfile,
     route(async (req) => ({ removed: await services().building.adminRemoveProfile(String(req.params.profileId)) })),
+  );
+
+  r.get(
+    API.adminNotes,
+    route(async (req) => {
+      const limit = Math.min(500, Math.max(1, Number.parseInt(String(req.query.limit ?? '100'), 10) || 100));
+      return { notes: await services().activities.listNotes(str(req.query.board, 60), limit) };
+    }),
+  );
+
+  r.delete(
+    API.adminNote,
+    route(async (req) => {
+      const ok = await services().activities.adminRemoveNote(String(req.params.id));
+      if (!ok) throw new ApiFailure('not_found', 'No such entry (or already removed)');
+      return { ok: true };
+    }),
   );
 
   r.get(

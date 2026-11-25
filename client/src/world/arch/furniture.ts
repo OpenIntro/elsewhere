@@ -205,8 +205,7 @@ function chalkboard(B: GeoBuilder, b: Building): void {
     B.add('solid', rbox(1.3, 1.0, 0.05, 0.02), P.woodDark, T(0, 1.9, 0.025), { ao: false });
     B.add('solid', box(1.16, 0.86, 0.02), '#2e3431', T(0, 1.9, 0.05), { ao: false });
     B.addUV('sign', quad(1.0, 0.25), signUV('menu'), T(0, 2.17, 0.062));
-    for (let k = 0; k < 4; k++) B.add('solid', box(0.6 + ((k * 3) % 4) * 0.08, 0.025, 0.005), '#e6e2d6', T(-0.1, 1.95 - k * 0.14, 0.062), { ao: false });
-    B.add('solid', box(0.1, 0.05, 0.005), '#f1d27a', T(0.38, 1.6, 0.062), { ao: false });
+    // (today's special is chalked on live: client/src/activities/Visuals.tsx)
     B.add('solid', rbox(1.1, 0.04, 0.08, 0.01), P.woodDark, T(0, 1.4, 0.07), { ao: false });
   });
 }
@@ -420,11 +419,24 @@ function noticeBoard(B: GeoBuilder, b: Building): void {
   B.withCut(cutSlot(b.id, 'right'), () => {
     B.add('solid', rbox(1.7, 1.15, 0.06, 0.02), '#7a5c46', T(0, 1.65, 0.03), { ao: false });
     B.add('solid', box(1.54, 0.98, 0.02), '#c9a87c', T(0, 1.65, 0.065), { ao: false });
-    B.addUV('sign', quad(0.56, 0.32), signUV('paper1'), T(-0.4, 1.8, 0.08, 0, 0, 0.05));
-    B.addUV('sign', quad(0.52, 0.3), signUV('paper2'), T(0.38, 1.55, 0.08, 0, 0, -0.07));
-    for (const [x, y, r, c] of [[0.35, 1.95, 0.1, '#f4efe6'], [-0.35, 1.45, -0.08, '#efe2c9'], [0.0, 1.62, 0.02, '#e9dcc8']] as const) B.add('solid', box(0.34, 0.24, 0.005), c, T(x, y, 0.08, 0, 0, r), { ao: false });
-    for (const [x, y] of [[-0.4, 1.95], [0.38, 1.69], [0.35, 2.06], [-0.35, 1.56]] as const) B.add('solid', sphere(0.02, 6, 4), '#b8453a', T(x, y, 0.09), { ao: false });
+    // (pinned notices are real players' notes, drawn live: client/src/activities/Visuals.tsx)
     B.addUV('sign', quad(0.9, 0.22), signUV('notice'), T(0, 2.4, 0.04));
+  });
+}
+
+/** Store try-on corner: a tall wall mirror in a painted frame with a hat hook. */
+function mirror(B: GeoBuilder, b: Building): void {
+  B.withCut(cutSlot(b.id, 'right'), () => {
+    B.add('solid', rbox(0.95, 1.75, 0.07, 0.05), '#8a5a48', T(0, 1.12, 0.035), { ao: false });
+    B.addRaw('window', rbox(0.78, 1.55, 0.02, 0.03), [0.85, 0.55, 0], T(0, 1.12, 0.075));
+    B.add('solid', rbox(0.6, 0.06, 0.12, 0.02), '#6a4f3e', T(0, 0.3, 0.1), { ao: false });
+    for (const x of [-0.32, 0.32]) {
+      B.add('solid', cyl(0.015, 0.015, 0.12, 6), P.brass, T(x, 2.12, 0.1, 0, Math.PI / 2), { ao: false });
+      B.add('solid', sphere(0.025, 6, 5), P.brass, T(x, 2.12, 0.16), { ao: false });
+    }
+    // a beret and a scarf waiting on the hooks
+    B.add('solid', sphere(0.13, 10, 6), '#7a4e64', T(-0.32, 2.16, 0.2, 0, 0, 0, 1, 0.35, 1), { ao: false });
+    B.add('solid', rbox(0.1, 0.5, 0.03, 0.02), '#d1a23f', T(0.32, 1.85, 0.19), { ao: false });
   });
 }
 
@@ -676,11 +688,9 @@ function hearth(B: GeoBuilder, it: Interior, f: FurniturePiece, b: Building): vo
   B.add('solid', rbox(1.0, 0.75, 0.3, 0.1), '#2e2620', T(0, 0.45, 0.14), { ao: false });
   B.add('solid', rbox(1.9, 0.1, 0.72, 0.03), '#6a4f3e', T(0, 1.38, 0.02));
   B.add('solid', rbox(1.5, 0.1, 0.5, 0.03), shade(stone, 0.85), T(0, 0.05, 0.4), { ao: false });
-  // logs + flames
+  // logs (the fire itself is live — lit by players, burns down: client/src/activities/Visuals.tsx)
   for (const s of [-1, 1]) B.add('solid', cyl(0.06, 0.07, 0.6, 8), '#6a4f3e', T(s * 0.08, 0.16, 0.18, 0.4 * s, 0, Math.PI / 2), { ao: false });
-  B.add('solid', cone(0.16, 0.34, 8), '#f0a050', T(0, 0.34, 0.2), { ao: false });
-  B.add('solid', cone(0.09, 0.22, 8), '#ffd27a', T(0.03, 0.32, 0.25), { ao: false });
-  glow(B, it, 0, 0.35, 0.3, 0.16, 0);
+  B.add('solid', rbox(0.5, 0.04, 0.22, 0.02), '#4a4038', T(0, 0.1, 0.2), { ao: false });
   // mantel things: clock, candles, a jar of dried flowers
   B.add('solid', rbox(0.24, 0.26, 0.12, 0.04), '#5a4c5c', T(0, 1.56, 0.04), { ao: false });
   B.add('solid', cyl(0.07, 0.07, 0.02, 12), '#f4efe6', T(0, 1.58, 0.105, 0, Math.PI / 2), { ao: false });
@@ -811,8 +821,7 @@ function wallDressing(B: GeoBuilder, it: Interior, b: Building): void {
       at('front', -4.4, y0 + 2.4, () => {
         B.add('solid', cyl(0.24, 0.24, 0.05, 20), '#efe7d6', T(0, 0, 0.03, 0, Math.PI / 2), { ao: false });
         B.add('solid', torus(0.24, 0.03, 6, 20), P.brass, T(0, 0, 0.05), { ao: false });
-        B.add('solid', box(0.02, 0.16, 0.01), '#3a3236', T(0, 0.06, 0.06), { ao: false });
-        B.add('solid', box(0.12, 0.02, 0.01), '#3a3236', T(0.05, 0, 0.06), { ao: false });
+        // hands: live world time (client/src/activities/Visuals.tsx WallClocks)
       });
       break;
     case 'store':
@@ -943,6 +952,8 @@ function piece(B: GeoBuilder, it: Interior, b: Building, f: FurniturePiece): voi
         return oarRack(B, b);
       case 'net_wall':
         return netWall(B, b);
+      case 'mirror':
+        return mirror(B, b);
     }
   });
 }

@@ -59,11 +59,14 @@ export const anchors = {
   clockCut: [] as number[],
   spinners: [] as { matrix: Matrix4; kind: 'gear' | 'vane' | 'windmill'; speed: number; size: number; cut?: number }[],
   sparkles: [] as { id: string; position: Vector3; subtle: boolean }[],
+  /** Walk-in home chimneys: smoke only while that home's hearth is lit (client/src/activities). */
+  hearthChimneys: [] as { buildingId: string; position: Vector3 }[],
 };
 
 export function resetAnchors(): void {
   anchors.doors.length = 0;
   anchors.smoke.length = 0;
+  anchors.hearthChimneys.length = 0;
   anchors.glows.length = 0;
   anchors.lamps.length = 0;
   anchors.bell = null;

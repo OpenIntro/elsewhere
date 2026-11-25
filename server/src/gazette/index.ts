@@ -101,6 +101,16 @@ export function buildArticles(events: readonly WorldEvent[], clock: ClockParams,
   }
   for (const e of byKind('structure_roofed')) one('structure_roofed', e, { count: Number(e.data?.walls ?? 0) }, 52);
   many('first_build', byKind('first_build'), {}, 22);
+  // Building activities (all real players' actions; keepers never appear as actors).
+  const lower = (x: string) => x.charAt(0).toLowerCase() + x.slice(1);
+  for (const e of byKind('project_completed')) one('project_completed', e, { project: lower(String(e.data?.name ?? 'a town project')), outcome: String(e.data?.outcome ?? 'Something new stands outside'), n: e.actors.length }, 95);
+  for (const e of byKind('project_stage')) one('project_stage', e, { project: lower(String(e.data?.name ?? 'the town project')), stage: Number(e.data?.stage ?? 0), stages: Number(e.data?.stages ?? 0), stageName: String(e.data?.stageName ?? 'Progress') }, 38);
+  for (const e of byKind('poll_closed')) one('poll_closed', e, { question: String(e.data?.question ?? ''), result: String(e.data?.result ?? ''), tallies: String(e.data?.tallies ?? ''), count: Number(e.data?.votes ?? e.actors.length) }, 48);
+  for (const e of byKind('nets_mended')) one('nets_mended', e, { count: Number(e.data?.nets ?? 1) }, 28);
+  many('notices', byKind('notice_pinned'), {}, 11);
+  many('guestbooks', byKind('guestbook_signed'), {}, 9);
+  many('piano', byKind('piano_played'), {}, 8);
+  many('hearths', byKind('hearth_lit'), {}, 5);
   for (const e of byKind('gathering')) one('gathering', e, { count: Number(e.data?.count ?? e.actors.length) }, 40);
   for (const e of byKind('dance_party')) one('dance_party', e, { count: Number(e.data?.count ?? e.actors.length) }, 35);
   many('newcomers', byKind('player_first_visit'), {}, 25);

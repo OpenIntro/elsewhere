@@ -27,7 +27,9 @@ import {
   type Appearance,
   type C2SPayloads,
   type C2SType,
+  type ActivityStateView,
   type JoinOptions,
+  type KeeperStateView,
   type ObjectStateView,
   type PlayerStateView,
   type S2CPayloads,
@@ -156,8 +158,9 @@ export class NetClient {
         return;
       }
       // Fresh session: forget the previous roster (sessions ids changed).
-      useGameStore.setState({ players: {} });
+      useGameStore.setState({ players: {}, keepers: {}, activities: {} });
       runtime.remotes.clear();
+      runtime.keepers.clear();
       this.room = room;
       this.configureReconnection(room);
       this.bind(room);
@@ -369,6 +372,30 @@ export class NetClient {
         };
         sync();
         cb.onChange(o, sync);
+      }),
+      // Keepers: world characters (never players). Positions → runtime; the rest → store only when it changes.
+      cb.onAdd('keepers', (k: KeeperStateView, id: string) => {
+        let last = '';
+        const sync = () => {
+          const r = runtime.keepers.get(id);
+          if (r) {
+            r.x = k.x;
+            r.z = k.z;
+            r.rot = k.rot;
+          } else runtime.keepers.set(id, { x: k.x, z: k.z, rot: k.rot });
+          const sig = `${k.present}|${k.anim}|${k.animSeq}|${k.task}`;
+          if (sig !== last) {
+            last = sig;
+            store().setKeeper({ id, present: k.present, anim: k.anim, animSeq: k.animSeq, task: k.task });
+          }
+        };
+        sync();
+        cb.onChange(k, sync);
+      }),
+      cb.onAdd('activities', (a: ActivityStateView, id: string) => {
+        const sync = () => store().setActivity({ id, active: a.active, value: a.value, holder: a.holder, data: a.data, updatedAt: a.updatedAt });
+        sync();
+        cb.onChange(a, sync);
       }),
       cb.listen('clockEpoch', (v: number) => store().setClock({ epochMs: v })),
       cb.listen('dayLengthMs', (v: number) => store().setClock({ dayLengthMs: v })),

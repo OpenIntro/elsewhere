@@ -176,6 +176,35 @@ ALTER TABLE sanctions DROP CONSTRAINT IF EXISTS sanctions_kind_check;
 ALTER TABLE sanctions ADD CONSTRAINT sanctions_kind_check CHECK (kind IN ('chat_mute','ban','build_ban'))
 `,
   },
+  {
+    id: 4,
+    name: 'building_activities',
+    sql: `
+CREATE TABLE IF NOT EXISTS activity_notes (
+  world_id    TEXT NOT NULL DEFAULT 'default',
+  id          TEXT NOT NULL,
+  board_id    TEXT NOT NULL,
+  profile_id  TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  text        TEXT NOT NULL,
+  created_at  BIGINT NOT NULL,
+  expires_at  BIGINT,
+  removed_at  BIGINT,
+  removed_by  TEXT,
+  PRIMARY KEY (world_id, id)
+);
+CREATE INDEX IF NOT EXISTS activity_notes_board_idx ON activity_notes (world_id, board_id, created_at);
+CREATE INDEX IF NOT EXISTS activity_notes_profile_idx ON activity_notes (world_id, profile_id);
+CREATE TABLE IF NOT EXISTS poll_votes (
+  world_id   TEXT NOT NULL DEFAULT 'default',
+  poll_key   TEXT NOT NULL,
+  profile_id TEXT NOT NULL,
+  option     SMALLINT NOT NULL,
+  voted_at   BIGINT NOT NULL,
+  PRIMARY KEY (world_id, poll_key, profile_id)
+)
+`,
+  },
 ];
 
 /** Apply pending migrations. Returns the ids applied this run. */

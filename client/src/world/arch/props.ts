@@ -463,6 +463,9 @@ export function buildInteractable(B: GeoBuilder, i: Interactable): void {
       return at(B, x, z, i.yaw, () => newsstand(B));
     case 'archive':
       return at(B, x, z, i.yaw, () => archiveCabinet(B));
+    case 'station':
+    case 'keeper':
+      return; // furniture is the visual; dynamic parts + keepers: client/src/activities
     default: {
       const never: never = i;
       void never;

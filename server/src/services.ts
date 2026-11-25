@@ -3,6 +3,7 @@
  * services from here; each service lives in its own seam directory.
  */
 import { CONFIG } from '@elsewhere/shared';
+import { createActivities, type ActivityService } from './activities/index.js';
 import { createAuth, type AuthService } from './auth/index.js';
 import { createBuilding, type BuildingService } from './building/index.js';
 import { createChat, type ChatService } from './chat/index.js';
@@ -25,6 +26,7 @@ export interface ServerServices {
   interactions: InteractionService;
   gazette: GazetteService;
   building: BuildingService;
+  activities: ActivityService;
   /** Services with room lifecycle hooks, in call order. */
   hooks: RoomHooks[];
 }
@@ -41,7 +43,9 @@ export async function initServices(opts: InitOptions = {}): Promise<ServerServic
   await persistence.init();
   const auth = createAuth(persistence, { secret: ENV.sessionSecret, supabaseJwtSecret: ENV.supabaseJwtSecret, supabaseUrl: ENV.supabaseUrl });
   const moderation = createModeration(persistence);
-  const chat = createChat(moderation);
+  let activities: ActivityService | null = null;
+  // Stage / lectern: a speaker's chat carries through the whole building (activities decide who).
+  const chat = createChat(moderation, { reach: (ctx, sid) => activities?.chatReach(ctx, sid) ?? null });
   const memory = createMemory(persistence);
   const collective = createCollective(persistence, memory, { tunables: ENV.collective, dayLengthMs: ENV.dayLengthMs });
   await collective.load();
@@ -56,7 +60,15 @@ export async function initServices(opts: InitOptions = {}): Promise<ServerServic
   gazette.start();
   const building = createBuilding({ persistence, memory, moderation, worldId: collective.worldId, options: ENV.building });
   await building.load();
-  current = { persistence, auth, moderation, chat, memory, collective, interactions, gazette, building, hooks: [moderation, chat, collective, interactions, building] };
+  activities = createActivities({
+    persistence,
+    memory,
+    moderation,
+    worldId: collective.worldId,
+    clock: () => ({ epochMs: collective.facts().clockEpochMs, dayLengthMs: ENV.dayLengthMs }),
+    tunables: ENV.activities,
+  });
+  current = { persistence, auth, moderation, chat, memory, collective, interactions, gazette, building, activities, hooks: [moderation, chat, collective, interactions, building, activities] };
   return current;
 }
 

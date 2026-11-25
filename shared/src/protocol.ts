@@ -134,6 +134,40 @@ export interface WorldStateView {
   dayLengthMs: number;
   players: MapLike<PlayerStateView>;
   objects: MapLike<ObjectStateView>;
+  /** Building keepers (world characters — NOT players; see activities.ts). */
+  keepers?: MapLike<KeeperStateView>;
+  /** Shared building-activity state keyed by activities.ts ACTIVITY_KEYS. */
+  activities?: MapLike<ActivityStateView>;
+}
+
+/**
+ * A keeper: a character of the world (barista, shopkeeper, archivist, tinkerer).
+ * Never a player: not in `players`, not counted online, never speaks in chat.
+ */
+export interface KeeperStateView {
+  id: string;
+  x: number;
+  z: number;
+  rot: number;
+  /** 'idle' | 'walk' | 'interact'. */
+  anim: string;
+  /** Increments when a one-shot gesture restarts. */
+  animSeq: number;
+  /** On duty (the building is open). */
+  present: boolean;
+  /** What they are doing ("wiping the counter"). */
+  task: string;
+}
+
+/** Generic synced activity state; meaning per key documented on activities.ts ACTIVITY_KEYS. */
+export interface ActivityStateView {
+  id: string;
+  active: boolean;
+  value: number;
+  holder: string;
+  /** JSON (parse with parseActivityData). */
+  data: string;
+  updatedAt: number;
 }
 
 /** Minimal read interface satisfied by Colyseus MapSchema on the client. */
@@ -171,6 +205,10 @@ export const C2S = {
   buildRemove: 'build_remove',
   /** Always-available rescue: teleport to the Town Square (rate limited). */
   unstuck: 'unstuck',
+  /** A building activity action (order a drink, pin a notice, vote, sign a guest book…). */
+  activity: 'activity',
+  /** One piano note (café piano; heard by everyone in or near the café). */
+  pianoNote: 'piano_note',
 } as const;
 export type C2SType = (typeof C2S)[keyof typeof C2S];
 
@@ -271,6 +309,26 @@ export interface BuildRemovePayload {
 }
 export type UnstuckPayload = Record<string, never>;
 
+/**
+ * Building activity request. `station` is a station / keeper interactable id
+ * (activities.ts), or 'drink' for actions on the drink in your hand.
+ * Actions: order {item: DrinkId} · sip · take {item} · pin {text} · remove {entryId}
+ * · report {entryId} · vote {option} · sign {text}. Station taps (work, light,
+ * kettle, mend) go through C2S.interact.
+ */
+export interface ActivityPayload {
+  station: string;
+  action: string;
+  item?: string;
+  text?: string;
+  option?: number;
+  entryId?: string;
+}
+export interface PianoNotePayload {
+  /** 0..PIANO_NOTES-1 (0 = C4). */
+  note: number;
+}
+
 export interface C2SPayloads {
   [C2S.move]: MovePayload;
   [C2S.stand]: StandPayload;
@@ -292,6 +350,8 @@ export interface C2SPayloads {
   [C2S.buildPlace]: BuildPlacePayload;
   [C2S.buildRemove]: BuildRemovePayload;
   [C2S.unstuck]: UnstuckPayload;
+  [C2S.activity]: ActivityPayload;
+  [C2S.pianoNote]: PianoNotePayload;
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +382,12 @@ export const S2C = {
   buildRemoved: 'build_removed',
   /** Building: outcome of the requester's place/remove. */
   buildResult: 'build_result',
+  /** Outcome of the requester's C2S.activity. */
+  activityResult: 'activity_result',
+  /** A piano note someone played (everyone in or near the café). */
+  pianoNote: 'piano_note',
+  /** One-shot activity effects for people nearby (tool sounds, cups, kettle whistle…). */
+  activityEvent: 'activity_event',
 } as const;
 export type S2CType = (typeof S2C)[keyof typeof S2C];
 
@@ -392,6 +458,11 @@ export interface ChatMessage {
   ts: number;
   /** Lower-cased display names mentioned via @name (server-extracted). */
   mentions: string[];
+  /**
+   * Set when the speaker stood on the café stage ('cafe_stage') or at the Town Hall lectern
+   * ('hall_lectern'): the line carried through the whole building.
+   */
+  stage?: 'cafe_stage' | 'hall_lectern';
 }
 
 export interface EmoteEvent {
@@ -421,7 +492,9 @@ export type InteractUi =
   | { panel: 'gazette' }
   | { panel: 'memory' }
   | { panel: 'mailbox'; mailboxId: string; canSend: boolean }
-  | { panel: 'discovery'; discoveryId: DiscoveryId; name: string; text: string; firstTime: boolean };
+  | { panel: 'discovery'; discoveryId: DiscoveryId; name: string; text: string; firstTime: boolean }
+  /** A building activity / keeper panel (station or keeper interactable id). `message` = what just happened, if anything. */
+  | { panel: 'activity'; station: string; message?: string };
 
 /** One-shot effects everyone nearby should see/hear (bell ring, door creak, splash). */
 export interface ObjectEvent {
@@ -556,6 +629,32 @@ export interface BuildResultPayload {
   pieceId?: string;
 }
 
+export interface ActivityResultPayload {
+  station: string;
+  action: string;
+  ok: boolean;
+  error?: ErrorCode;
+  /** Short human-readable outcome ("Mara hands you a coffee."). */
+  message?: string;
+  /** Per-player facts for the panel (e.g. { voted: 1 }, { taken: 1, limit: 1 }). */
+  data?: Record<string, string | number | boolean>;
+}
+export interface PianoNoteEvent {
+  /** Player sessionId. */
+  by: string;
+  note: number;
+  ts: number;
+}
+export interface ActivityEvent {
+  kind: 'tool' | 'cup' | 'sip' | 'drink_done' | 'kettle_on' | 'kettle_whistle' | 'hearth_lit' | 'hearth_out' | 'pin' | 'vote' | 'sign' | 'mend' | 'take' | 'stage' | 'project_stage' | 'project_done';
+  station: string;
+  /** Player sessionId ('' = the world itself, e.g. a kettle coming to the boil). */
+  by: string;
+  x: number;
+  z: number;
+  data?: Record<string, string | number | boolean>;
+}
+
 export interface S2CPayloads {
   [S2C.welcome]: WelcomePayload;
   [S2C.correction]: CorrectionPayload;
@@ -576,6 +675,9 @@ export interface S2CPayloads {
   [S2C.buildPlaced]: BuildPlacedPayload;
   [S2C.buildRemoved]: BuildRemovedPayload;
   [S2C.buildResult]: BuildResultPayload;
+  [S2C.activityResult]: ActivityResultPayload;
+  [S2C.pianoNote]: PianoNoteEvent;
+  [S2C.activityEvent]: ActivityEvent;
 }
 
 // ---------------------------------------------------------------------------
@@ -617,6 +719,10 @@ export const API = {
   adminBuildProfile: '/api/admin/build/profiles/:profileId',
   /** Admin GET — building stats (counts, timing of collision/validation, event-loop delay). */
   adminBuildStats: '/api/admin/build/stats',
+  /** Admin GET ?board=&limit= — notices / guest-book entries (incl. removed). */
+  adminNotes: '/api/admin/notes',
+  /** Admin DELETE one notice / guest-book entry. */
+  adminNote: '/api/admin/notes/:id',
 } as const;
 
 /** GET API.relations */
