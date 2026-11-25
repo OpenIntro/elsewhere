@@ -1,0 +1,15 @@
+:root {
+  color-scheme: dark;
+  --ink: #2a2622;
+  --paper: #efe4cf;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  overscroll-behavior: none;
+  touch-action: none;
+}
