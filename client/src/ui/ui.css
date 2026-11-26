@@ -1398,6 +1398,8 @@ kbd {
   .placecard { top: 22%; }
   .hint { bottom: calc(var(--hud-bottom) + 10px); }
   .camctl { top: 50%; bottom: auto; transform: translateY(-50%); flex-direction: column; }
+  /* Touch: from the top, so the column ends above the round action button (bottom right). */
+  @media (pointer: coarse) { .camctl { top: calc(var(--hud-top) + 4px); transform: none; gap: 6px; } }
 }
 
 /* Reduced motion: keep fades, drop movement. */

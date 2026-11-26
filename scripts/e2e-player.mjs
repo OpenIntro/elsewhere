@@ -585,6 +585,11 @@ async function testRemoteSmoothness(pageA, pageB) {
       }),
     id,
   );
+  // A sends moves from its own frame loop: when software rendering starves A's page too, B may have
+  // received only a handful of distinct poses in 3.2 s. Keep walking (and collecting what B receives)
+  // until there is enough to judge — at least 12 snapshots — or 9 s in all. The checks below are unchanged.
+  const tWalk = Date.now();
+  while (received.size < 12 && Date.now() - tWalk < 5_800) await sleep(200);
   polling = false;
   await poller;
   await pageA.keyboard.up(key);

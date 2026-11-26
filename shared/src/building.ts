@@ -433,8 +433,10 @@ export function buildableAt(p: Vec2): BuildableResult {
   if (terrainHeight(p.x, p.z) <= WALKABLE_MIN_HEIGHT + 0.08) return { code: 'water' };
   const pz = protectedZoneAt(p, PROTECTED_MARGINS.building);
   if (pz) {
-    const name = buildingName.get(pz.buildingId) ?? 'a building';
-    return { code: 'protected', label: pz.kind === 'door_apron' ? `the ${name} doorway` : name };
+    // Mid-sentence ("Too close to …"): "The Café" → "the Café", and never "the The Café doorway".
+    const raw = buildingName.get(pz.buildingId) ?? 'a building';
+    const name = raw.startsWith('The ') ? `the ${raw.slice(4)}` : raw;
+    return { code: 'protected', label: pz.kind === 'door_apron' ? `${name.startsWith('the ') ? '' : 'the '}${name} doorway` : name };
   }
   const z = protectedZones();
   for (const c of z.circles) {

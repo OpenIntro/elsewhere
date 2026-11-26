@@ -428,21 +428,37 @@ try {
     assert(await tagOn(b, idA), "A's name tag not shown on B");
     // B speaks (proximity) through the real chat UI; A sees the bubble over B.
     const text = `cosy in here ${Date.now() % 10000}`;
+    // A bubble lives ~5 s, and B's chat UI steps (send, close) can take longer than that on a
+    // software-rendered page: A's page records the bubble from BEFORE B sends (DOM observer + rAF).
+    await a.evaluate(([id, text]) => {
+      const rec = { seen: '', t0: performance.now() };
+      window.__bubbleRec = rec;
+      const look = () => {
+        const el = document.querySelector(`[data-actor="${id}"] .ew-bubble`);
+        if (!rec.seen && el && !el.classList.contains('ew-off') && (el.textContent ?? '').includes(text)) rec.seen = el.textContent ?? '';
+      };
+      const mo = new MutationObserver(look);
+      mo.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true, attributeFilter: ['class'] });
+      const tick = () => {
+        look();
+        if (!rec.seen && performance.now() - rec.t0 < 30_000) requestAnimationFrame(tick);
+        else mo.disconnect();
+      };
+      requestAnimationFrame(tick);
+    }, [idB, text]);
     if (!(await b.$('[data-testid=chat]'))) await b.click('[data-testid=nav-chat]');
     await b.click('[data-testid=chat-tab-nearby]');
     await b.fill('[data-testid=chat-input]', text);
-    await b.press('[data-testid=chat-input]', 'Enter');
-    await b.click('[data-testid=chat-close]').catch(() => undefined);
     const t1 = Date.now();
+    await b.press('[data-testid=chat-input]', 'Enter');
+    if (await b.$('[data-testid=chat-close]')) await b.click('[data-testid=chat-close]', { timeout: 10_000 }).catch(() => undefined);
     let bubble = '';
     while (Date.now() - t1 < 10_000) {
-      bubble = await a.evaluate((id) => {
-        const el = document.querySelector(`[data-actor="${id}"] .ew-bubble`);
-        return el && !el.classList.contains('ew-off') ? el.textContent ?? '' : '';
-      }, idB);
+      bubble = await a.evaluate(() => window.__bubbleRec?.seen ?? '');
       if (bubble.includes(text)) break;
       await sleep(200);
     }
+    if (!bubble.includes(text)) bubble = await a.evaluate(() => window.__bubbleRec?.seen ?? '');
     if (!bubble.includes(text)) {
       const ra = (await snap(a)).ui?.rawChat ?? [];
       const rb = (await snap(b)).ui?.rawChat ?? [];

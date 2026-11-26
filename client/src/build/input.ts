@@ -1,8 +1,8 @@
 /**
  * Build-mode input: B toggles build mode (any time), and while building R
- * rotates the piece (instead of the camera), Q/E rotate too (E would
- * otherwise interact), Esc finishes, Enter places, X/Delete switch to the
- * remove tool. Pointer: mouse hover aims, click places / selects; touch tap
+ * rotates the piece (instead of the camera; Q still turns the camera), E is
+ * swallowed (no interacting while building), Esc finishes, Enter places,
+ * X/Delete switch to the remove tool. Pointer: mouse hover aims, click places / selects; touch tap
  * aims (placing needs the explicit Place button) or selects.
  */
 import { setKeyInterceptor } from '../player/index.js';

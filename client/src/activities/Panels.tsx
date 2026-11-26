@@ -597,8 +597,11 @@ export function DrinkChip() {
   const panel = useUiStore((s) => s.panel);
   if (!held || !isDrinkItem(held) || panel?.kind === 'activity') return null;
   return (
-    <button type="button" className="pill pill--action drink-chip" onClick={() => actions.activity({ station: 'drink', action: 'sip' })} data-testid="drink-sip">
-      <ItemGlyph item={ITEMS[held]} size={20} /> <span className="pill__label">Sip your {ITEMS[held].name.toLowerCase()}</span>
+    <button type="button" className="pill pill--action drink-chip" onClick={() => actions.activity({ station: 'drink', action: 'sip' })} aria-label={`Sip your ${ITEMS[held].name.toLowerCase()}`} data-testid="drink-sip">
+      <ItemGlyph item={ITEMS[held]} size={20} />{' '}
+      <span className="pill__label">
+        Sip<span className="drink-chip__item"> your {ITEMS[held].name.toLowerCase()}</span>
+      </span>
     </button>
   );
 }

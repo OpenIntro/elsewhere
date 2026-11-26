@@ -1,11 +1,12 @@
 /**
  * Document-level UI behaviour (ui worker), installed once by App:
  *  - ui.textInputFocused follows focus of text-entry elements (game keys ignored while typing)
- *  - Enter opens chat, Esc closes the top-most panel / chat
+ *  - Enter opens chat (not in build mode, where it places), Esc closes the top-most panel / chat
  *  - on-screen keyboard height → CSS var --kb (visualViewport)
  *  - reduced-motion preference → <html data-motion="reduced">
  */
 import { useEffect } from 'react';
+import { useBuildStore } from '../build/store.js';
 import { useSettingsStore } from '../state/settingsStore.js';
 import { useUiStore } from '../state/uiStore.js';
 import { isTextEntry } from './hooks.js';
@@ -28,6 +29,8 @@ export function useUiGlobals(): void {
       if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
         const neutral = !active || active === document.body || active.tagName === 'CANVAS' || active.classList.contains('sheet');
         if (!neutral || isTextEntry(active)) return;
+        // Build mode: Enter places the piece (build/input.ts); it must not open the chat as well.
+        if (useBuildStore.getState().mode !== 'off') return;
         e.preventDefault();
         s.setChatOpen(true);
         useChatUi.getState().requestFocus();

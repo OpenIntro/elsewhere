@@ -25,6 +25,9 @@ docs/     this file
 | `npm run e2e:build` | player building with two real browsers (+ a late joiner) incl. a server restart (needs `npm run build`; port `BUILD_PORT`, default 2634) |
 | `npm run e2e:interiors` | walk-in interiors with two real browsers (needs `npm run build`; port `INT_PORT`, default 2631) |
 | `npm run e2e:activities` | building activities with two real browsers incl. a server restart (needs `npm run build`; port `ACT_PORT`, default 2633; lowered workshop thresholds) |
+| `npm run e2e:combined` | cross-feature checks (interiors × building × activities) with two real browsers incl. a restart and the phone layouts (needs `npm run build`; port `COMB_PORT`, default 2636) |
+
+The other browser / protocol scripts (`e2e-player`, `e2e-ui`, `server-integration`, screenshots, load) are listed with their flags in README "Testing".
 
 `@elsewhere/shared` exports a custom `source` condition → `src/*.ts`. Vite, vitest and `tsx` (dev) resolve it, so dev/test never need a shared build. `tsc` for the server (and `node` in production) use `dist/` — that is why `build`/`typecheck` build shared first.
 
@@ -151,7 +154,7 @@ Client (`client/src/build/`): `sync.ts` (snapshot/deltas → `pieces.index`, the
 - Scoping: services are per world (`DEFAULT_WORLD_ID = 'default'`); transient gameplay state (lit runes, bell rings and chorus cooldown, door/respawn timers, per-player cooldowns, light overrides, location tracking, chat history) is keyed by `ctx.roomId`, so a second room instance never shares it. Persistent world facts/sets/object states are keyed by `world_id` in storage (`persistence.forWorld(id)`).
 
 Seams (all implemented; each file's header documents its rules):
-- `persistence/` — Postgres SQL over two drivers (`db.ts`): embedded PGlite in `$DATA_DIR/pglite` by default, `pg` when `DATABASE_URL` is set. Ordered idempotent migrations in `migrations.ts` (run at boot, tracked in `schema_migrations`; #2 adds `world_id` keys). Repositories: profiles, sessions, events, gazette, worldState/`forWorld`, mail, reports, relations (block/mute), sanctions. `flush()`/`close()` await in-flight writes.
+- `persistence/` — Postgres SQL over two drivers (`db.ts`): embedded PGlite in `$DATA_DIR/pglite` by default, `pg` when `DATABASE_URL` is set. Ordered idempotent migrations in `migrations.ts` (run at boot, tracked in `schema_migrations`: #1 base tables, #2 `world_id` keys, #3 `build_pieces`, #4 `activity_notes` + `poll_votes`). Repositories: profiles, sessions, events, gazette, worldState/`forWorld`, mail, reports, relations (block/mute), sanctions. `flush()`/`close()` await in-flight writes.
 - `auth/` — opaque HMAC-signed tokens (`es1.…`, sha256 stored, survive restart), guest sessions resume by token, register/login (scrypt), guest→account upgrade keeping the profile, logout revokes, per-username lockout; optional Supabase JWT (`SUPABASE_JWT_SECRET` HS256 / `SUPABASE_URL` JWKS).
 - `moderation/` — block/mute (persisted, server-enforced; C2S payloads take `target` sessionId or `profileId`, so offline players can be unblocked/unmuted; lists with names in `welcome.blockedProfiles/mutedProfiles` and `GET /api/profile/relations`), reports with chat evidence, sanctions (`chat_mute`/`ban`, timed or permanent), auto chat-mute on repeated rate-limit abuse, `text.ts` sanitizing + profanity mask.
 - `chat/` — proximity (radius), global (history per room), whisper, mentions, typing; mute/rate/length/duplicate checks.
@@ -162,7 +165,7 @@ Seams (all implemented; each file's header documents its rules):
 - `activities/` — building activities and keepers (see "Building activities").
 - `http/api.ts` (+ `admin.ts`) — REST incl. `GET /api/world` and admin tools under `/api/admin/*` (Bearer `ADMIN_TOKEN`; 404 when unset; incl. `/api/admin/notes`); per-IP rate limits.
 
-Server env (see `.env.example`): `PORT`, `NODE_ENV`, `DATA_DIR`, `DATABASE_URL`, `SESSION_SECRET` (required ≥ 32 chars in production), `ADMIN_TOKEN`, `SUPABASE_JWT_SECRET`, `SUPABASE_URL`, `TRUST_PROXY`, `CLIENT_DIST`, `DAY_LENGTH_MINUTES`, `GAZETTE_INTERVAL_MINUTES`, `GAZETTE_EARLY_EVENTS`, `GAZETTE_EARLY_DELAY_SECONDS`, `ELSEWHERE_DEBUG`, and Collective Reality overrides `FOUNTAIN_STAGES`, `FOUNTAIN_STAGE_DISTINCT`, `PORTAL_RUNES_REQUIRED`, `PORTAL_WINDOW_MS`, `PORTAL_AWAKE_MS`, `BELL_CHORUS_PLAYERS`, `GATHERING_THRESHOLD`.
+Server env: see "Running" above (the full list, parsed in `server/src/env.ts`) and README "Environment variables" (defaults and meaning).
 
 Server checks: `npx vitest run server`; `npx tsx --conditions=source scripts/server-integration.mjs [url] [--save f | --verify-restart f | --position-save f | --position-verify f]` against a running server (header lists the env it expects; it refuses to run if its world-layout fingerprint differs from `GET /api/world`'s `worldDataHash`).
 

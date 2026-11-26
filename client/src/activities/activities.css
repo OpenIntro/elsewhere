@@ -90,6 +90,8 @@
 
 /* HUD: sip chip + door presence */
 .drink-chip { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-b) + 96px); z-index: 6; display: inline-flex; align-items: center; gap: 6px; }
+/* Narrow phones: only ~126 px between the joystick and the action button — "Sip" + the cup fits there. */
+@media (max-width: 480px) { .drink-chip__item { display: none; } }
 @media (max-height: 500px) { .drink-chip { bottom: calc(var(--safe-b) + 74px); left: auto; right: calc(var(--safe-r) + 120px); transform: none; } }
 .prompt__presence { margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--glass-line); color: var(--text-3); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
 .map__presence { font-variant-numeric: tabular-nums; margin-left: 4px; opacity: 0.75; font-size: 12px; }

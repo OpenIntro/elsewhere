@@ -474,6 +474,7 @@ function renderPanel(panel: Panel, close: () => void) {
 }
 
 export function Hud() {
+  const building = useBuildStore((s) => s.mode !== 'off');
   return (
     <div className="hud" data-testid="hud">
       <TopBar />
@@ -483,7 +484,8 @@ export function Hud() {
       <CameraButtons />
       <ControlsHint />
       <Prompt />
-      <DrinkChip />
+      {/* The build dock takes the bottom of the screen: the sip chip (positioned over the nav) waits until Done. */}
+      {building ? null : <DrinkChip />}
       <BottomNav />
       <BuildUi />
       <PanelHost />

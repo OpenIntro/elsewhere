@@ -14,6 +14,7 @@ import { useGameStore } from '../state/gameStore.js';
 import { useSettingsStore } from '../state/settingsStore.js';
 import { useUiStore } from '../state/uiStore.js';
 import { pressContextual, pressInteract, setTouchMove } from './input.js';
+import { useBuildStore } from '../build/store.js';
 
 const BASE = 124;
 const KNOB = 52;
@@ -131,7 +132,9 @@ function ActionButton() {
   const panel = useUiStore((s) => s.panel);
   const menu = useUiStore((s) => s.playerMenu);
   const seated = useGameStore((s) => !!(s.sessionId && s.players[s.sessionId]?.seat));
-  if (panel || menu) return null;
+  // No interacting while building (desktop: E is swallowed by build/input.ts); the joystick still walks.
+  const building = useBuildStore((s) => s.mode !== 'off');
+  if (panel || menu || building) return null;
   let label: string | null = null;
   let sub = '';
   let onPress = pressInteract;

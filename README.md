@@ -190,12 +190,13 @@ The server is a single process on a single port.
 | `npm run build && npm run e2e:activities` | building activities: own production server (port `ACT_PORT`, default 2633, fresh temp data dir, **lowered** `WORKSHOP_STAGE_CONTRIBUTIONS=2,2 WORKSHOP_STAGE_DISTINCT=2,2`), a desktop and a phone browser through the real UI; 12 named checks — same keeper state on both, hearth, guest book, notice board, town poll (real tally 2), barista drink seen in hand by the other, piano notes received + played by the other's audio graph, the town project finished by both (stage advance + lanterns outside), online count stays 2 with keepers on duty, everything still there after a server restart, zero console errors. Screenshots with `ACT_SHOTS=<dir>` |
 | `npm run build && npm run e2e:interiors` | walk-in interiors: own production server (port `INT_PORT`, default 2631), a desktop and a phone browser; 9 named checks — click-to-move into the Café through its door, keyboard walking in and out, cutaway open inside / closed outside, name tags + speech bubble + interaction prompt indoors, an indoor chair seen seated by the other client, walls hold, zero console errors |
 | `npm run build && npm run e2e:build` | player building: own production server (port `BUILD_PORT`, default 2634, fresh temp data dir), a desktop and a phone (Pixel 7, touch) browser through the real build UI; 11 named checks — palette, a hut built by A (floor, walls, doorway, window, roof, lamp, sign with text) seen identically by B, a protected spot and a spot on another player refused with a visible reason, B cannot remove A's piece and forged remove/place messages are refused by the server, B blocked by A's wall but walking in through A's doorway (server positions), B builds by touch, A removes a piece and B sees it go, everything still there after a server restart, a late joiner receives every piece, zero console errors. Screenshots with `BUILD_SHOTS=<dir>` |
+| `npm run build && npm run e2e:combined` | cross-feature checks (interiors × building × activities): own production server (port `COMB_PORT`, default 2636, fresh temp data dir, `DAY_LENGTH_MINUTES=480` so the keepers stay on duty for the whole run), a desktop and a phone browser; named checks — build mode refuses interiors, door aprons, keeper routes and stations with a visible reason (UI and forged messages; plus a rulebook sweep), a wall line by the Café door does not seal it (click-to-move in and out; no door of any building can be sealed by legal pieces), inside the Café the keeper's KEEPER tag + a player's tag and speech bubble + online count 2, build mode toggled indoors then E on the barista, a drink held through build mode, a server restart with pieces / notice / workshop progress / lit hearth and migrations 1-4 on the fresh DB, phone layouts 390x844 + 844x390 hit-tested (screenshots to `docs/screenshots/combined/`, `COMB_SHOTS=0` disables), HTML in a sign and a notice shown as text, zero console errors. `COMB_LEGACY_DATA_DIR=<dir>` adds a check that a DB made by an older server migrates to 1-4 (with `qa-token.txt`, `qa-profile.txt` and `qa-secret.txt` in that dir it also checks that the saved guest resumes its profile) |
 | `node scripts/build-screenshots.mjs [devUrl]` | builds a cottage through the real UI (dev client) and shoots palette / valid + refused ghost / the cottage by day and night on desktop and phones → `docs/screenshots/build/` (`SHOTS_ADMIN_TOKEN` clears leftovers of an earlier run) |
 | `npm run build && npx tsx --conditions=source scripts/build-scale.mts [--pieces 2000]` | seeds N pieces through the real server path and measures join, bytes, render cost and server timing (numbers under "Player building") |
 | `node scripts/interior-screenshots.mjs [devUrl]` | every interior day/night on desktop and phone + exteriors at night + the four camera rotations → `docs/screenshots/interiors/` (dev client; uses `?inside=`) |
 | `node scripts/smoke-two-clients.mjs [url]` | two browsers join and see each other move |
 | `npx tsx --conditions=source scripts/server-integration.mjs [url] --save f.json` then restart the server and `... --verify-restart f.json` | multi-client protocol test (chat, seats, bell, fountain, portal, Gazette, persistence); see the script header for the server env it expects |
-| `node scripts/e2e-player.mjs` | movement, camera, click/tap-to-move, collision, remote smoothness, server restart reconnection, touch controls (spawns its own server) |
+| `node scripts/e2e-player.mjs` | movement, camera, click/tap-to-move, collision, remote smoothness, server restart reconnection, touch controls (spawns its own server on `E2E_SERVER_PORT`, default 2604, and a Vite dev client on `E2E_VITE_PORT`, default 5184; `E2E_CLIENT_DIST=client/dist` serves the production build from that server instead of Vite) |
 | `E2E_ADMIN_TOKEN=... node scripts/e2e-ui.mjs [url]` | full UI flow incl. panels, settings persistence, mute/block, mailbox, items, register/login, Gazette (~12-15 min) |
 | `npx tsx --conditions=source scripts/load-clients.mts --clients 40 --server <url>` | headless protocol clients random-walking (load test tool) |
 
@@ -220,11 +221,11 @@ Browser scripts need Playwright with Chromium available to `require('playwright'
 | Drag the character preview | rotate it (customization screen) |
 | Click / tap a keeper, or E near their counter | talk to the keeper: a short line about the island today + the building's menu (order a drink, today's curiosities, the poll, the town project) |
 | Piano panel | click / tap the keys; on a keyboard the Z…M row plays the low octave and Q…I the high one (movement keys are paused while the piano is open) |
-| Sip chip (bottom of the screen) | sip the drink in your hand |
+| Sip chip (bottom of the screen) | sip the drink in your hand (hidden while the build dock is open; your drink stays in hand) |
 | B / Build button | enter / leave build mode (the build dock replaces the bottom nav) |
 | Build mode: mouse | hover aims the ghost (green = fits, red + reason = refused), click places; pointing at the top of your wall puts the next storey or a roof there |
-| Build mode: keys | R (Shift+R) turn the piece, Enter place, X / Delete remove tool, Ctrl/Cmd+Z undo your last piece, Esc or B done; WASD still walks |
-| Build mode: touch | tap the ground to aim, then the Place button; Rotate / Remove / Undo / Done buttons; the joystick still walks |
+| Build mode: keys | R (Shift+R) turn the piece, Enter place (it does not open the chat while building), X / Delete remove tool, Ctrl/Cmd+Z undo your last piece, Esc or B done; E does nothing; WASD still walks |
+| Build mode: touch | tap the ground to aim, then the Place button; Rotate / Remove / Undo / Done buttons; the joystick still walks (the round action button is hidden: no interacting while building, as E on a keyboard) |
 | Remove tool | click / tap one of your pieces → Remove (pieces holding others up go last); someone else's piece → Report |
 | Settings → Stuck somewhere? (also in the build dock's ··· menu) | Unstuck: back to the Town Square (once every 30 s) |
 | Walk through a door | enter a building: its roof and the walls between you and the camera fade away (dollhouse cutaway, any camera rotation); walk out and they come back. Clicking a spot inside a building from outside walks you in through the door |
@@ -312,6 +313,25 @@ protocol clients walking, the server's event-loop delay p99 was 12.9 ms with 2,0
 with none (timer resolution ~10 ms); `resolveMovement` next to pieces ~70 µs per 1.6 m move; a
 restart loaded all 2,000 pieces and was healthy in 0.65 s.
 
+## Rendering cost (measured)
+
+Draw calls / triangles from `window.__ELSEWHERE_WORLD__.info()` (dev client, 1440x900, headless
+software WebGL, empty build layer, two keepers on duty). **Time of day changes the numbers a lot**:
+low morning and evening sun widens the shadow pass (medium, default view: ~183-198 calls / 0.97-1.0 M
+triangles at 07:12 versus ~130-142 / 0.80-0.84 M at midday), so compare at the same `?time=`. At
+midday (`?time=0.5`):
+
+| View | low | medium | high |
+|---|---|---|---|
+| Default view after joining (three spawn points) | 78-85 / 0.37-0.42 M | 130-142 / 0.80-0.84 M | 138-143 / 0.89-0.98 M |
+| Town Square (`?cam=town_square`) | 131 / 0.55 M | 263 / 1.20 M | 265 / 1.33 M |
+| Inside the Café (`?cam=cafe&inside=cafe`) | 136 / 0.48 M | 244 / 1.00 M | 244 / 1.13 M |
+
+Against the MVP (before interiors, building and activities) at the same views, spawn and time: +4 to
++24 draw calls and +1 to +14 % triangles, the most inside the Café (medium 220 → 244 calls, 0.88 →
+1.00 M triangles: the barista and the live activity dressing). Frame time in
+software rendering says nothing about real GPUs.
+
 ## Moderation and admin
 
 Players can mute, block (server-enforced, persisted, manageable from Settings) and report other
@@ -364,8 +384,9 @@ Labelled "Planned" / "Not yet" in the UI (Home panel), not implemented:
 - Shops and trading between players (the General Store's till).
 - A gentle currency earned by being around (economy). Until then the store's curiosities and the
   café's drinks are free ("on the house, for now").
-- Weather beyond clear/haze/fog (rain and snow are typed but not rendered). Keepers are the only
-  world characters; they do not wander the island or hold conversations.
+- Weather beyond clear/haze/fog (rain and snow are typed but not rendered).
+- More world characters: the four keepers are the only ones; they stay in their buildings and do
+  not hold conversations.
 
 ## Not verified / known limitations
 
@@ -407,11 +428,20 @@ These were not checked, or were checked only in a limited way:
   modified client can still move at that rate, and paths are validated against shared colliders,
   not against a server-side navmesh.
 - Production builds publish source maps.
-- **Interiors:** the browser e2e (`e2e:interiors`) walks into and out of the Café only; the other
-  interiors are covered by unit tests (reachability of every anchor and seat through its door,
+- **Interiors:** the browser e2e walks in and out of the Café (`e2e:interiors`, `e2e:combined`) and
+  into House 1, the Town Hall and the Workshop (`e2e:activities`); the General Store, House 2 and the
+  Boathouse are covered by unit tests (reachability of every anchor and seat through its door,
   walls blocking, click-to-move paths) and screenshots, not by browser walks. Doors are open
   passages: the door leaf swings open when someone is near, and a "closed" door does not block.
   Outdoor trees are not faded by the cutaway and can hide part of a room at some rotations.
+- **Keepers and players do not collide**, and the end of the café counter is open: a player can walk
+  round behind the counter and stand next to the barista. On a narrow phone a keeper's tag can be cut
+  off at the screen edge.
+- **Headless browser tests and timing:** software-rendered Chromium draws 1-3 frames per second, so
+  every Playwright action on a page takes about a second; short-lived UI (a speech bubble lives ~5 s,
+  the chat preview 6 s) is recorded from before the action that causes it (`e2e:interiors`,
+  `e2e:combined`). The suites were green twice in a row on a quiet 4-core machine; with several browser
+  suites competing for the CPU they time out.
 - **Player building:** built benches and chairs are furniture only — sitting on them is not
   implemented (seats are tied to the fixed interactables data). Only ground-level pieces collide:
   upper storeys are visual (players never walk upstairs; steps are a low step, not a staircase).

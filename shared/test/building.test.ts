@@ -95,11 +95,18 @@ describe('protected zones come from the official world export', () => {
       const r = buildableAt(z.center);
       expect(r.code, z.id).toBe('protected');
       if (z.kind === 'door_apron') expect(r.label, z.id).toMatch(/doorway$/);
+      // Read mid-sentence ("Too close to …"): never "the The Café doorway", never a capital "The".
+      expect(r.label, z.id).not.toMatch(/the The|^The /);
       // 0.5 m outside the zone's edge is still inside the building margin.
       const edge = { x: z.center.x + Math.sin(z.yaw) * (z.halfDepth + 0.5), z: z.center.z + Math.cos(z.yaw) * (z.halfDepth + 0.5) };
       expect(zoneContains(z, edge)).toBe(false);
       expect(buildableAt(edge).code, `${z.id} margin`).not.toBe('ok');
     }
+  });
+  it('names the Café naturally in refusals ("Too close to the Café doorway")', () => {
+    const cafe = PROTECTED_ZONES.filter((z) => z.buildingId === 'cafe');
+    expect(buildableAt(cafe.find((z) => z.kind === 'door_apron')!.center).label).toBe('the Café doorway');
+    expect(buildableAt(cafe.find((z) => z.kind === 'building')!.center).label).toBe('the Café');
   });
   it('a whole piece is refused when any part of it touches a protected zone', () => {
     const door = PROTECTED_ZONES.find((z) => z.kind === 'door_apron')!;

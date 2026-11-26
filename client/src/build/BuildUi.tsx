@@ -192,13 +192,23 @@ function Dock() {
   const ref = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState(false);
 
-  // Keep the touch joystick clear of the dock.
+  // Keep the touch joystick / action button clear of the dock: lift them above it — unless the dock sits
+  // between them (phone landscape: the dock leaves both sides free), where lifting would only push the
+  // action button into the camera buttons.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const root = document.documentElement;
     const prev = root.style.getPropertyValue('--ew-touch-bottom');
-    const apply = () => root.style.setProperty('--ew-touch-bottom', `${Math.round(el.getBoundingClientRect().height + 22)}px`);
+    const apply = () => {
+      const r = el.getBoundingClientRect();
+      // side zones of the thumb controls (player/TouchControls: 22 px margin, 124 px joystick, 96 px button)
+      const between = r.left >= 22 + 124 + 4 && r.right <= window.innerWidth - (22 + 96 + 4);
+      if (between) {
+        if (prev) root.style.setProperty('--ew-touch-bottom', prev);
+        else root.style.removeProperty('--ew-touch-bottom');
+      } else root.style.setProperty('--ew-touch-bottom', `${Math.round(r.height + 22)}px`);
+    };
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
