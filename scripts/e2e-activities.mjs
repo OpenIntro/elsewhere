@@ -314,7 +314,10 @@ async function hopToward(page, target, near = 1.2, timeout = 240_000) {
   const s = await snap(page);
   if (it && interiorAt(s.local)?.id !== it.id) {
     const door = it.doors[0];
-    await hop(page, door.inside, 1.5, timeout / 2, (q) => interiorAt(q.local)?.id === it.id);
+    const inside = (q) => interiorAt(q.local)?.id === it.id;
+    await hop(page, door.outside, 3, timeout / 2, inside);
+    // through the doorway by keys along a planned route (as a person would), unless already in
+    if (!inside(await snap(page))) await keyboardRoute(page, [door.inside], { timeout: 60_000 }).catch(() => undefined);
   }
   return hop(page, target, near, timeout);
 }
@@ -363,7 +366,8 @@ async function hop(page, target, near = 1.2, timeout = 180_000, reached = null) 
     await sleep(300);
     await waitSnap(page, (q) => !q.motion?.path && q.local.speed < 0.05, 'hop finished', 40_000);
   }
-  throw new Error(`could not hop to (${target.x.toFixed(1)}, ${target.z.toFixed(1)})`);
+  const last = (await snap(page))?.local;
+  throw new Error(`could not hop to (${target.x.toFixed(1)}, ${target.z.toFixed(1)}); at (${last?.x?.toFixed(2)}, ${last?.z?.toFixed(2)}) in ${where(last ?? { x: 0, z: 0 })}`);
 }
 
 /** Walk next to an interactable (inside its building) and click / tap it; wait for the panel (if any). */
