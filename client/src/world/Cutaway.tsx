@@ -1,5 +1,5 @@
 /**
- * Drives the dollhouse cutaway (./cutaway.ts) every frame from the camera
+ * Drives the dollhouse cutaway (./cutawayRuntime.ts) every frame from the camera
  * focus — the local player, or the free camera's focus — and the camera yaw,
  * and adds a soft warm fill light inside the open building (one light, always
  * mounted so no shader recompiles when you walk in or out).
@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react';
 import type { PointLight } from 'three';
 import { registerDebugSection } from '../net/index.js';
 import { runtime } from '../state/runtime.js';
-import { cutaway, updateCutaway } from './cutaway.js';
+import { cutaway, updateCutaway } from './cutawayRuntime.js';
 import { devOverrides, env } from './env.js';
 
 /** `fill`: mount the warm fill light (not on low quality: one more light in every shader). */

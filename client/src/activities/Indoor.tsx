@@ -51,7 +51,7 @@ import { toyMaterial } from '../characters/materials.js';
 import { net } from '../net/index.js';
 import { serverNow, useGameStore } from '../state/gameStore.js';
 import { runtime } from '../state/runtime.js';
-import { slotFade, isHiddenIndoors, type CutPart } from '../world/cutaway.js';
+import { slotFade, isHiddenIndoors, type CutPart } from '../world/cutawayRuntime.js';
 import { makeBillboards } from '../world/billboard.js';
 import { env } from '../world/env.js';
 import { box, cone, cyl, GeoBuilder, rbox, T } from '../world/geom.js';

@@ -25,7 +25,7 @@ import { Architecture, buildWorld } from './Architecture.js';
 import { coverageReport, markRepresented } from './coverage.js';
 import { DEV_CAMERA_PRESETS, devOverrides, env, QUALITY, updateEnvironment, type DevOverrides } from './env.js';
 import { Cutaway } from './Cutaway.js';
-import { cutaway } from './cutaway.js';
+import { cutaway } from './cutawayRuntime.js';
 import { Fountain } from './Fountain.js';
 import { Lamps } from './Lamps.js';
 import { Life } from './Life.js';

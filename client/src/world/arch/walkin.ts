@@ -7,7 +7,7 @@
  *  - Every wall face is split at STUB height: the stub never fades, the upper
  *    wall, its windows, trims and façade dressing carry that face's cutaway
  *    slot; roofs, gables, chimneys and towers carry the roof slot; corner posts
- *    their corner slot (see ../cutaway.ts).
+ *    their corner slot (see ../cutawayRuntime.ts).
  *  - Floors (planks / flagstones) sit flush with `floorY`; a stone doorstep
  *    ramp matches the shared ramp in groundHeight.
  * Footprints and openings come from the shared data, so what you see is what
@@ -17,7 +17,7 @@ import { Matrix4 } from 'three';
 import { HALL_TOWER_X, WALL_THICKNESS, rampHalfWidth, rampLength, terrainHeight, type Building } from '@elsewhere/shared';
 import { archFrame, archPanel, box, cone, cyl, gableWall, quad, rbox, sphere, T, torus, type ColorLike, type GeoBuilder } from '../geom.js';
 import { signUV } from '../signs.js';
-import { cutSlot, type CutPart } from '../cutaway.js';
+import { cutSlot, type CutPart } from '../cutawayRuntime.js';
 import {
   anchors,
   awning,

@@ -10,7 +10,7 @@
 import { Raycaster, Vector2, Vector3, type Camera } from 'three';
 import { INTERACTABLES, groundHeight, type Interactable, type Vec2 } from '@elsewhere/shared';
 import { useGameStore } from '../state/gameStore.js';
-import { isHiddenIndoors } from '../world/cutaway.js';
+import { isHiddenIndoors } from '../world/cutawayRuntime.js';
 import { runtime } from '../state/runtime.js';
 
 export const view3d: { camera: Camera | null; canvas: HTMLElement | null } = { camera: null, canvas: null };

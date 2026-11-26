@@ -14,7 +14,7 @@ import { ACTIVITY_KEYS, OPENING_HOURS, getBuilding, getInteractable, groundHeigh
 import { serverNow, useGameStore } from '../state/gameStore.js';
 import { anchors, onFace } from '../world/arch/kit.js';
 import { makeBillboards } from '../world/billboard.js';
-import { slotFade } from '../world/cutaway.js';
+import { slotFade } from '../world/cutawayRuntime.js';
 import { env } from '../world/env.js';
 import { cone, cyl, GeoBuilder, rbox, sphere, T } from '../world/geom.js';
 import { solidMaterial } from '../world/materials.js';
