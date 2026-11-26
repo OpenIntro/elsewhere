@@ -315,9 +315,10 @@ async function hopToward(page, target, near = 1.2, timeout = 240_000) {
   if (it && interiorAt(s.local)?.id !== it.id) {
     const door = it.doors[0];
     const inside = (q) => interiorAt(q.local)?.id === it.id;
-    await hop(page, door.outside, 3, timeout / 2, inside);
-    // through the doorway by keys along a planned route (as a person would), unless already in
-    if (!inside(await snap(page))) await keyboardRoute(page, [door.inside], { timeout: 60_000 }).catch(() => undefined);
+    // a few metres out in front of the door (clear of signs and steps), then through the doorway by keys
+    const front = [3, 2, 1.2, 0].map((d) => ({ x: door.outside.x + Math.sin(door.yaw) * d, z: door.outside.z + Math.cos(door.yaw) * d })).find((p) => isWalkable(p, 0.5)) ?? door.outside;
+    await hop(page, front, 2.5, timeout / 2, inside);
+    if (!inside(await snap(page))) await keyboardRoute(page, [door.outside, door.inside], { timeout: 90_000 }).catch(() => undefined);
   }
   return hop(page, target, near, timeout);
 }
@@ -618,5 +619,4 @@ try {
 const failed = results.filter((r) => !r.ok);
 console.log(`[activities] ${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);
-void isWalkable;
 void where;
