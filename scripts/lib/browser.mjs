@@ -160,7 +160,10 @@ export async function keyboardWalk(page, waypoints, { reach = 0.45, timeout = 40
       let nudge = 0;
       for (;;) {
         const s = await snap(page);
-        if (Date.now() - t0 > timeout) throw new Error(`keyboard walk timed out before (${wp.x.toFixed(1)}, ${wp.z.toFixed(1)}); at (${s.local.x.toFixed(2)}, ${s.local.z.toFixed(2)})`);
+        if (Date.now() - t0 > timeout) {
+          const focus = await page.evaluate(() => `${document.activeElement?.tagName}.${document.activeElement?.className}`);
+          throw new Error(`keyboard walk timed out before (${wp.x.toFixed(1)}, ${wp.z.toFixed(1)}); at (${s.local.x.toFixed(2)}, ${s.local.z.toFixed(2)}) anim ${s.local.anim}, connection ${s.connection}, build ${s.build?.mode}, focus ${focus}, ui ${JSON.stringify(s.ui ?? null).slice(0, 160)}`);
+        }
         const dx = wp.x - s.local.x;
         const dz = wp.z - s.local.z;
         if (Math.hypot(dx, dz) < reach) break;
@@ -184,7 +187,8 @@ export async function keyboardWalk(page, waypoints, { reach = 0.45, timeout = 40
         if (sector < -4) sector += 8;
         const combos = { 0: ['KeyD'], 1: ['KeyD', 'KeyW'], 2: ['KeyW'], 3: ['KeyA', 'KeyW'], 4: ['KeyA'], [-4]: ['KeyA'], [-3]: ['KeyA', 'KeyS'], [-2]: ['KeyS'], [-1]: ['KeyD', 'KeyS'] };
         await press(new Set(combos[sector] ?? ['KeyW']));
-        await sleep(Math.max(60, Math.min(450, (dist / CONFIG.movement.walkSpeed) * 1000 * 0.5)));
+        // At least ~250 ms: headless software rendering runs at a few fps and a shorter press can fall between frames.
+        await sleep(Math.max(250, Math.min(450, (dist / CONFIG.movement.walkSpeed) * 1000 * 0.5)));
         await press(new Set());
       }
     }

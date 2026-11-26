@@ -259,8 +259,8 @@ function HearthsOutside() {
     windows.forEach((w, i) => {
       const lv = lit.current.get(w.h) ?? 0;
       const flick = 0.85 + 0.15 * Math.sin(t * 8.3 + i) * Math.sin(t * 3.9 + i * 2);
-      glow.setMatrixAt(i, _m.makeScale(1.5, 1.5, 1.5).setPosition(w.p));
-      glow.setColorAt(i, _c.setRGB(1, 0.55, 0.25).multiplyScalar(lv * env.glow * 0.55 * flick));
+      glow.setMatrixAt(i, _m.makeScale(2.1, 2.1, 2.1).setPosition(w.p));
+      glow.setColorAt(i, _c.setRGB(1, 0.55, 0.25).multiplyScalar(lv * env.glow * 1.0 * flick));
     });
     glow.instanceMatrix.needsUpdate = true;
     if (glow.instanceColor) glow.instanceColor.needsUpdate = true;

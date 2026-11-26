@@ -166,15 +166,168 @@ async function closePanel(page) {
   await sleep(250);
 }
 
+/**
+ * (Same as scripts/e2e-interiors.mjs.) Route (A* on a 0.25 m grid over the shared collision) — what a person
+ * walking by keys has in mind; keyboardWalk then steers along it.
+ */
+function route(from, to) {
+  const G = 0.25;
+  const r = CONFIG.movement.playerRadius + 0.06;
+  const key = (i, j) => `${i},${j}`;
+  const pt = (i, j) => ({ x: i * G, z: j * G });
+  const walk = new Map();
+  const ok = (i, j) => {
+    const k = key(i, j);
+    if (!walk.has(k)) walk.set(k, isWalkable(pt(i, j), r));
+    return walk.get(k);
+  };
+  const si = Math.round(from.x / G);
+  const sj = Math.round(from.z / G);
+  const ti = Math.round(to.x / G);
+  const tj = Math.round(to.z / G);
+  const h = (i, j) => Math.hypot(i - ti, j - tj) * G;
+  const open = [[h(si, sj), 0, si, sj]];
+  const came = new Map([[key(si, sj), null]]);
+  const cost = new Map([[key(si, sj), 0]]);
+  for (let iter = 0; open.length && iter < 60_000; iter++) {
+    let bi = 0;
+    for (let n = 1; n < open.length; n++) if (open[n][0] < open[bi][0]) bi = n;
+    const [, g, i, j] = open.splice(bi, 1)[0];
+    if (i === ti && j === tj) {
+      const out = [];
+      for (let k = key(i, j); k; k = came.get(k)) {
+        const [a, b] = k.split(',').map(Number);
+        out.unshift(pt(a, b));
+      }
+      out.push(to);
+      // string-pull: from each point jump to the farthest one in clear line of sight (with margin)
+      const clear = (p, q) => {
+        const n = Math.ceil(Math.hypot(q.x - p.x, q.z - p.z) / 0.1);
+        for (let k = 1; k < n; k++) if (!isWalkable({ x: p.x + ((q.x - p.x) * k) / n, z: p.z + ((q.z - p.z) * k) / n }, r + 0.05)) return false;
+        return true;
+      };
+      const pulled = [];
+      let at = 0;
+      while (at < out.length - 1) {
+        let j = out.length - 1;
+        while (j > at + 1 && !clear(out[at], out[j])) j--;
+        pulled.push(out[j]);
+        at = j;
+      }
+      return pulled;
+    }
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const ni = i + di;
+      const nj = j + dj;
+      if (!ok(ni, nj) || (di && dj && (!ok(i + di, j) || !ok(i, j + dj)))) continue;
+      const ng = g + Math.hypot(di, dj) * G;
+      const k = key(ni, nj);
+      if (ng < (cost.get(k) ?? Infinity)) {
+        cost.set(k, ng);
+        came.set(k, key(i, j));
+        open.push([ng + h(ni, nj), ng, ni, nj]);
+      }
+    }
+  }
+  return [to];
+}
+
+/** Keyboard walk along a planned route through `via` points. */
+async function keyboardRoute(page, via, opts) {
+  let from = (await snap(page)).local;
+  const wps = [];
+  for (const v of via) {
+    wps.push(...route(from, v));
+    from = v;
+  }
+  // Headless WebGL is software-rendered (2–4 fps): one frame of a held key moves ~1 m, so waypoints count as reached within 0.9 m.
+  await keyboardWalk(page, wps, { reach: 0.9, ...opts });
+}
+
+/**
+ * Keyboard walking towards waypoints: every 120 ms pick the camera-relative
+ * key combination (W/A/S/D, diagonals) closest to the direction to the next
+ * waypoint — exactly what a person steering by keys does.
+ */
+async function keyboardWalk(page, waypoints, { reach = 0.45, timeout = 40_000 } = {}) {
+  const held = new Set();
+  const press = async (keys) => {
+    for (const k of [...held]) if (!keys.has(k)) {
+      await page.keyboard.up(k);
+      held.delete(k);
+    }
+    for (const k of keys) if (!held.has(k)) {
+      await page.keyboard.down(k);
+      held.add(k);
+    }
+  };
+  const t0 = Date.now();
+  try {
+    for (const wp of waypoints) {
+      let last = null;
+      let stall = 0;
+      let nudge = 0;
+      for (;;) {
+        const s = await snap(page);
+        if (Date.now() - t0 > timeout) {
+          const focus = await page.evaluate(() => `${document.activeElement?.tagName}.${document.activeElement?.className}`);
+          throw new Error(`keyboard walk timed out before (${wp.x.toFixed(1)}, ${wp.z.toFixed(1)}); at (${s.local.x.toFixed(2)}, ${s.local.z.toFixed(2)}) anim ${s.local.anim}, seat ${JSON.stringify(s.motion?.seat ?? null)}, focus ${focus}, connection ${s.connection}, ui ${JSON.stringify(s.ui ?? null).slice(0, 200)}`);
+        }
+        const dx = wp.x - s.local.x;
+        const dz = wp.z - s.local.z;
+        if (Math.hypot(dx, dz) < reach) break;
+        // world → screen-relative (camera.ts screenToWorldDir inverse): right = (cos y, -sin y), up = -(sin y, cos y)
+        const yaw = s.view.yaw;
+        const mx = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+        const my = -(dx * Math.sin(yaw) + dz * Math.cos(yaw));
+        const a = Math.atan2(my, mx); // 0 = right, PI/2 = up
+        // Like a person: if pushing straight on gets nowhere (a table, a door jamb), veer 45° and slide round it.
+        const dist = Math.hypot(dx, dz);
+        const moved = last ? Math.hypot(s.local.x - last.x, s.local.z - last.z) : 1;
+        last = { x: s.local.x, z: s.local.z };
+        if (moved > 0.05) {
+          stall = 0;
+          if (nudge && moved > 0.4) nudge = 0;
+        } else if (++stall >= 4) {
+          nudge = nudge === 0 ? 1 : nudge > 0 ? -nudge : -nudge + 1;
+          if (Math.abs(nudge) > 2) nudge = 1;
+          stall = 0;
+        }
+        let sector = Math.round(a / (Math.PI / 4)) + nudge;
+        if (sector > 4) sector -= 8;
+        if (sector < -4) sector += 8;
+        const combos = { 0: ['KeyD'], 1: ['KeyD', 'KeyW'], 2: ['KeyW'], 3: ['KeyA', 'KeyW'], 4: ['KeyA'], [-4]: ['KeyA'], [-3]: ['KeyA', 'KeyS'], [-2]: ['KeyS'], [-1]: ['KeyD', 'KeyS'] };
+        // hold briefly, release, re-evaluate (works at any frame rate, cannot overshoot far)
+        await press(new Set(combos[sector] ?? ['KeyW']));
+        await sleep(Math.max(60, Math.min(450, (dist / CONFIG.movement.walkSpeed) * 1000 * 0.5)));
+        await press(new Set());
+      }
+    }
+  } finally {
+    await press(new Set());
+  }
+}
+
+/** Walk like a person: into the building through its door first, then to the spot (each leg by click/tap hops). */
+async function hopToward(page, target, near = 1.2, timeout = 240_000) {
+  const it = interiorAt(target);
+  const s = await snap(page);
+  if (it && interiorAt(s.local)?.id !== it.id) {
+    const door = it.doors[0];
+    await hop(page, door.inside, 1.5, timeout / 2, (q) => interiorAt(q.local)?.id === it.id);
+  }
+  return hop(page, target, near, timeout);
+}
+
 /** Click/tap-to-move in hops towards a target (the camera follows), until close. */
-async function hopToward(page, target, near = 1.2, timeout = 180_000) {
+async function hop(page, target, near = 1.2, timeout = 180_000, reached = null) {
   const vp = page.viewportSize();
   const t0 = Date.now();
   let stuck = 0;
   let prev = null;
   while (Date.now() - t0 < timeout) {
     const s = await snap(page);
-    if (Math.hypot(s.local.x - target.x, s.local.z - target.z) < near) return s;
+    if (Math.hypot(s.local.x - target.x, s.local.z - target.z) < near || (reached && reached(s))) return s;
     // A hop click that landed on something usable opened its panel: put it away and keep walking.
     if (await page.$('[data-testid=sheet-close]')) await closePanel(page);
     if (prev && Math.hypot(s.local.x - prev.x, s.local.z - prev.z) < 0.2) stuck++;
@@ -192,12 +345,20 @@ async function hopToward(page, target, near = 1.2, timeout = 180_000) {
       x = me.x + (tp.x - me.x) * k;
       y = me.y + (tp.y - me.y) * k;
     }
-    if (stuck > 2) {
-      // nudge sideways if a click keeps landing on something unwalkable
-      x += (Math.random() - 0.5) * 120;
-      y += (Math.random() - 0.5) * 120;
+    if (stuck > 3) {
+      // Clicks keep getting nowhere (a narrow screen, a wall in the way): steer by keys along a planned route instead.
+      await keyboardRoute(page, [target], { timeout: 90_000 }).catch(() => undefined);
+      stuck = 0;
+      continue;
     }
     if (!(await onCanvas(page, x, y))) y -= 40;
+    // Don't tap a sign / seat / player on the way (that would use it instead of walking): nudge off it.
+    for (let k = 0; k < 6; k++) {
+      const pk = await query(page, 'pick', x, y, page.__touch ? 'touch' : 'mouse');
+      if (!pk) break;
+      x += (k % 2 ? -1 : 1) * (40 + k * 25);
+      y -= 15;
+    }
     await tapOrClick(page, x, y);
     await sleep(300);
     await waitSnap(page, (q) => !q.motion?.path && q.local.speed < 0.05, 'hop finished', 40_000);
@@ -206,7 +367,7 @@ async function hopToward(page, target, near = 1.2, timeout = 180_000) {
 }
 
 /** Walk next to an interactable (inside its building) and click / tap it; wait for the panel (if any). */
-async function useThing(page, id, { panel = null, approach = null, timeout = 60_000 } = {}) {
+async function useThing(page, id, { panel = null, approach = null, done = null, timeout = 60_000 } = {}) {
   const it = getInteractable(id);
   assert(it, `no interactable ${id}`);
   const interior = it.interiorId ? getInterior(it.interiorId) : null;
@@ -223,6 +384,15 @@ async function useThing(page, id, { panel = null, approach = null, timeout = 60_
       const pick = await query(page, 'pick', p.x, p.y, page.__touch ? 'touch' : 'mouse');
       if (pick?.id === id) {
         await tapOrClick(page, p.x, p.y);
+        if (done) {
+          const t1 = Date.now();
+          while (Date.now() - t1 < 12_000) {
+            if (await done(await snap(page))) return;
+            await sleep(400);
+          }
+          lastErr = 'no effect yet';
+          continue;
+        }
         if (!panel) return;
         try {
           await page.waitForSelector(`[data-testid=${panel}]`, { timeout: 25_000 });
@@ -300,7 +470,7 @@ try {
   });
 
   await check('3. A lights the hearth in House 1; B sees it lit', async () => {
-    await Promise.all([useThing(a, 'station_house_1_hearth', { approach: interiorAnchor('house_1', 'hearth').position }), hopToward(b, interiorAnchor('house_1', 'entrance').position, 1.6)]);
+    await Promise.all([useThing(a, 'station_house_1_hearth', { approach: interiorAnchor('house_1', 'hearth').position, done: (x) => x.activities?.hearths?.house_1?.active === true }), hopToward(b, interiorAnchor('house_1', 'entrance').position, 1.6)]);
     await waitSnap(a, (s) => s.activities?.hearths?.house_1?.active === true, 'A sees the hearth lit', 30_000);
     await waitSnap(b, (s) => s.activities?.hearths?.house_1?.active === true, 'B sees the hearth lit', 15_000);
     await shot(a, 'e2e-hearth-A');

@@ -15,6 +15,7 @@ import { registerOverlayActor } from '../game/WorldOverlay.js';
 import { useGameStore } from '../state/gameStore.js';
 import { runtime } from '../state/runtime.js';
 import { isHiddenIndoors } from '../world/cutaway.js';
+import { devOverrides } from '../world/env.js';
 
 const FADE_S = 0.6;
 
@@ -23,6 +24,9 @@ const Keeper = memo(function Keeper({ def }: { def: KeeperDef }) {
   const group = useRef<Group>(null);
   const st = useRef({ init: false, x: 0, y: 0, z: 0, rot: 0, px: 0, pz: 0, speed: 0, fade: 0 });
   const [anim, setAnim] = useState<AnimState>('idle');
+  /** Only build / animate the character when it is near what the camera looks at (saves CPU per frame). */
+  const [near, setNear] = useState(false);
+  const nearCheck = useRef(0);
   const animRef = useRef<AnimState>('idle');
   const present = !!info?.present;
   const presentRef = useRef(present);
@@ -70,6 +74,14 @@ const Keeper = memo(function Keeper({ def }: { def: KeeperDef }) {
     g.rotation.y = s.rot;
     g.scale.setScalar(0.6 + 0.4 * s.fade);
     r.render = { x: s.x, y: s.y, z: s.z, rot: s.rot, speed: s.speed, visible: s.fade > 0.5 };
+    nearCheck.current -= dt;
+    if (nearCheck.current <= 0) {
+      nearCheck.current = 0.5;
+      const v = runtime.view;
+      const cam = devOverrides.cam; // dev screenshots look elsewhere than the player
+      const n = s.fade > 0.01 && Math.hypot(s.x - (cam?.x ?? v.focusX), s.z - (cam?.z ?? v.focusZ)) < Math.max(40, v.halfWidth * 1.6);
+      setNear((prev) => (prev === n ? prev : n));
+    }
     const serverAnim = useGameStore.getState().keepers[def.id]?.anim ?? 'idle';
     const next: AnimState = s.speed > 0.35 ? 'walk' : serverAnim === 'interact' ? 'interact' : 'idle';
     if (next !== animRef.current) {
@@ -80,7 +92,7 @@ const Keeper = memo(function Keeper({ def }: { def: KeeperDef }) {
 
   return (
     <group ref={group} name={`keeper-${def.id}`} visible={false}>
-      <Character appearance={def.appearance} anim={anim} animSeq={info?.animSeq ?? 0} variant="npc" castShadow speed={st.current.speed} seed={def.id.length / 17} />
+      {near ? <Character appearance={def.appearance} anim={anim} animSeq={info?.animSeq ?? 0} variant="npc" castShadow speed={st.current.speed} seed={def.id.length / 17} /> : null}
     </group>
   );
 });

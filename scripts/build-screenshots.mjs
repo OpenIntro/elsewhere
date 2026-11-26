@@ -18,7 +18,7 @@
  */
 import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { PIECES, groundHeight } from '@elsewhere/shared';
+import { PIECES, buildableAt, groundHeight } from '@elsewhere/shared';
 import { SITE, cottagePlan } from './lib/cottage.mjs';
 import { assert, aimGhost, buildState, screenOf, choosePiece, hopToward, openBuild, placeHere, rotateTo, sleep, snap, waitSnap, zoomOut } from './lib/browser.mjs';
 
@@ -137,16 +137,20 @@ async function page_ghosts(page, label) {
   // Refused: on the path (red ghost + reason).
   await choosePiece(page, 'wall', { category: 'structure', variant: 'rose' });
   const s = await snap(page);
+  // The nearest protected spot (a path, a doorway…) that is on screen.
   let bad = null;
-  for (const [dx, dz] of [[3, 3], [2, 2], [-2, 3], [3, -1], [1, 2]]) {
-    try {
-      await screenOf(page, Math.round(s.local.x + dx), Math.round(s.local.z + dz));
-    } catch {
-      continue;
+  for (let r = 2; r <= 9 && !bad; r++)
+    for (let k = 0; k < 16 && !bad; k++) {
+      const x = Math.round(s.local.x + Math.cos((k / 16) * Math.PI * 2) * r);
+      const z = Math.round(s.local.z + Math.sin((k / 16) * Math.PI * 2) * r);
+      if (buildableAt({ x, z }).code !== 'protected') continue;
+      try {
+        await screenOf(page, x, z);
+      } catch {
+        continue;
+      }
+      bad = await aimGhost(page, x, z);
     }
-    bad = await aimGhost(page, Math.round(s.local.x + dx), Math.round(s.local.z + dz));
-    break;
-  }
   assert(bad, 'no on-screen spot for the refused ghost');
   if (bad.build.ghost.ok) console.log('[warn] the refused-ghost spot was valid');
   await sleep(1200);

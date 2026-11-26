@@ -127,11 +127,30 @@ function planPieces(): Order[] {
       if (!hut.every(([k, x, z, r]) => validatePlacement({ kind: k, variant: PIECES[k].variants[0]!.id, x, z, rot: r, level: 0 }, { index: ix, builderId: `s${s}`, builderPos: null, players: [] }).ok)) continue;
       void probe;
       for (const [k, x, z, r, l] of hut) if (out.length < N) tryPut(s, k, x, z, r, l);
-      for (const x of [cx - 1, cx + 1]) if (out.length < N) tryPut(s, 'roof_peak', x, cz, 1, 1);
+      // Every other hut gets a second storey.
+      const storeys = plot % 2 === 0 ? 2 : 1;
+      if (storeys === 2) for (const [k, x, z, r] of hut) if (out.length < N && k !== 'floor') tryPut(s, k === 'doorway' ? 'wall_window' : k, x, z, r, 1);
+      for (const x of [cx - 1, cx + 1]) if (out.length < N) tryPut(s, 'roof_peak', x, cz, 1, storeys);
       if (out.length < N) tryPut(s, 'lamp', cx + 2.5, cz + 2);
       if (out.length < N) tryPut(s, 'crate', cx - 2.5, cz + 2);
       if (out.length < N) tryPut(s, 'fence', cx, cz + 3, 0);
       if (out.length < N) tryPut(s, 'planter', cx + 3, cz - 2);
+    }
+  }
+  // Fill the remaining free land with floor tiles carrying a crate or a rug (gardens, yards).
+  let k = 0;
+  for (let cz = Math.ceil(WORLD_BOUNDS.minZ / 2) * 2; cz < WORLD_BOUNDS.maxZ && out.length < N; cz += 2) {
+    for (let cx = Math.ceil(WORLD_BOUNDS.minX / 2) * 2; cx < WORLD_BOUNDS.maxX && out.length < N; cx += 2) {
+      const s = k++ % SEEDERS;
+      if (!tryPut(s, 'floor', cx, cz)) continue;
+      if (out.length < N) tryPut(s, k % 3 === 0 ? 'rug' : k % 3 === 1 ? 'crate' : 'table', cx, cz);
+    }
+  }
+  // Then pillars and lamps where four tiles meet.
+  for (let cz = Math.ceil(WORLD_BOUNDS.minZ / 2) * 2 + 1; cz < WORLD_BOUNDS.maxZ && out.length < N; cz += 2) {
+    for (let cx = Math.ceil(WORLD_BOUNDS.minX / 2) * 2 + 1; cx < WORLD_BOUNDS.maxX && out.length < N; cx += 2) {
+      const s = k++ % SEEDERS;
+      tryPut(s, k % 2 ? 'pillar' : 'lamp', cx, cz);
     }
   }
   return out;

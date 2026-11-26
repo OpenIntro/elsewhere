@@ -18,6 +18,12 @@ public buildings have **keepers** — a barista, a shopkeeper, an archivist and 
 characters of the island, never players: they wear a "keeper" tag, are never counted online, never
 chat and never appear in the Gazette or World Memory.
 
+Players can also **build** (see [Player building](#player-building)): press **B** or the Build
+button, pick a piece from the palette (floors, walls, windows, doorways, roofs, steps, fences,
+gates, lamps, planters, furniture, rugs and signs with your own words), and place it on a grid on
+open land. Everyone sees it live, it blocks movement like any wall, it survives restarts, and only
+its builder (or a moderator) can remove it. Building is free for now.
+
 Stack: TypeScript everywhere, npm workspaces (`shared/`, `server/`, `client/`). Server: Node 22,
 Express 5, Colyseus 0.18, Postgres SQL (embedded PGlite by default, `pg` for Postgres/Supabase).
 Client: Vite, React 19, three.js via @react-three/fiber, zustand. Architecture details:
@@ -104,7 +110,11 @@ All are optional in development. Source of truth: `server/src/env.ts` (server) a
 | `WORKSHOP_DAILY_CONTRIBUTIONS` | `3` | Pieces of work one player may do per world-day. |
 | `HEARTH_MINUTES` | `20` | Homes: how long a lit hearth burns (real minutes). |
 | `NET_SECTIONS` | `5` | Boathouse: sections per net (one mend per player per world-day). |
-| `BUILD_*` | see `CONFIG.building` | Player building (feature paused; `BUILD_ENABLED`, `BUILD_RANGE`, `BUILD_MAX_PER_PLAYER`, `BUILD_MAX_PER_WORLD`, `BUILD_RATE_CAPACITY`, `BUILD_RATE_PER_SECOND`). |
+| `BUILD_ENABLED` | on | `0`/`false` switches player building off (placements are refused with "Building is switched off"; existing pieces stay). |
+| `BUILD_RANGE` | `9` | Max distance (m) from the builder to a piece's centre. |
+| `BUILD_MAX_PER_PLAYER` | `400` | Pieces one profile may own at once. |
+| `BUILD_MAX_PER_WORLD` | `6000` | Pieces in one world. |
+| `BUILD_RATE_CAPACITY` / `BUILD_RATE_PER_SECOND` | `8` / `2` | Per-profile token bucket for place + remove (survives reconnects). |
 | `ELSEWHERE_DEBUG` | (unset) | `1`: extra server diagnostics (e.g. logs refused out-of-range interactions). |
 | `VITE_SERVER_PORT` | `PORT`, then `2567` | Dev client only: server port the Vite client connects to. Read from the shell, not from `.env`. |
 
@@ -179,6 +189,9 @@ The server is a single process on a single port.
 | `npm run build && npm run e2e:acceptance` | MVP acceptance: spawns its own production server (port `ACCEPT_PORT`, default 2620, fresh temp data dir, lowered fountain/Gazette thresholds), one desktop (1440x900) and one emulated phone (Pixel 7, touch) browser through the real onboarding; 17 named checks incl. restart persistence, audio and zero console errors; graphics set to "low" for headless speed; screenshots to `docs/screenshots/acceptance/` |
 | `npm run build && npm run e2e:activities` | building activities: own production server (port `ACT_PORT`, default 2633, fresh temp data dir, **lowered** `WORKSHOP_STAGE_CONTRIBUTIONS=2,2 WORKSHOP_STAGE_DISTINCT=2,2`), a desktop and a phone browser through the real UI; 12 named checks — same keeper state on both, hearth, guest book, notice board, town poll (real tally 2), barista drink seen in hand by the other, piano notes received + played by the other's audio graph, the town project finished by both (stage advance + lanterns outside), online count stays 2 with keepers on duty, everything still there after a server restart, zero console errors. Screenshots with `ACT_SHOTS=<dir>` |
 | `npm run build && npm run e2e:interiors` | walk-in interiors: own production server (port `INT_PORT`, default 2631), a desktop and a phone browser; 9 named checks — click-to-move into the Café through its door, keyboard walking in and out, cutaway open inside / closed outside, name tags + speech bubble + interaction prompt indoors, an indoor chair seen seated by the other client, walls hold, zero console errors |
+| `npm run build && npm run e2e:build` | player building: own production server (port `BUILD_PORT`, default 2634, fresh temp data dir), a desktop and a phone (Pixel 7, touch) browser through the real build UI; 11 named checks — palette, a hut built by A (floor, walls, doorway, window, roof, lamp, sign with text) seen identically by B, a protected spot and a spot on another player refused with a visible reason, B cannot remove A's piece and forged remove/place messages are refused by the server, B blocked by A's wall but walking in through A's doorway (server positions), B builds by touch, A removes a piece and B sees it go, everything still there after a server restart, a late joiner receives every piece, zero console errors. Screenshots with `BUILD_SHOTS=<dir>` |
+| `node scripts/build-screenshots.mjs [devUrl]` | builds a cottage through the real UI (dev client) and shoots palette / valid + refused ghost / the cottage by day and night on desktop and phones → `docs/screenshots/build/` (`SHOTS_ADMIN_TOKEN` clears leftovers of an earlier run) |
+| `npm run build && npx tsx --conditions=source scripts/build-scale.mts [--pieces 2000]` | seeds N pieces through the real server path and measures join, bytes, render cost and server timing (numbers under "Player building") |
 | `node scripts/interior-screenshots.mjs [devUrl]` | every interior day/night on desktop and phone + exteriors at night + the four camera rotations → `docs/screenshots/interiors/` (dev client; uses `?inside=`) |
 | `node scripts/smoke-two-clients.mjs [url]` | two browsers join and see each other move |
 | `npx tsx --conditions=source scripts/server-integration.mjs [url] --save f.json` then restart the server and `... --verify-restart f.json` | multi-client protocol test (chat, seats, bell, fountain, portal, Gazette, persistence); see the script header for the server env it expects |
@@ -208,6 +221,12 @@ Browser scripts need Playwright with Chromium available to `require('playwright'
 | Click / tap a keeper, or E near their counter | talk to the keeper: a short line about the island today + the building's menu (order a drink, today's curiosities, the poll, the town project) |
 | Piano panel | click / tap the keys; on a keyboard the Z…M row plays the low octave and Q…I the high one (movement keys are paused while the piano is open) |
 | Sip chip (bottom of the screen) | sip the drink in your hand |
+| B / Build button | enter / leave build mode (the build dock replaces the bottom nav) |
+| Build mode: mouse | hover aims the ghost (green = fits, red + reason = refused), click places; pointing at the top of your wall puts the next storey or a roof there |
+| Build mode: keys | R (Shift+R) turn the piece, Enter place, X / Delete remove tool, Ctrl/Cmd+Z undo your last piece, Esc or B done; WASD still walks |
+| Build mode: touch | tap the ground to aim, then the Place button; Rotate / Remove / Undo / Done buttons; the joystick still walks |
+| Remove tool | click / tap one of your pieces → Remove (pieces holding others up go last); someone else's piece → Report |
+| Settings → Stuck somewhere? (also in the build dock's ··· menu) | Unstuck: back to the Town Square (once every 30 s) |
 | Walk through a door | enter a building: its roof and the walls between you and the camera fade away (dollhouse cutaway, any camera rotation); walk out and they come back. Clicking a spot inside a building from outside walks you in through the door |
 
 ## Building activities
@@ -249,6 +268,50 @@ muffled through walls, on the effects volume.
 Admin: `GET /api/admin/notes?board=&limit=` and `DELETE /api/admin/notes/:id` (notices, guest-book
 and tide-log entries). Reports of entries land in the normal reports list with the entry as evidence.
 
+## Player building
+
+The catalog, the grid and every rule are data in `shared/src/building.ts` (client preview and server
+validation run the same code); the server (`server/src/building/`) is authoritative; the client lives
+in `client/src/build/`.
+
+- **Pieces** (3-4 muted styles each): floor tile (2x2 m), wall, wall with window (glows at night),
+  doorway (walk-through), half wall, pillar; flat roof, roof slope (two make a pitched gable roof),
+  peaked roof, gable end; steps; fence, gate (walk-through); table, bench, chair, lamp (lights
+  itself at dusk by the world clock), planter, crate, rug, and a sign carrying up to 40 characters
+  of your text (sanitized and profanity-masked like chat; refused while chat-muted).
+- **Grid and storeys:** centres on a 0.5 m grid (structure snaps to 1 m), quarter-turn rotation,
+  storeys 2.6 m. Walls stack on walls (two storeys of walls plus a roof and more: level 0..3);
+  upper floors and roofs rest on walls/pillars of the storey below, furniture upstairs on an upper
+  floor. Upper pieces may only rest on **your own** pieces.
+- **Where:** open land of the island only. Refused: off-island and water, building footprints and
+  door aprons (`PROTECTED_ZONES` from the interiors data, plus 1 m), paths (+0.7 m), the Town
+  Square, The Unknown, 2.2 m around every interactable (benches, signs, mailboxes…), 3 m around
+  spawn points, landmarks (fountain, arch, standing stones), the dock and bridge, steep ground,
+  trees/rocks/props, other pieces of the same layer, a solid piece over any player (in any room
+  instance), and anything further than `BUILD_RANGE` from you.
+- **Anti-grief:** per-profile rate limit, per-player and per-world caps, no building within 4 m of
+  pieces of someone you blocked or who blocked you, banned and build-banned players cannot build,
+  only the owner removes a piece, and Unstuck is always available.
+- **Collision:** solid ground-level pieces block movement for everyone (shared collision used by
+  server validation and client prediction) and the click-to-move pathfinder; floors, rugs and steps
+  never block, doorways and gates are open in the middle. Characters stand on floor boards and steps.
+- **World Memory / Gazette:** a resident's first piece, island milestones of pieces placed (10, 100,
+  500, …) and the first roof that closes walls with a doorway — only real events.
+- **Rendering:** one instanced mesh per piece kind + style + material (40-50 draw calls for 2,000
+  pieces), shadows like the world; roofs and upper storeys over or next to you dissolve (dithered,
+  their shadow too), and tall walls between the camera and you thin out.
+
+Measured with `scripts/build-scale.mts` (production build, one machine, headless Chromium with
+**software** WebGL — frame times say nothing about real GPUs): 2,000 pieces seeded through the real
+server path in 5.5 s (validation 0.14 ms average, 2 ms max per placement); a joining browser got
+them as a 4-chunk snapshot of 74 KB on the websocket (90 KB as JSON; 9 KB for an empty world)
+applied in 9 ms; idle websocket traffic stayed ~100-150 B/s with or without pieces (pieces are not
+in the Colyseus state); the build layer drew 47 calls / 0.58 M triangles (whole frame 133 calls /
+1.0 M triangles vs 83 / 0.42 M empty; frame time 407 ms vs 288 ms in software rendering); with 30
+protocol clients walking, the server's event-loop delay p99 was 12.9 ms with 2,000 pieces vs 14.4 ms
+with none (timer resolution ~10 ms); `resolveMovement` next to pieces ~70 µs per 1.6 m move; a
+restart loaded all 2,000 pieces and was healthy in 0.65 s.
+
 ## Moderation and admin
 
 Players can mute, block (server-enforced, persisted, manageable from Settings) and report other
@@ -260,11 +323,19 @@ With `ADMIN_TOKEN` set, send `Authorization: Bearer <ADMIN_TOKEN>` (or `X-Admin-
 | Route | Purpose |
 |---|---|
 | `GET /api/admin/reports?limit=50` | player reports |
-| `GET /api/admin/sanctions?active=1` / `POST /api/admin/sanctions` `{profileId, kind: 'chat_mute'\|'ban', minutes?, reason}` / `DELETE /api/admin/sanctions/:id` | sanctions (timed or permanent) |
+| `GET /api/admin/sanctions?active=1` / `POST /api/admin/sanctions` `{profileId, kind: 'chat_mute'\|'ban'\|'build_ban', minutes?, reason}` / `DELETE /api/admin/sanctions/:id` | sanctions (timed or permanent; `build_ban` = may play and chat, may not build) |
 | `POST /api/admin/kick` `{profileId? , sessionId?, reason?}` | disconnect a player now |
 | `GET /api/admin/players` | who is online |
 | `POST /api/admin/gazette/compile` `{periodStart?, periodEnd?}` | compile a Gazette issue now (from real events only) |
 | `GET /api/admin/notes?board=&limit=` / `DELETE /api/admin/notes/:id` | notices, guest-book and tide-log entries (moderation) |
+| `GET /api/admin/build/pieces?owner=&limit=` | placed pieces, newest first (owner, kind, position, sign text) |
+| `DELETE /api/admin/build/pieces/:id` | remove a piece and everything resting on it (owners get a notice) |
+| `DELETE /api/admin/build/profiles/:profileId` | remove every piece a profile owns |
+| `GET /api/admin/build/stats?bench=1&reset=1` | piece counts, validation timing, event-loop delay, snapshot size |
+
+Players report a built piece (e.g. a rude sign) with the remove tool → Report on someone else's
+piece; it goes through the normal report flow against the builder's profile, with the piece and its
+text as details.
 
 There is no admin UI; these are REST endpoints.
 
@@ -288,7 +359,8 @@ Labelled "Planned" / "Not yet" in the UI (Home panel), not implemented:
 
 - A home of your own in the Residential District, with your own mailbox (two homes can be walked
   into already; houses 3-5 are marked "a future home").
-- Decorating (furniture, plants, objects).
+- Decorating the walk-in homes' interiors (player building is outdoors, on open land).
+- Buying building pieces (economy): building is free for now.
 - Shops and trading between players (the General Store's till).
 - A gentle currency earned by being around (economy). Until then the store's curiosities and the
   café's drinks are free ("on the house, for now").
@@ -340,3 +412,13 @@ These were not checked, or were checked only in a limited way:
   walls blocking, click-to-move paths) and screenshots, not by browser walks. Doors are open
   passages: the door leaf swings open when someone is near, and a "closed" door does not block.
   Outdoor trees are not faded by the cutaway and can hide part of a room at some rotations.
+- **Player building:** built benches and chairs are furniture only — sitting on them is not
+  implemented (seats are tied to the fixed interactables data). Only ground-level pieces collide:
+  upper storeys are visual (players never walk upstairs; steps are a low step, not a staircase).
+  Pieces have no hit points, decay or claim areas; the per-player cap, rate limit and admin removal
+  are the only limits on how much one person builds. Removing a piece that holds others up is
+  refused (remove the top first); admins remove the whole stack. Roofs are 2 m tiles, so long roofs
+  show a seam between tiles and have no overhang at the gable ends. The browser e2e and the 2,000
+  piece measurement ran on one machine with headless software-rendered Chromium; real GPUs, real
+  phones and Safari were not tried. Sign text is masked by the same word list as chat (not an
+  image/meaning filter) and is reportable.

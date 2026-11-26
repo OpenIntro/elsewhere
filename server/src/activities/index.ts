@@ -269,10 +269,11 @@ export function createActivities(deps: ActivityDeps): ActivityService {
   async function rollPoll(initial: boolean): Promise<void> {
     const cur = pollForDay(worldDay(), T.pollPeriodDays);
     if (poll.key === cur.key) return;
-    const prevKey = initial ? await ws.getKv<string>(POLL_ACTIVE_KEY) : poll.key;
+    // (stored as an object: a bare JSON string does not round-trip through the kv reader)
+    const prevKey = initial ? ((await ws.getKv<{ key: string }>(POLL_ACTIVE_KEY))?.key ?? null) : poll.key;
     if (prevKey && prevKey !== cur.key) await closePoll(prevKey);
     poll = { key: cur.key, tallies: await repo.tallies(cur.key, cur.poll.options.length), endDay: cur.endDay, question: cur.poll.question, options: [...cur.poll.options] };
-    await ws.setKv(POLL_ACTIVE_KEY, cur.key);
+    await ws.setKv(POLL_ACTIVE_KEY, { key: cur.key });
     syncPoll();
   }
   async function closePoll(key: string): Promise<void> {

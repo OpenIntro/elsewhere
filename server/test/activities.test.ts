@@ -439,4 +439,29 @@ describe('building activities', { timeout: 120_000 }, () => {
     for (const art of arts) for (const k of KEEPERS) expect(art.body).not.toContain(k.name);
     await w.close();
   });
+
+  it('a poll period that ended while the server was down is closed (and recorded) at the next start', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elsewhere-poll-'));
+    try {
+      const w = await makeWorld({ persistence: createPersistence({ dataDir: dir }) });
+      const a = await w.join('Alice', at('town_hall', 'meeting_table').x, at('town_hall', 'meeting_table').z);
+      expect((await act(w, a, { station: 'station_hall_poll', action: 'vote', option: 1 })).ok).toBe(true);
+      await w.dispose();
+      await w.close();
+      w.clock.advance(DAY_MS * 1.5); // down over the day change
+      const w2 = await makeWorld({ persistence: createPersistence({ dataDir: dir }), clock: w.clock });
+      const closed = await w2.memory.list({ kind: 'poll_closed' });
+      expect(closed.length).toBe(1);
+      expect(closed[0]!.data).toMatchObject({ votes: 1 });
+      expect(data<PollData>(w2, ACTIVITY_KEYS.poll, {} as PollData).last?.tallies[1]).toBe(1);
+      await w2.dispose();
+      await w2.close();
+      // and never twice
+      const w3 = await makeWorld({ persistence: createPersistence({ dataDir: dir }), clock: w.clock });
+      expect((await w3.memory.list({ kind: 'poll_closed' })).length).toBe(1);
+      await w3.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

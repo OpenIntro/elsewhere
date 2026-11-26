@@ -27,8 +27,10 @@
  *
  * Env: BUILD_PORT, BUILD_DATA_DIR, BUILD_SHOTS (screenshot dir; default none), BUILD_VERBOSE=1.
  * Nothing here simulates players: every UI action is a real input in a real
- * page. Check 5's forged messages come from a protocol client holding B's
- * own session token — exactly what a modified client could send.
+ * page (check 6's push into the wall sends each two-key combination as one
+ * pair of DOM keyboard events, so a slow frame never sees half of it). Check
+ * 5's forged messages come from a protocol client holding B's own session
+ * token — exactly what a modified client could send.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
@@ -104,10 +106,14 @@ async function stopServer() {
 // Helpers
 // ---------------------------------------------------------------------------
 const pageErrors = [];
+/** True only while check 9 deliberately takes the server down (connection errors are expected then). */
+let restarting = false;
 function watch(page, label) {
   page.on('pageerror', (e) => pageErrors.push(`${label} pageerror: ${e.message}`));
   page.on('console', (m) => {
-    if (m.type() === 'error') pageErrors.push(`${label} console.error: ${m.text()}`);
+    if (m.type() !== 'error') return;
+    if (restarting && /WebSocket|ERR_CONNECTION_REFUSED|Failed to load resource|Failed to fetch|net::|matchmake|reconnect|\[net\]/i.test(m.text())) return;
+    pageErrors.push(`${label} console.error: ${m.text()}`);
   });
 }
 async function shot(page, name) {
@@ -144,9 +150,12 @@ async function holdToward(page, dir, ms) {
   if (mx < -0.38) keys.push('KeyA');
   if (my > 0.38) keys.push('KeyW');
   if (my < -0.38) keys.push('KeyS');
-  for (const k of keys) await page.keyboard.down(k);
+  // Both keys go down (and up) in the same task: pressed one after the other, a slow headless frame can
+  // sample just one of them and walk diagonally for that frame.
+  const send = (type) => page.evaluate(([t, ks]) => { for (const code of ks) window.dispatchEvent(new KeyboardEvent(t, { code, key: code.replace('Key', '').toLowerCase(), bubbles: true })); }, [type, keys]);
+  await send('keydown');
   await sleep(ms);
-  for (const k of keys) await page.keyboard.up(k);
+  await send('keyup');
 }
 /** A protocol client joined with an existing session token (a "modified client"). */
 async function forger(token) {
@@ -344,16 +353,37 @@ try {
   });
 
   await check("6. B is blocked by A's wall and walks in through A's doorway (server-side positions)", async () => {
+    // Out of build mode, nothing focused: the keys walk.
+    if (await b.$('[data-testid=build-dock]')) await b.locator('[data-testid=build-done]').tap();
+    await waitSnap(b, (s) => s.build.mode === 'off', 'B out of build mode', 10_000);
+    await b.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
     const sb0 = await snap(b);
-    // Line up with the middle of the west wall, then hold the key that walks due east for 4 s (no steering round it).
-    await keyboardWalk(b, [{ x: westWall.x - 1.6, z: westWall.z }], { reach: 0.3, timeout: 30_000 });
-    await holdToward(b, { x: 1, z: 0 }, 4000);
-    await sleep(800);
-    const sa = await snap(a);
-    const bServer = posOf(sa, idB);
+    // Line up with the middle of the wall by tap-to-move (exact at any frame rate), then push due east by keyboard.
+    await hopToward(b, { x: westWall.x - 1.8, z: westWall.z }, 0.35);
+    const lined = (await snap(b)).local;
+    assert(Math.abs(lined.z - westWall.z) < 0.5, `B is not lined up with the wall: z ${lined.z.toFixed(2)}`);
+    // Push due east in pulses, sampling B's SERVER position (A's room state) after each. A keyboard
+    // direction is never exactly perpendicular, so B may slide along the wall: that is fine, but while
+    // B is level with the wall (its z span) B must never be east of the wall's west face.
     const limit = westWall.x - 0.12 - CONFIG.movement.playerRadius + 0.05;
-    assert(bServer.x < limit, `B got through the wall: server x ${bServer.x.toFixed(2)} (wall face at ${(westWall.x - 0.12).toFixed(2)})`);
+    const span = (z) => z > westWall.z - 1 + 0.05 && z < westWall.z + 1 - 0.05;
+    const samples = [];
+    for (let i = 0; i < 16; i++) {
+      await holdToward(b, { x: 1, z: 0 }, 300);
+      await sleep(200);
+      const q = posOf(await snap(a), idB);
+      samples.push({ x: q.x, z: q.z });
+      if (process.env.BUILD_VERBOSE) log('push', i, 'server', q.x.toFixed(2), q.z.toFixed(2), 'local', JSON.stringify((await snap(b)).local));
+      if (!span(q.z)) break;
+      if (samples.length >= 3 && Math.abs(samples.at(-1).x - samples.at(-3).x) < 0.02) break;
+    }
+    const through = samples.find((q) => span(q.z) && q.x > limit);
+    assert(!through, `B got through the wall: server (${through?.x.toFixed(2)}, ${through?.z.toFixed(2)}), wall face at ${(westWall.x - 0.12).toFixed(2)}`);
+    const pressed = samples.filter((q) => span(q.z) && q.x > limit - 0.3);
+    assert(pressed.length > 0, `B never reached the wall: lined up at (${lined.x.toFixed(2)}, ${lined.z.toFixed(2)}), camera yaw ${(await snap(b)).view.yaw.toFixed(3)}, server samples ${JSON.stringify(samples.map((q) => [q.x.toFixed(2), q.z.toFixed(2)]))}`);
+    const bServer = pressed.reduce((m, q) => (q.x > m.x ? q : m));
     const blockedAt = bServer.x;
+    void lined;
     // Round to the doorway and in.
     const outside = { x: door.x, z: door.z + 1.4 };
     const inside = { x: door.x + 0.3, z: SITE.z - 0.1 };
@@ -407,12 +437,14 @@ try {
   });
 
   await check('9. after a server restart both reload and every piece is still there', async () => {
+    restarting = true;
     await stopServer();
     await startServer();
     await a.reload();
     await b.reload();
     const sa = await waitSnap(a, (s) => s.connection === 'connected' && s.build?.synced && s.build.count === before.length, 'A synced after restart', 90_000);
     const sb = await waitSnap(b, (s) => s.connection === 'connected' && s.build?.synced && s.build.count === before.length, 'B synced after restart', 90_000);
+    restarting = false;
     assert(sameSets(sa.build.pieces, before), 'A: pieces differ after restart');
     assert(sameSets(sb.build.pieces, before), 'B: pieces differ after restart');
     assert(sa.build.mine === before.filter((p) => p.ownerId === sa.build.pieces.find((x) => x.kind === 'sign').ownerId).length, 'A no longer owns its pieces');

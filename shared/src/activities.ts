@@ -454,7 +454,7 @@ export function keeperLine(keeper: KeeperDef, c: KeeperContext): string {
   const hours = OPENING_HOURS[keeper.interiorId];
   if (!c.open) return `Closed for now — back at ${hours ? formatHour(hours[0]) : 'opening'}.`;
   const lines: string[] = [];
-  const timeOfDay = c.hours < 11 ? 'morning' : c.hours < 17 ? 'afternoon' : 'evening';
+  const timeOfDay = c.hours < 12 ? 'morning' : c.hours < 17 ? 'afternoon' : 'evening';
   switch (keeper.id) {
     case 'keeper_barista':
       lines.push(`Good ${timeOfDay}. Today’s special is the ${c.special.toLowerCase()}.`);
