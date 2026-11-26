@@ -426,8 +426,18 @@ export const INTERACTABLES: readonly Interactable[] = [
 
 const BY_ID = new Map<string, Interactable>(INTERACTABLES.map((i) => [i.id, i]));
 
+/**
+ * Interactables that are not world data (player-built seats, ids "bp:<pieceId>"):
+ * the building systems register a resolver on the server and on the client,
+ * so seat refs, getSeat and the interaction flow work for them unchanged.
+ */
+let dynamicResolver: ((id: string) => Interactable | undefined) | null = null;
+export function registerInteractableResolver(fn: ((id: string) => Interactable | undefined) | null): void {
+  dynamicResolver = fn;
+}
+
 export function getInteractable(id: string): Interactable | undefined {
-  return BY_ID.get(id);
+  return BY_ID.get(id) ?? dynamicResolver?.(id);
 }
 
 export function isSeatInteractable(i: Interactable): i is SeatInteractable {

@@ -13,6 +13,9 @@
  *   DELETE /api/admin/build/pieces/:id             remove a piece (+ what rests on it)
  *   DELETE /api/admin/build/profiles/:profileId    remove every piece of a profile
  *   GET    /api/admin/build/stats?bench=1&reset=1  counts, validation/collision timing, event-loop delay (reset: new window)
+ *   GET    /api/admin/build/nature?profile=        cleared bushes / rocks (who, when)
+ *   DELETE /api/admin/build/nature/:id             restore one cleared bush / rock
+ *   DELETE /api/admin/build/nature/profiles/:profileId  restore everything a profile cleared
  *   GET    /api/admin/notes?board=&limit=          notices / guest-book / tide-log entries (removed included)
  *   DELETE /api/admin/notes/:id                    remove one entry (moderation)
  * Sanction kinds: chat_mute | ban | build_ban (may play and chat, may not build).
@@ -178,6 +181,29 @@ export function createAdminRouter(): Router {
   r.get(
     API.adminBuildStats,
     route(async (req) => services().building.stats(req.query.bench === '1', req.query.reset === '1')),
+  );
+
+  r.get(
+    API.adminBuildNature,
+    route(async (req) => {
+      const profileId = str(req.query.profile, 80);
+      return { cleared: services().building.clearedList(profileId ? { profileId } : {}) };
+    }),
+  );
+
+  // Restore-all by profile is registered before the single-id route so "profiles" is never read as an id.
+  r.delete(
+    API.adminBuildNatureProfile,
+    route(async (req) => ({ restored: await services().building.adminRestoreNature({ profileId: String(req.params.profileId) }) })),
+  );
+
+  r.delete(
+    API.adminBuildNatureOne,
+    route(async (req) => {
+      const restored = await services().building.adminRestoreNature({ ids: [String(req.params.id)] });
+      if (!restored.length) throw new ApiFailure('not_found', 'Not cleared (or no such plant)');
+      return { restored };
+    }),
   );
 
   return r;

@@ -9,11 +9,33 @@
  * Touch: tap aims the ghost, then the explicit Place button; Rotate / Done buttons.
  */
 import { useEffect, useRef, useState } from 'react';
-import { CONFIG, PIECE_CATEGORIES, PIECES, PIECE_KINDS, type PieceKind } from '@elsewhere/shared';
+import { CONFIG, PALETTE_ORDER, PIECE_CATEGORIES, PIECES, natureItem, type PieceKind } from '@elsewhere/shared';
+import { runtime } from '../state/runtime.js';
 import { useGameStore } from '../state/gameStore.js';
 import { useIsTouch } from '../ui/hooks.js';
 import { Icon } from '../ui/icons.js';
-import { enterBuild, exitBuild, placeGhost, reportPiece, removePiece, rotate, selectKind, selectVariant, setSignText, setTool, toggleBuild, undo, unstuck } from './actions.js';
+import {
+  canRepeat,
+  clearNature,
+  editText,
+  enterBuild,
+  exitBuild,
+  nextSegment,
+  placeGhost,
+  reportPiece,
+  removePiece,
+  rotate,
+  selectKind,
+  selectVariant,
+  setAutoStorey,
+  setRoofOptions,
+  setSignText,
+  setTool,
+  stepStorey,
+  toggleBuild,
+  undo,
+  unstuck,
+} from './actions.js';
 import { pieces, useBuildStore, variantFor } from './store.js';
 import './build.css';
 
@@ -28,6 +50,10 @@ const HAMMER = 'M13.8 4.6 19.4 10l-2.2 2.2-1.5-1.4-7.9 8.5a1.7 1.7 0 0 1-2.5-2.4
 const ROTATE = 'M18.5 9.5A7 7 0 1 0 19 14M19 5v4.5h-4.5';
 const UNDO = 'M9 7 5 11l4 4M5.5 11H14a5 5 0 0 1 0 10h-2';
 const ERASE = 'M7.5 17.5h11M5.3 14.6l7.9-8.4a1.6 1.6 0 0 1 2.3 0l3 3a1.6 1.6 0 0 1 0 2.3l-5.8 6H8.6l-3.3-2.9Z';
+const UP = 'M6 14.5 12 8.5l6 6';
+const DOWN = 'M6 9.5l6 6 6-6';
+const LEAF_ICON = 'M5 19c0-8 5-13 14-14-1 9-6 14-14 14Zm0 0 7-7';
+const NEXT = 'M5 12h11M12 7l5 5-5 5M19 6v12';
 const PLACE = 'M12 4.5v11M7.5 11 12 15.5l4.5-4.5M5.5 19.5h13';
 
 /** The Build button in the bottom nav. */
@@ -72,10 +98,17 @@ function StatusLine({ touch }: { touch: boolean }) {
     text = touch ? `Tap Place to build the ${PIECES[kind].name.toLowerCase()}${lvl}` : `Click to place${lvl} · R to turn · Esc when done`;
     tone = 'ok';
   }
+  const natureId = useBuildStore((s) => (s.mode === 'place' && s.ghost && !s.ghost.ok ? s.ghost.natureId : undefined));
+  if (mode === 'clear' && tone !== 'bad') text = touch ? 'Tap a bush or a small rock to clear it' : 'Click a bush or a small rock to clear it';
   return (
     <div className={`build-status build-status--${tone}`} role="status" aria-live="polite" data-testid="build-status" data-tone={tone}>
       <span className="build-status__dot" aria-hidden="true" />
       <span className="build-status__text">{text}</span>
+      {natureId && !recentRefusal ? (
+        <button type="button" className="build-status__act" onClick={() => clearNature(natureId)} data-testid="build-clear-offer">
+          {natureItem(natureId)?.kind === 'rock' ? 'Clear rock' : 'Clear bush'}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -83,29 +116,89 @@ function StatusLine({ touch }: { touch: boolean }) {
 function Palette() {
   const kind = useBuildStore((s) => s.kind);
   const category = useBuildStore((s) => s.category);
+  const query = useBuildStore((s) => s.query);
   const thumbs = useBuildStore((s) => s.thumbs);
   const mode = useBuildStore((s) => s.mode);
-  const kinds = PIECE_KINDS.filter((k) => PIECES[k].category === category);
+  const q = query.trim().toLowerCase();
+  const kinds = PALETTE_ORDER.filter((k) => !PIECES[k].legacy || (category === 'roof' && !q)).filter((k) =>
+    q ? PIECES[k].name.toLowerCase().includes(q) || PIECES[k].hint.toLowerCase().includes(q) || k.replace('_', ' ').includes(q) : PIECES[k].category === category,
+  );
   return (
     <div className="build-palette">
-      <div className="build-tabs" role="tablist" aria-label="Piece groups">
-        {PIECE_CATEGORIES.map((c) => (
-          <button key={c.id} type="button" role="tab" aria-selected={c.id === category} className={`build-tab${c.id === category ? ' is-on' : ''}`} onClick={() => useBuildStore.getState().set({ category: c.id })} data-testid={`build-tab-${c.id}`}>
-            {c.name}
-          </button>
-        ))}
+      <div className="build-tabs-row">
+        <div className="build-tabs" role="tablist" aria-label="Piece groups">
+          {PIECE_CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="tab"
+              aria-selected={!q && c.id === category}
+              className={`build-tab${!q && c.id === category ? ' is-on' : ''}`}
+              onClick={() => useBuildStore.getState().set({ category: c.id, query: '' })}
+              data-testid={`build-tab-${c.id}`}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+        <label className="build-search">
+          <span className="visually-hidden">Find a piece</span>
+          <input type="search" className="build-search__input" value={query} placeholder="Find…" onChange={(e) => useBuildStore.getState().set({ query: e.target.value })} data-testid="build-search" />
+        </label>
       </div>
       <div className="build-tiles" role="listbox" aria-label="Pieces">
         {kinds.map((k) => {
           const on = mode === 'place' && k === kind;
           return (
-            <button key={k} type="button" role="option" aria-selected={on} className={`build-tile${on ? ' is-on' : ''}`} onClick={() => selectKind(k)} title={PIECES[k].hint} data-testid={`build-piece-${k}`}>
+            <button key={k} type="button" role="option" aria-selected={on} className={`build-tile${on ? ' is-on' : ''}${PIECES[k].legacy ? ' is-legacy' : ''}`} onClick={() => selectKind(k)} title={PIECES[k].hint} data-testid={`build-piece-${k}`}>
               <span className="build-tile__img">{thumbs[k] ? <img src={thumbs[k]} alt="" draggable={false} /> : <span className="build-tile__ph" />}</span>
               <span className="build-tile__name">{PIECES[k].name}</span>
             </button>
           );
         })}
+        {kinds.length === 0 ? <span className="build-bar__note">Nothing called that.</span> : null}
       </div>
+    </div>
+  );
+}
+
+/** Storey control: ▲ / ▼ lock the ghost to a storey (PgUp / PgDn); the label goes back to automatic. */
+function StoreyControl() {
+  const lock = useBuildStore((s) => s.lockLevel);
+  const level = useBuildStore((s) => s.ghost?.level ?? 0);
+  const shown = lock ?? level;
+  return (
+    <div className="build-storey" role="group" aria-label="Storey" data-testid="build-storey" data-lock={lock === null ? 'auto' : String(lock)}>
+      <button type="button" className="build-storey__btn" onClick={() => stepStorey(1)} aria-label="Up a storey" title="Up a storey (PgUp)" data-testid="build-storey-up">
+        <Glyph d={UP} size={16} />
+      </button>
+      <button type="button" className={`build-storey__label${lock === null ? '' : ' is-locked'}`} onClick={() => setAutoStorey()} title={lock === null ? 'Storey follows what you point at' : 'Locked — tap for automatic'} data-testid="build-storey-label">
+        <span className="build-storey__n">{shown === 0 ? 'Ground' : `Storey ${shown + 1}`}</span>
+        <span className="build-storey__hint">{lock === null ? 'auto' : 'locked'}</span>
+      </button>
+      <button type="button" className="build-storey__btn" onClick={() => stepStorey(-1)} aria-label="Down a storey" title="Down a storey (PgDn)" data-testid="build-storey-down">
+        <Glyph d={DOWN} size={16} />
+      </button>
+    </div>
+  );
+}
+
+function RoofOptions() {
+  const style = useBuildStore((s) => s.roofStyle);
+  const pitch = useBuildStore((s) => s.roofPitch);
+  return (
+    <div className="build-seg" role="group" aria-label="Roof shape">
+      {(['gable', 'hip'] as const).map((v) => (
+        <button key={v} type="button" className={`build-seg__btn${style === v ? ' is-on' : ''}`} aria-pressed={style === v} onClick={() => setRoofOptions({ style: v })} data-testid={`build-roof-${v}`}>
+          {v === 'gable' ? 'Gable' : 'Hip'}
+        </button>
+      ))}
+      <span className="build-seg__gap" />
+      {([0, 1] as const).map((v) => (
+        <button key={v} type="button" className={`build-seg__btn${pitch === v ? ' is-on' : ''}`} aria-pressed={pitch === v} onClick={() => setRoofOptions({ pitch: v })} data-testid={`build-pitch-${v}`}>
+          {v === 0 ? 'Gentle' : 'Steep'}
+        </button>
+      ))}
     </div>
   );
 }
@@ -135,6 +228,9 @@ function Variants({ kind }: { kind: PieceKind }) {
 
 function SignInput() {
   const text = useBuildStore((s) => s.signText);
+  const kind = useBuildStore((s) => s.kind);
+  const max = PIECES[kind].textMax ?? CONFIG.building.signMaxLength;
+  const facade = !!PIECES[kind].mount;
   return (
     <label className="build-sign">
       <span className="visually-hidden">Sign text</span>
@@ -142,34 +238,68 @@ function SignInput() {
         type="text"
         className="build-sign__input"
         value={text}
-        maxLength={CONFIG.building.signMaxLength}
-        placeholder="Words for your sign…"
+        maxLength={max}
+        placeholder={facade ? 'Name of your building…' : 'Words for your sign…'}
         onChange={(e) => setSignText(e.target.value)}
         data-testid="build-sign-text"
       />
-      <span className="build-sign__count">{CONFIG.building.signMaxLength - [...text].length}</span>
+      <span className="build-sign__count">{max - [...text].length}</span>
     </label>
   );
 }
 
 function SelectionCard() {
   const selected = useBuildStore((s) => s.selected);
+  const editing = useBuildStore((s) => s.editing);
   useBuildStore((s) => s.version);
   const me = useGameStore((s) => s.profile?.profileId);
   const p = selected ? pieces.index.get(selected) : undefined;
+  const [draft, setDraft] = useState('');
   if (!p) return null;
   const mine = p.ownerId === me;
-  const variant = PIECES[p.kind].variants.find((v) => v.id === p.variant)?.name;
+  const def = PIECES[p.kind];
+  const variant = def.variants.find((v) => v.id === p.variant)?.name;
+  const max = def.textMax ?? CONFIG.building.signMaxLength;
+  if (editing === p.id) {
+    return (
+      <div className="build-card build-card--edit" data-testid="build-edit">
+        <label className="build-sign">
+          <span className="visually-hidden">New words</span>
+          <input type="text" className="build-sign__input" value={draft} maxLength={max} onChange={(e) => setDraft(e.target.value)} data-testid="build-edit-text" autoFocus />
+          <span className="build-sign__count">{max - [...draft].length}</span>
+        </label>
+        <button type="button" className="btn btn--primary btn--sm" onClick={() => editText(p.id, draft)} disabled={!draft.trim()} data-testid="build-edit-save">
+          Save
+        </button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => useBuildStore.getState().set({ editing: null })}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="build-card" data-testid="build-selected" data-owner={mine ? 'me' : 'other'}>
       <div className="build-card__text">
         <span className="build-card__title">
-          {PIECES[p.kind].name}
+          {def.name}
           {variant ? <span className="build-card__sub"> · {variant}</span> : null}
         </span>
         <span className="build-card__by">{mine ? 'Built by you' : `Built by ${p.ownerName || 'someone'}`}</span>
         {p.text ? <span className="build-card__quote">“{p.text}”</span> : null}
       </div>
+      {mine && def.text ? (
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={() => {
+            setDraft(p.text ?? '');
+            useBuildStore.getState().set({ editing: p.id });
+          }}
+          data-testid="build-edit-open"
+        >
+          Edit words
+        </button>
+      ) : null}
       {mine ? (
         <button type="button" className="btn btn--danger btn--sm" onClick={() => removePiece(p.id)} data-testid="build-remove">
           Remove
@@ -183,11 +313,35 @@ function SelectionCard() {
   );
 }
 
+/** A bush / rock picked with the clear (or remove) tool. */
+function NatureCard() {
+  const id = useBuildStore((s) => s.selectedNature);
+  if (!id) return null;
+  const n = natureItem(id);
+  if (!n) return null;
+  const what = n.kind === 'rock' ? 'Small rock' : 'Bush';
+  return (
+    <div className="build-card" data-testid="build-nature" data-nature={id}>
+      <div className="build-card__text">
+        <span className="build-card__title">{what}</span>
+        <span className="build-card__by">Grows back by itself after a while unless you build here.</span>
+      </div>
+      <button type="button" className="btn btn--primary btn--sm" onClick={() => clearNature(id)} data-testid="build-clear">
+        {n.kind === 'rock' ? 'Clear rock' : 'Clear bush'}
+      </button>
+    </div>
+  );
+}
+
 function Dock() {
   const touch = useIsTouch();
   const mode = useBuildStore((s) => s.mode);
   const kind = useBuildStore((s) => s.kind);
   const ghostOk = useBuildStore((s) => !!s.ghost?.ok);
+  const cornerPick = useBuildStore((s) => !!s.ghost && !s.ghost.ok && /corner/.test(s.ghost.message));
+  const isRoof = PIECES[kind].param === 'roof';
+  useBuildStore((s) => s.version);
+  const repeat = canRepeat();
   const canUndo = useBuildStore((s) => s.undo.some((id) => pieces.index.get(id)));
   const ref = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState(false);
@@ -223,27 +377,42 @@ function Dock() {
     <div className={`build-dock${touch ? ' is-touch' : ''}`} ref={ref} data-testid="build-dock" data-mode={mode}>
       <StatusLine touch={touch} />
       {mode === 'remove' ? <SelectionCard /> : null}
+      {mode === 'remove' || mode === 'clear' ? <NatureCard /> : null}
       <div className="build-panel">
         {mode === 'place' ? <Palette /> : null}
+        {mode === 'place' && isRoof ? <RoofOptions /> : null}
         <div className="build-bar">
           {mode === 'place' ? (
             <>
               <Variants kind={kind} />
               {PIECES[kind].text ? <SignInput /> : null}
+              <StoreyControl />
             </>
           ) : (
-            <span className="build-bar__note">Only your own pieces can be removed. Pieces holding others up go last.</span>
+            <span className="build-bar__note">
+              {mode === 'clear' ? 'Bushes and small rocks on open land. Trees and the town’s gardens stay.' : 'Only your own pieces can be removed. Pieces holding others up go last.'}
+            </span>
           )}
           <div className="build-actions">
             {mode === 'place' ? (
-              <button type="button" className="build-act" onClick={() => rotate(1)} aria-label="Rotate piece" title="Rotate (R)" data-testid="build-rotate">
+              <button type="button" className="build-act" onClick={() => rotate(1)} aria-label={isRoof ? 'Turn the ridge' : 'Rotate piece'} title="Rotate (R)" data-testid="build-rotate">
                 <Glyph d={ROTATE} />
-                <span className="build-act__label">Rotate</span>
+                <span className="build-act__label">{isRoof ? 'Ridge' : 'Rotate'}</span>
+              </button>
+            ) : null}
+            {mode === 'place' && repeat ? (
+              <button type="button" className="build-act" onClick={() => nextSegment()} aria-label="Next along the run" title="Next along the run (N)" data-testid="build-next">
+                <Glyph d={NEXT} />
+                <span className="build-act__label">Next</span>
               </button>
             ) : null}
             <button type="button" className={`build-act${mode === 'remove' ? ' is-on' : ''}`} onClick={() => setTool(mode === 'remove' ? 'place' : 'remove')} aria-pressed={mode === 'remove'} data-testid="build-tool-remove">
               <Glyph d={ERASE} />
               <span className="build-act__label">{mode === 'remove' ? 'Build' : 'Remove'}</span>
+            </button>
+            <button type="button" className={`build-act${mode === 'clear' ? ' is-on' : ''}`} onClick={() => setTool(mode === 'clear' ? 'place' : 'clear')} aria-pressed={mode === 'clear'} data-testid="build-tool-clear">
+              <Glyph d={LEAF_ICON} />
+              <span className="build-act__label">{mode === 'clear' ? 'Build' : 'Clear'}</span>
             </button>
             <button type="button" className="build-act" onClick={() => undo()} disabled={!canUndo} aria-label="Undo last piece" data-testid="build-undo">
               <Glyph d={UNDO} />
@@ -271,7 +440,7 @@ function Dock() {
               ) : null}
             </span>
             {mode === 'place' && touch ? (
-              <button type="button" className="btn btn--primary build-place" onClick={() => placeGhost()} disabled={!ghostOk} data-testid="build-place">
+              <button type="button" className="btn btn--primary build-place" onClick={() => placeGhost()} disabled={!ghostOk && !cornerPick} data-testid="build-place">
                 <Glyph d={PLACE} size={18} /> Place
               </button>
             ) : null}
@@ -285,15 +454,52 @@ function Dock() {
   );
 }
 
-/** Mounted by the HUD; renders nothing unless building. */
+/**
+ * "<name> · built by <player>": a quiet label when you walk up to a building
+ * with a name board (nearest within a few metres, outside build mode too).
+ */
+function NamePrompt() {
+  const [label, setLabel] = useState<{ name: string; by: string } | null>(null);
+  useEffect(() => {
+    const t = setInterval(() => {
+      const lp = runtime.localPlayer;
+      if (!lp.ready) return setLabel(null);
+      let best: { name: string; by: string } | null = null;
+      let bd = 6;
+      for (const p of pieces.index.query({ minX: lp.x - 7, maxX: lp.x + 7, minZ: lp.z - 7, maxZ: lp.z + 7 })) {
+        if (!p.text || !PIECES[p.kind].mount) continue;
+        const d = Math.hypot(p.x - lp.x, p.z - lp.z);
+        if (d < bd) {
+          bd = d;
+          best = { name: p.text, by: p.ownerName || 'someone' };
+        }
+      }
+      setLabel((cur) => (cur?.name === best?.name && cur?.by === best?.by ? cur : best));
+    }, 400);
+    return () => clearInterval(t);
+  }, []);
+  if (!label) return null;
+  return (
+    <div className="build-nameprompt" data-testid="build-name-prompt" role="status">
+      <span className="build-nameprompt__name">{label.name}</span>
+      <span className="build-nameprompt__by"> · built by {label.by}</span>
+    </div>
+  );
+}
+
+/** Mounted by the HUD: the building-name label, and the dock while building. */
 export function BuildUi() {
   const mode = useBuildStore((s) => s.mode);
   const connected = useGameStore((s) => s.connection === 'connected');
   useEffect(() => {
     if (!connected && mode !== 'off') exitBuild();
   }, [connected, mode]);
-  if (mode === 'off') return null;
-  return <Dock />;
+  return (
+    <>
+      {mode === 'off' ? <NamePrompt /> : null}
+      {mode === 'off' ? null : <Dock />}
+    </>
+  );
 }
 
 export { enterBuild };

@@ -30,3 +30,4 @@ export { walkTo, walkToInteract, walkToPlayer, cancelPath, hasPath, nav, refresh
 export { NavGrid, findPath } from './pathfinding.js';
 export { TouchControls, isTouchDevice, useTouchControlsVisible } from './TouchControls.js';
 export { worldToScreen, groundFromScreen } from './picking.js';
+export { setExtraInteractables } from './extraInteractables.js';

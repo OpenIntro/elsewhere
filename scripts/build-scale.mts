@@ -33,7 +33,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client, type Room } from '@colyseus/sdk';
-import { C2S, CONFIG, PIECES, PieceIndex, ROOM_NAME, S2C, WORLD_BOUNDS, isWalkable, resolveMovement, validatePlacement, type PieceKind, type PieceLike } from '@elsewhere/shared';
+import { C2S, CONFIG, PIECES, PieceIndex, ROOM_NAME, S2C, WORLD_BOUNDS, clearableNature, isWalkable, resolveMovement, validatePlacement, type PieceKind, type PieceLike } from '@elsewhere/shared';
 
 const args = process.argv.slice(2);
 const arg = (name: string, def: string) => {
@@ -65,6 +65,7 @@ async function startServer(): Promise<void> {
     BUILD_RATE_CAPACITY: '100000',
     BUILD_RATE_PER_SECOND: '100000',
     BUILD_MAX_PER_PLAYER: '100000',
+    BUILD_CLEAR_DAILY: '100000',
     BUILD_MAX_PER_WORLD: String(Math.max(N + 100, CONFIG.building.maxPiecesPerWorld)),
   };
   server = spawn(process.execPath, [path.join(ROOT, 'server/dist/index.js')], { cwd: ROOT, env, stdio: ['ignore', 'ignore', 'inherit'] });
@@ -87,7 +88,11 @@ async function stats(q = '') {
 // walls, a doorway, a window, roof) with a lamp, a crate and a fence, on every
 // free plot of the island, one seeder (owner) per plot.
 // ---------------------------------------------------------------------------
+/** The seeders clear every clearable bush / rock first (through the real path), so plots are open. */
+const CLEARED = new Set(clearableNature().keys());
 interface Order {
+  params?: { w: number; d: number; style: 'gable' | 'hip'; pitch: 0 | 1 };
+  text?: string;
   seeder: number;
   kind: PieceKind;
   variant: string;
@@ -100,12 +105,12 @@ function planPieces(): Order[] {
   const ix = new PieceIndex();
   const out: Order[] = [];
   let n = 0;
-  const tryPut = (seeder: number, kind: PieceKind, x: number, z: number, rot = 0, level = 0): boolean => {
+  const tryPut = (seeder: number, kind: PieceKind, x: number, z: number, rot = 0, level = 0, params?: { w: number; d: number; style: 'gable' | 'hip'; pitch: 0 | 1 }, text?: string): boolean => {
     const variant = PIECES[kind].variants[(x + z + level) % PIECES[kind].variants.length | 0]?.id ?? PIECES[kind].variants[0]!.id;
-    const v = validatePlacement({ kind, variant, x, z, rot, level }, { index: ix, builderId: `s${seeder}`, builderPos: null, players: [] });
+    const v = validatePlacement({ kind, variant, x, z, rot, level, ...(params ? { params } : {}) }, { index: ix, builderId: `s${seeder}`, builderPos: null, players: [], cleared: CLEARED });
     if (!v.ok) return false;
-    ix.add({ id: `l${n++}`, kind, x, z, rot, level, y: v.y, ownerId: `s${seeder}` } as PieceLike);
-    out.push({ seeder, kind, variant, x, z, rot, level });
+    ix.add({ id: `l${n++}`, kind, x, z, rot, level, y: v.y, ownerId: `s${seeder}`, ...(v.params ? { params: v.params } : {}) } as PieceLike);
+    out.push({ seeder, kind, variant, x, z, rot, level, ...(params ? { params } : {}), ...(text ? { text } : {}) });
     return true;
   };
   let plot = 0;
@@ -130,7 +135,13 @@ function planPieces(): Order[] {
       // Every other hut gets a second storey.
       const storeys = plot % 2 === 0 ? 2 : 1;
       if (storeys === 2) for (const [k, x, z, r] of hut) if (out.length < N && k !== 'floor') tryPut(s, k === 'doorway' ? 'wall_window' : k, x, z, r, 1);
-      for (const x of [cx - 1, cx + 1]) if (out.length < N) tryPut(s, 'roof_peak', x, cz, 1, storeys);
+      // One house roof over the hut (ridge along X), then a few furnishings inside.
+      if (out.length < N) tryPut(s, 'house_roof', cx, cz, 1, storeys, { w: 2, d: 4, style: plot % 3 === 0 ? 'hip' : 'gable', pitch: (plot % 2) as 0 | 1 });
+      if (out.length < N) tryPut(s, 'table', cx - 0.5, cz);
+      if (out.length < N) tryPut(s, 'table_lamp', cx - 0.5, cz);
+      if (out.length < N) tryPut(s, 'chair', cx + 1, cz, 3);
+      if (out.length < N) tryPut(s, 'picture', cx - 1, cz - 1, 0);
+      if (out.length < N) tryPut(s, 'name_board', cx - 1, cz + 1, 0, 0, undefined, 'Hut');
       if (out.length < N) tryPut(s, 'lamp', cx + 2.5, cz + 2);
       if (out.length < N) tryPut(s, 'crate', cx - 2.5, cz + 2);
       if (out.length < N) tryPut(s, 'fence', cx, cz + 3, 0);
@@ -143,7 +154,8 @@ function planPieces(): Order[] {
     for (let cx = Math.ceil(WORLD_BOUNDS.minX / 2) * 2; cx < WORLD_BOUNDS.maxX && out.length < N; cx += 2) {
       const s = k++ % SEEDERS;
       if (!tryPut(s, 'floor', cx, cz)) continue;
-      if (out.length < N) tryPut(s, k % 3 === 0 ? 'rug' : k % 3 === 1 ? 'crate' : 'table', cx, cz);
+      const FILL: PieceKind[] = ['rug', 'crate', 'sofa', 'bookshelf', 'plant_tall', 'dining_table', 'barrel', 'armchair', 'bed', 'kitchen_counter', 'stove', 'fireplace'];
+      if (out.length < N) tryPut(s, FILL[k % FILL.length]!, cx, cz);
     }
   }
   // Then pillars and lamps where four tiles meet.
@@ -299,6 +311,20 @@ try {
 
   // --- Seed through the real server path -----------------------------------
   const seeders = await Promise.all(Array.from({ length: SEEDERS }, (_, i) => seeder(i)));
+  // Clear every clearable bush / rock first (real C2S.buildClear path; the seeding server allows enough clears).
+  {
+    let id = 900000;
+    const ids = [...CLEARED];
+    await Promise.all(
+      seeders.map(async (s, i) => {
+        for (const nid of ids.filter((_, k) => k % SEEDERS === i)) {
+          const reqId = ++id;
+          s.room.send(C2S.buildClear, { reqId, id: nid });
+          for (let w = 0; !s.results.has(reqId) && w < 2000; w++) await sleep(2);
+        }
+      }),
+    );
+  }
   const t0 = Date.now();
   let refused: Record<string, number> = {};
   let req = 0;
@@ -307,7 +333,7 @@ try {
     seeders.map(async (s, i) => {
       for (const o of bySeeder[i]!) {
         const id = ++req;
-        s.room.send(C2S.buildPlace, { reqId: id, kind: o.kind, variant: o.variant, x: o.x, z: o.z, rot: o.rot, level: o.level });
+        s.room.send(C2S.buildPlace, { reqId: id, kind: o.kind, variant: o.variant, x: o.x, z: o.z, rot: o.rot, level: o.level, ...(o.params ? { params: o.params } : {}), ...(o.text ? { text: o.text } : {}) });
         for (let w = 0; !s.results.has(id) && w < 2000; w++) await sleep(2);
         const r = s.results.get(id);
         if (!r?.ok) refused[r?.reason ?? 'timeout'] = (refused[r?.reason ?? 'timeout'] ?? 0) + 1;

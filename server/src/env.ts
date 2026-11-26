@@ -79,6 +79,10 @@ export const ENV = {
       capacity: Math.max(1, num('BUILD_RATE_CAPACITY', CONFIG.rateLimits.build.capacity)),
       refillPerSecond: Math.max(0.01, num('BUILD_RATE_PER_SECOND', CONFIG.rateLimits.build.refillPerSecond)),
     },
+    /** Bushes / small rocks one profile may clear per real day. */
+    clearDaily: Math.max(0, Math.round(num('BUILD_CLEAR_DAILY', CONFIG.building.clear.dailyPerPlayer))),
+    /** Hours until a cleared plant grows back (unless something is built there). */
+    regrowMs: Math.max(0.01, num('BUILD_REGROW_HOURS', CONFIG.building.clear.regrowMs / 3_600_000)) * 3_600_000,
   },
   /** Building activities (defaults in CONFIG.activities). */
   activities: {

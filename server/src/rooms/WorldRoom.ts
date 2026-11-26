@@ -24,6 +24,7 @@ import {
   isFiniteNumber,
   isLocomotionAnim,
   isReaction,
+  PIECE_INTERACT_PREFIX,
   locationAt,
   pickSpawnPoint,
   resolveMovement,
@@ -378,6 +379,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       s.building.unstuck(this.ctx, sid);
     });
     this.on(C2S.buildSync, 'buildSync', (sid) => s.building.sendSnapshot(this.ctx, sid));
+    this.on(C2S.buildClear, null, (sid, m) => s.building.clear(this.ctx, sid, m));
+    this.on(C2S.buildEditText, null, (sid, m) => s.building.editText(this.ctx, sid, m));
   }
 
   private handleMove(sid: string, m: C2SPayloads['move']): void {
@@ -448,7 +451,11 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       this.sendTo(sid, S2C.interactResult, { id: target.id, ok: false, error: 'too_far' });
       return;
     }
-    const result = target.kind === 'station' || target.kind === 'keeper' ? await this.svc.activities.interact(this.ctx, sid, target) : await this.svc.interactions.interact(this.ctx, sid, target, m);
+    const result = target.id.startsWith(PIECE_INTERACT_PREFIX)
+      ? this.svc.building.interact(this.ctx, sid, target) // a player-built seat
+      : target.kind === 'station' || target.kind === 'keeper'
+        ? await this.svc.activities.interact(this.ctx, sid, target)
+        : await this.svc.interactions.interact(this.ctx, sid, target, m);
     this.sendTo(sid, S2C.interactResult, result);
   }
 

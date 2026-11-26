@@ -12,6 +12,7 @@ import { INTERACTABLES, groundHeight, type Interactable, type Vec2 } from '@else
 import { useGameStore } from '../state/gameStore.js';
 import { isHiddenIndoors } from '../world/cutaway.js';
 import { runtime } from '../state/runtime.js';
+import { extraInteractables } from './extraInteractables.js';
 
 export const view3d: { camera: Camera | null; canvas: HTMLElement | null } = { camera: null, canvas: null };
 
@@ -72,7 +73,9 @@ export function pickAt(clientX: number, clientY: number, pointerType: string): P
   const radius = pointerType === 'touch' ? 40 : 28;
   let best: Pick = null;
   let bestD = radius;
-  for (const it of INTERACTABLES) {
+  const lp = runtime.localPlayer;
+  const extra = lp.ready ? extraInteractables(lp.x, lp.z, 30) : [];
+  for (const it of extra.length ? [...INTERACTABLES, ...extra] : INTERACTABLES) {
     if (it.kind === 'hidden') continue; // secrets are found by walking up to them, not by clicking
     if (it.kind !== 'door' && isHiddenIndoors(it.position.x, it.position.z)) continue; // under a closed roof
     const y = groundHeight(it.position.x, it.position.z) + 0.7;

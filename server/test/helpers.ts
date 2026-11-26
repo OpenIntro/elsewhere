@@ -3,7 +3,7 @@
  * RoomContext backed by the real Colyseus schema classes, a manual clock and
  * manual timers. No network.
  */
-import { CONFIG, SYNCED_INTERACTABLES, createCollisionWorld, getInteractable, groundHeight, worldTimeAt, type CollisionWorld, type S2CPayloads, type S2CType } from '@elsewhere/shared';
+import { CONFIG, SYNCED_INTERACTABLES, clearableNature, createCollisionWorld, getInteractable, groundHeight, worldTimeAt, type CollisionWorld, type S2CPayloads, type S2CType } from '@elsewhere/shared';
 import { createActivities, type ActivityService } from '../src/activities/index.js';
 import { newGuestProfile } from '../src/auth/index.js';
 import { createBuilding, type BuildingOptions, type BuildingService } from '../src/building/index.js';
@@ -105,7 +105,7 @@ export interface World {
 }
 
 export async function makeWorld(
-  opts: { persistence?: PersistenceService; tunables?: Partial<CollectiveTunables>; activityTunables?: Partial<ActivityTunables>; clock?: FakeClock; building?: Partial<BuildingOptions> | true; random?: () => number } = {},
+  opts: { persistence?: PersistenceService; tunables?: Partial<CollectiveTunables>; activityTunables?: Partial<ActivityTunables>; clock?: FakeClock; building?: Partial<BuildingOptions> | true; random?: () => number; keepNature?: boolean } = {},
 ): Promise<World> {
   const clock = opts.clock ?? new FakeClock();
   const persistence = opts.persistence ?? createPersistence({ dataDir: 'memory://' });
@@ -133,6 +133,12 @@ export async function makeWorld(
   let building: BuildingService | undefined;
   if (opts.building) {
     building = createBuilding({ persistence, memory, moderation, now: clock.now, collision, ...(opts.building === true ? {} : { options: opts.building }) });
+    if (!opts.keepNature) {
+      // Fixture: rule tests build on a meadow whose bushes / small rocks were already cleared
+      // (rows as the clear tool writes them); nature tests pass keepNature.
+      for (const id of clearableNature().keys())
+        await persistence.sql.write('INSERT INTO nature_cleared (world_id, nature_id, profile_id, profile_name, cleared_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING', ['default', id, 'fixture', 'Fixture', clock.now()]);
+    }
     await building.load();
     hooks.push(building);
   }
@@ -227,6 +233,8 @@ async function openRoomWith(
         p.x = it.position.x;
         p.z = it.position.z + 0.5;
       }
+      // Same routing as WorldRoom.handleInteract: player-built seats go to the building service.
+      if (id.startsWith('bp:') && services.building) return services.building.interact(ctx, sid, it);
       if (it.kind === 'station' || it.kind === 'keeper') return services.activities.interact(ctx, sid, it);
       return interactions.interact(ctx, sid, it, action === undefined ? { id } : { id, action });
     },

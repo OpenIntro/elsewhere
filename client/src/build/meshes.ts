@@ -12,6 +12,7 @@
  */
 import { Color, Shape, type BufferGeometry } from 'three';
 import { CONFIG, PIECES, type PieceKind } from '@elsewhere/shared';
+import { buildRound2 } from './meshes2.js';
 import { GeoBuilder, T, box, cone, cyl, extrude, rbox, sphere as sphereHi, gableRoof, type AddOpts, type ColorLike } from '../world/geom.js';
 
 export type Bucket = 'solid' | 'glass' | 'glow';
@@ -153,7 +154,7 @@ function wallWindow(B: GeoBuilder, c: Readonly<Record<string, string>>): void {
 }
 
 function doorway(B: GeoBuilder, c: Readonly<Record<string, string>>): void {
-  const half = 0.7;
+  const half = 0.8;
   const top = 2.1;
   slab(B, 2.06, -0.45, 0.12, 0.34, STONE_DARK, 0, 0, 0.05, FLAT);
   panel(B, -0.92, -half, 0.2, H - 0.12, 0.22, c.main!);
@@ -370,8 +371,8 @@ export const SIGN_FACE = { width: 0.72, height: 0.36, y: 1.04, z: 0.037 } as con
 /** Lantern glass centre (halo position) relative to the lamp base. */
 export const LAMP_GLOW_Y = 1.97;
 
-export function templateFor(kind: PieceKind, variant: string, upper = false): Template {
-  const key = `${kind}|${variant}|${upper && kind === 'floor' ? 'u' : ''}`;
+export function templateFor(kind: PieceKind, variant: string, upper = false, params?: string): Template {
+  const key = `${kind}|${variant}|${upper && kind === 'floor' ? 'u' : ''}|${params ?? ''}`;
   let t = cache.get(key);
   if (t) return t;
   const B = new GeoBuilder(key.length * 131 + kind.charCodeAt(0));
@@ -440,6 +441,8 @@ export function templateFor(kind: PieceKind, variant: string, upper = false): Te
     case 'sign':
       sign(B, c);
       break;
+    default:
+      buildRound2(B, kind, c, variant, params);
   }
   t = B.build() as Template;
   cache.set(key, t);

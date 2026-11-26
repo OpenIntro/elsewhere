@@ -5,7 +5,7 @@
  * so recompiling the same period yields the same text.
  *
  * Placeholders: {names} {name} {count} {stage} {place} {time} (mid-sentence) / {Time} (sentence start) {item} {voices}
- * {awakenings} {discovery} {milestone} {n} {project} {outcome} {stages} {stageName} {question} {result} {tallies}
+ * {awakenings} {discovery} {milestone} {n} {title} {project} {outcome} {stages} {stageName} {question} {result} {tallies}
  */
 import type { GazetteSection } from '@elsewhere/shared';
 
@@ -142,6 +142,12 @@ export const TEMPLATES = {
     section: 'town_news',
     headlines: ['New Builders', 'Hammers Out', 'Someone Is Building'],
     bodies: ['{count} resident(s) placed their very first building piece this period: {names}.', 'Fresh sawdust on the island: {names} started building for the first time.'],
+  },
+  building_named: {
+    id: 'building_named',
+    section: 'town_news',
+    headlines: ['A House Called {title}', 'Say Hello to {title}', 'New Name on the Lane'],
+    bodies: ['{Time}, {name} hung a name board on their house near {place}: it is called “{title}”.', 'There is a new name on the island: {name} named their house “{title}” near {place} {time}.'],
   },
   structure_roofed: {
     id: 'structure_roofed',

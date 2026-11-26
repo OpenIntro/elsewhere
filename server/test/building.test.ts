@@ -297,9 +297,9 @@ describe('building service', { timeout: 60_000 }, () => {
     expect(chunks[0]!.owners).toEqual([[w.ctx.getProfile(a)!.id, 'Ash']]);
     expect(chunks[0]!.pieces.map((p) => p[0]).sort()).toEqual([...w.building!.index.all()].map((p) => p.id).sort());
     // Empty world: still one (empty) chunk, so the client knows it is in sync.
-    const empty = await makeWorld({ building: true });
+    const empty = await makeWorld({ building: true, keepNature: true });
     const s = await empty.join('Solo', STAND.x, STAND.z);
-    expect(empty.received(s, 'build_snapshot')).toEqual([{ reset: true, done: true, total: 0, owners: [], pieces: [] }]);
+    expect(empty.received(s, 'build_snapshot')).toEqual([{ reset: true, done: true, total: 0, owners: [], pieces: [], cleared: [] }]);
     await empty.close();
     await w.close();
   });

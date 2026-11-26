@@ -114,7 +114,9 @@ All are optional in development. Source of truth: `server/src/env.ts` (server) a
 | `BUILD_RANGE` | `9` | Max distance (m) from the builder to a piece's centre. |
 | `BUILD_MAX_PER_PLAYER` | `400` | Pieces one profile may own at once. |
 | `BUILD_MAX_PER_WORLD` | `6000` | Pieces in one world. |
-| `BUILD_RATE_CAPACITY` / `BUILD_RATE_PER_SECOND` | `8` / `2` | Per-profile token bucket for place + remove (survives reconnects). |
+| `BUILD_RATE_CAPACITY` / `BUILD_RATE_PER_SECOND` | `8` / `2` | Per-profile token bucket for place, remove, clear and edit (survives reconnects). |
+| `BUILD_CLEAR_DAILY` | `20` | Bushes / small rocks one profile may clear per real day. |
+| `BUILD_REGROW_HOURS` | `24` | A cleared plant grows back after this long, unless something is built within 1.5 m. |
 | `ELSEWHERE_DEBUG` | (unset) | `1`: extra server diagnostics (e.g. logs refused out-of-range interactions). |
 | `VITE_SERVER_PORT` | `PORT`, then `2567` | Dev client only: server port the Vite client connects to. Read from the shell, not from `.env`. |
 
@@ -191,6 +193,8 @@ The server is a single process on a single port.
 | `npm run build && npm run e2e:interiors` | walk-in interiors: own production server (port `INT_PORT`, default 2631), a desktop and a phone browser; 9 named checks — click-to-move into the Café through its door, keyboard walking in and out, cutaway open inside / closed outside, name tags + speech bubble + interaction prompt indoors, an indoor chair seen seated by the other client, walls hold, zero console errors |
 | `npm run build && npm run e2e:build` | player building: own production server (port `BUILD_PORT`, default 2634, fresh temp data dir), a desktop and a phone (Pixel 7, touch) browser through the real build UI; 11 named checks — palette, a hut built by A (floor, walls, doorway, window, roof, lamp, sign with text) seen identically by B, a protected spot and a spot on another player refused with a visible reason, B cannot remove A's piece and forged remove/place messages are refused by the server, B blocked by A's wall but walking in through A's doorway (server positions), B builds by touch, A removes a piece and B sees it go, everything still there after a server restart, a late joiner receives every piece, zero console errors. Screenshots with `BUILD_SHOTS=<dir>` |
 | `npm run build && npm run e2e:combined` | cross-feature checks (interiors × building × activities): own production server (port `COMB_PORT`, default 2636, fresh temp data dir, `DAY_LENGTH_MINUTES=480` so the keepers stay on duty for the whole run), a desktop and a phone browser; named checks — build mode refuses interiors, door aprons, keeper routes and stations with a visible reason (UI and forged messages; plus a rulebook sweep), a wall line by the Café door does not seal it (click-to-move in and out; no door of any building can be sealed by legal pieces), inside the Café the keeper's KEEPER tag + a player's tag and speech bubble + online count 2, build mode toggled indoors then E on the barista, a drink held through build mode, a server restart with pieces / notice / workshop progress / lit hearth and migrations 1-4 on the fresh DB, phone layouts 390x844 + 844x390 hit-tested (screenshots to `docs/screenshots/combined/`, `COMB_SHOTS=0` disables), HTML in a sign and a notice shown as text, zero console errors. `COMB_LEGACY_DATA_DIR=<dir>` adds a check that a DB made by an older server migrates to 1-4 (with `qa-token.txt`, `qa-profile.txt` and `qa-secret.txt` in that dir it also checks that the saved guest resumes its profile) |
+| `npm run build && npm run e2e:build2` | building round 2: own production server (port `BUILD2_PORT`, default 2634), a desktop and a phone (touch) browser through the real UI; 16 named checks — the "Clear bush" offer and clearing, a two-storey house built with stacking, the run and the storey control (stacking checked at all four camera rotations), one gable roof from the roof tool, a name board over the door, furnishing incl. a table lamp on the table, identical pieces on both, the name prompt on approach, sitting on a built chair seen by the other, tree / protected plant not clearable (UI + forged), a cleared rock walked through (server positions), a hut + roof + stacked wall by touch, restart persistence (pieces and cleared plants), late joiner, zero console errors. Screenshots with `BUILD2_SHOTS=<dir>` |
+| `node scripts/build-screenshots2.mjs [devUrl] [serverUrl]` | stages showcase houses through the real server path on a scratch dev server and shoots the round-2 views (houses day/night, sign close-ups, the interior, palette, storey control, clear offer) → `docs/screenshots/build/` |
 | `node scripts/build-screenshots.mjs [devUrl]` | builds a cottage through the real UI (dev client) and shoots palette / valid + refused ghost / the cottage by day and night on desktop and phones → `docs/screenshots/build/` (`SHOTS_ADMIN_TOKEN` clears leftovers of an earlier run) |
 | `npm run build && npx tsx --conditions=source scripts/build-scale.mts [--pieces 2000]` | seeds N pieces through the real server path and measures join, bytes, render cost and server timing (numbers under "Player building") |
 | `node scripts/interior-screenshots.mjs [devUrl]` | every interior day/night on desktop and phone + exteriors at night + the four camera rotations → `docs/screenshots/interiors/` (dev client; uses `?inside=`) |
@@ -224,9 +228,11 @@ Browser scripts need Playwright with Chromium available to `require('playwright'
 | Sip chip (bottom of the screen) | sip the drink in your hand (hidden while the build dock is open; your drink stays in hand) |
 | B / Build button | enter / leave build mode (the build dock replaces the bottom nav) |
 | Build mode: mouse | hover aims the ghost (green = fits, red + reason = refused), click places; pointing at the top of your wall puts the next storey or a roof there |
-| Build mode: keys | R (Shift+R) turn the piece, Enter place (it does not open the chat while building), X / Delete remove tool, Ctrl/Cmd+Z undo your last piece, Esc or B done; E does nothing; WASD still walks |
+| Build mode: keys | R (Shift+R) turn the piece (house roof: turn the ridge), Enter place the ghost (it does not open the chat while building), PgUp / PgDn storey up / down (locks it), N next segment of the run, X / Delete remove tool, Ctrl/Cmd+Z undo your last piece, Esc cancel a two-corner roof / done, B done; E does nothing; WASD still walks |
 | Build mode: touch | tap the ground to aim, then the Place button; Rotate / Remove / Undo / Done buttons; the joystick still walks (the round action button is hidden: no interacting while building, as E on a keyboard) |
-| Remove tool | click / tap one of your pieces → Remove (pieces holding others up go last); someone else's piece → Report |
+| Remove tool | click / tap one of your pieces → Remove (pieces holding others up go last), signs → Edit words; someone else's piece → Report; a bush / small rock → Clear |
+| Clear tool | click / tap a bush or small rock → Clear bush / Clear rock |
+| Built seats | walk up to a built chair / bench / sofa / bed and press E (or the action button), or click it |
 | Settings → Stuck somewhere? (also in the build dock's ··· menu) | Unstuck: back to the Town Square (once every 30 s) |
 | Walk through a door | enter a building: its roof and the walls between you and the camera fade away (dollhouse cutaway, any camera rotation); walk out and they come back. Clicking a spot inside a building from outside walks you in through the door |
 
@@ -275,11 +281,49 @@ The catalog, the grid and every rule are data in `shared/src/building.ts` (clien
 validation run the same code); the server (`server/src/building/`) is authoritative; the client lives
 in `client/src/build/`.
 
-- **Pieces** (3-4 muted styles each): floor tile (2x2 m), wall, wall with window (glows at night),
-  doorway (walk-through), half wall, pillar; flat roof, roof slope (two make a pitched gable roof),
-  peaked roof, gable end; steps; fence, gate (walk-through); table, bench, chair, lamp (lights
-  itself at dusk by the world clock), planter, crate, rug, and a sign carrying up to 40 characters
-  of your text (sanitized and profanity-masked like chat; refused while chat-muted).
+- **Palette** (tabs Build · Roofs · Signs · Living · Kitchen · Bed & bath · Walls & decor · Garden,
+  plus a "Find…" search; 3-4 muted styles per piece): floor tile (2x2 m), wall, wall with window
+  (glows at night), doorway (walk-through), half wall, pillar, steps; the **house roof** (below),
+  chimney, flat roof tile; signpost (40 characters), and three **facade name signs** — name board
+  over a door, hanging bracket sign, small plaque (24 / 18 characters); sofa, armchair, desk,
+  bookshelf, floor lamp, table lamp, record player, rugs; dining table, table, chair, stool,
+  kitchen counter, stove, sink, shop counter; bed, dresser, chest, bathtub; fireplace; wall shelf,
+  three pictures, a wall clock showing the island's time, mirror, curtains (window walls), tall and
+  small potted plants; fence, gate, lamp, planter, crate, barrel, bench. Lamps, the fireplace, the
+  stove and name signs glow from dusk by the world clock. All text is sanitized and profanity-masked
+  like chat, refused while chat-muted, and the owner can change it later (remove tool → Edit words).
+- **House roof:** one piece covering a whole walled rectangle like the town's houses — scalloped
+  tile courses, a continuous ridge, eaves overhanging every side, closed gable ends with a vent.
+  Pick Roofs → House roof and point at your walls: the walled rectangle under the cursor is found
+  (each side at least 70% walled; doors and windows count) and the ghost spans it; if the shape is
+  not a clean rectangle, click / tap two opposite corners instead. Gable or hip, gentle or steep;
+  Rotate turns the ridge. 2-12 m per side; it must rest on your walls/pillars along at least three
+  sides (at least half of each; an open porch side is fine). Two roofs may intersect (L-shaped
+  houses: run the wing's roof on to the main ridge for a cross gable) but not mostly cover each
+  other. The old roof tiles still load and render in existing worlds; the flat tile stays in the
+  palette.
+- **Building upward:** with a wall-type piece, point at the upper part (or top) of one of your walls
+  and the ghost sits right on top of it in the same line, with the wall being extended highlighted.
+  The **storey control** (▲ Storey N ▼ in the dock, PgUp / PgDn) locks the ghost to one storey so a
+  run of walls goes in without re-aiming; tap the label to go back to automatic. After each wall the
+  ghost moves on to the next segment of the run (desktop: Enter places it; touch: Place again;
+  **Next** / N puts it there explicitly). Upper-storey ghosts draw over everything so they stay
+  readable.
+- **Wall mounts and table tops:** name signs, pictures, shelves, the clock, the mirror and curtains
+  snap onto the face of the wall under the cursor (on a doorway only above the door; curtains only on
+  window walls; one thing per height band per face). Table lamps, small plants and the record player
+  stand on a table, desk, counter, dresser, chest, barrel or crate under the cursor (or the floor).
+- **Sitting:** built chairs, stools, benches, sofas, armchairs and beds use the same sit interaction
+  as the town's benches (walk up and press E / the action button, or click them): server-authoritative
+  seats, seen by everyone, freed when you get up (beside the seat). A seat someone is sitting on
+  cannot be removed (a moderator's removal stands them up).
+- **Clearing bushes and small rocks:** a placement blocked only by a bush or a small rock says so and
+  offers **Clear bush** / **Clear rock**; or use the **Clear** tool (or the Remove tool) on one. Only
+  on open, buildable land — never trees, big rocks or anything in protected town zones. Each clear is
+  server-validated (range, rate limit, `BUILD_CLEAR_DAILY` per player per day), recorded (who, when),
+  persisted, and synced to everyone and to late joiners; a cleared rock stops blocking movement and
+  click-to-move. A cleared plant grows back after `BUILD_REGROW_HOURS` unless a built piece stands
+  within 1.5 m (or someone stands on it); moderators can restore any.
 - **Grid and storeys:** centres on a 0.5 m grid (structure snaps to 1 m), quarter-turn rotation,
   storeys 2.6 m. Walls stack on walls (two storeys of walls plus a roof and more: level 0..3);
   upper floors and roofs rest on walls/pillars of the storey below, furniture upstairs on an upper
@@ -288,7 +332,8 @@ in `client/src/build/`.
   door aprons (`PROTECTED_ZONES` from the interiors data, plus 1 m), paths (+0.7 m), the Town
   Square, The Unknown, 2.2 m around every interactable (benches, signs, mailboxes…), 3 m around
   spawn points, landmarks (fountain, arch, standing stones), the dock and bridge, steep ground,
-  trees/rocks/props, other pieces of the same layer, a solid piece over any player (in any room
+  trees/rocks/props (bushes and small rocks: clear them first), other pieces of the same layer, a
+  solid piece over any player (in any room
   instance), and anything further than `BUILD_RANGE` from you.
 - **Anti-grief:** per-profile rate limit, per-player and per-world caps, no building within 4 m of
   pieces of someone you blocked or who blocked you, banned and build-banned players cannot build,
@@ -297,7 +342,9 @@ in `client/src/build/`.
   server validation and client prediction) and the click-to-move pathfinder; floors, rugs and steps
   never block, doorways and gates are open in the middle. Characters stand on floor boards and steps.
 - **World Memory / Gazette:** a resident's first piece, island milestones of pieces placed (10, 100,
-  500, …) and the first roof that closes walls with a doorway — only real events.
+  500, …), the first roof that closes walls with a doorway, and a name sign on a finished house
+  (walls, doorway, roof): "Ivy named their house “Fern Cottage”" — only real events. Walking up to a
+  named house shows "<name> · built by <player>".
 - **Rendering:** one instanced mesh per piece kind + style + material (40-50 draw calls for 2,000
   pieces), shadows like the world; roofs and upper storeys over or next to you dissolve (dithered,
   their shadow too), and tall walls between the camera and you thin out.
@@ -352,6 +399,9 @@ With `ADMIN_TOKEN` set, send `Authorization: Bearer <ADMIN_TOKEN>` (or `X-Admin-
 | `DELETE /api/admin/build/pieces/:id` | remove a piece and everything resting on it (owners get a notice) |
 | `DELETE /api/admin/build/profiles/:profileId` | remove every piece a profile owns |
 | `GET /api/admin/build/stats?bench=1&reset=1` | piece counts, validation timing, event-loop delay, snapshot size |
+| `GET /api/admin/build/nature?profile=` | cleared bushes / rocks: who cleared what, when |
+| `DELETE /api/admin/build/nature/:id` | make one cleared bush / rock grow back now |
+| `DELETE /api/admin/build/nature/profiles/:profileId` | restore everything a profile cleared |
 
 Players report a built piece (e.g. a rude sign) with the remove tool → Report on someone else's
 piece; it goes through the normal report flow against the builder's profile, with the piece and its
@@ -442,13 +492,16 @@ These were not checked, or were checked only in a limited way:
   the chat preview 6 s) is recorded from before the action that causes it (`e2e:interiors`,
   `e2e:combined`). The suites were green twice in a row on a quiet 4-core machine; with several browser
   suites competing for the CPU they time out.
-- **Player building:** built benches and chairs are furniture only — sitting on them is not
-  implemented (seats are tied to the fixed interactables data). Only ground-level pieces collide:
+- **Player building:** built seats work only when you can walk up to them: a chair upstairs or one
+  boxed in by furniture has no reachable approach and cannot be sat on. Bushes block placement but
+  never movement (as before); cleared rocks stop blocking movement. Only ground-level pieces collide:
   upper storeys are visual (players never walk upstairs; steps are a low step, not a staircase).
   Pieces have no hit points, decay or claim areas; the per-player cap, rate limit and admin removal
   are the only limits on how much one person builds. Removing a piece that holds others up is
-  refused (remove the top first); admins remove the whole stack. Roofs are 2 m tiles, so long roofs
-  show a seam between tiles and have no overhang at the gable ends. The browser e2e and the 2,000
+  refused (remove the top first); admins remove the whole stack. The house roof covers rectangles
+  only: an L-shaped house takes two intersecting roofs (cross gable; the valley is an overlap, not a
+  mitred valley), and a hip roof's facets are plainer than the gable's tile courses. The legacy 2 m
+  roof tiles still show seams. The browser e2e and the 2,000
   piece measurement ran on one machine with headless software-rendered Chromium; real GPUs, real
   phones and Safari were not tried. Sign text is masked by the same word list as chat (not an
   image/meaning filter) and is reportable.

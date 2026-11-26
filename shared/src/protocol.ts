@@ -207,6 +207,10 @@ export const C2S = {
   unstuck: 'unstuck',
   /** Building: ask for the full piece snapshot again (after an automatic reconnection). */
   buildSync: 'build_sync',
+  /** Building: clear a bush / small rock (server validates range, zones, caps). */
+  buildClear: 'build_clear',
+  /** Building: change the words on one of your signs. */
+  buildEditText: 'build_edit_text',
   /** A building activity action (order a drink, pin a notice, vote, sign a guest book…). */
   activity: 'activity',
   /** One piano note (café piano; heard by everyone in or near the café). */
@@ -304,6 +308,8 @@ export interface BuildPlacePayload {
   level: number;
   /** Signs only: the text (sanitized, filtered and length-capped by the server). */
   text?: string;
+  /** House roof only: { w, d, style: 'gable' | 'hip', pitch: 0 | 1 } (shared/src/building.ts RoofParams). */
+  params?: { w: number; d: number; style: string; pitch: number };
 }
 export interface BuildRemovePayload {
   reqId: number;
@@ -353,6 +359,8 @@ export interface C2SPayloads {
   [C2S.buildRemove]: BuildRemovePayload;
   [C2S.unstuck]: UnstuckPayload;
   [C2S.buildSync]: Record<string, never>;
+  [C2S.buildClear]: BuildClearPayload;
+  [C2S.buildEditText]: BuildEditTextPayload;
   [C2S.activity]: ActivityPayload;
   [C2S.pianoNote]: PianoNotePayload;
 }
@@ -385,6 +393,12 @@ export const S2C = {
   buildRemoved: 'build_removed',
   /** Building: outcome of the requester's place/remove. */
   buildResult: 'build_result',
+  /** Building: bushes / rocks cleared (everyone in the world). */
+  natureCleared: 'nature_cleared',
+  /** Building: cleared bushes / rocks grew back or were restored (everyone in the world). */
+  natureRestored: 'nature_restored',
+  /** Building: a piece changed (sign text edited). */
+  buildUpdated: 'build_updated',
   /** Outcome of the requester's C2S.activity. */
   activityResult: 'activity_result',
   /** A piano note someone played (everyone in or near the café). */
@@ -593,13 +607,15 @@ export interface PieceView {
   ownerId: string;
   ownerName: string;
   text?: string;
+  /** Parametric pieces (house roof): compact JSON of RoofParams. */
+  params?: string;
 }
 
 /**
  * Compact snapshot row: [id, kindIndex, variantIndex, x*2, z*2, rot, level, y in cm, ownerIndex, text].
  * kindIndex / variantIndex index PIECE_KINDS / the piece's `variants`; ownerIndex indexes `owners`.
  */
-export type PieceWire = [string, number, number, number, number, number, number, number, number, string];
+export type PieceWire = [string, number, number, number, number, number, number, number, number, string, string?];
 
 export interface BuildSnapshotPayload {
   /** First chunk: drop everything known so far. */
@@ -611,6 +627,31 @@ export interface BuildSnapshotPayload {
   /** [profileId, name] referenced by ownerIndex. */
   owners: [string, string][];
   pieces: PieceWire[];
+  /** First chunk only: ids of bushes / rocks currently cleared. */
+  cleared?: string[];
+}
+export interface BuildClearPayload {
+  reqId: number;
+  /** Bush / rock id (shared/src/world/nature.ts). */
+  id: string;
+}
+export interface BuildEditTextPayload {
+  reqId: number;
+  id: string;
+  text: string;
+}
+export interface NatureClearedPayload {
+  ids: string[];
+  /** sessionId of the clearer ("" if not in this room). */
+  by: string;
+}
+export interface NatureRestoredPayload {
+  ids: string[];
+  /** Grew back on its own, or restored by a moderator. */
+  by: 'regrow' | 'admin';
+}
+export interface BuildUpdatedPayload {
+  piece: PieceView;
 }
 export interface BuildPlacedPayload {
   piece: PieceView;
@@ -624,7 +665,9 @@ export interface BuildRemovedPayload {
 }
 export interface BuildResultPayload {
   reqId: number;
-  action: 'place' | 'remove';
+  action: 'place' | 'remove' | 'clear' | 'edit';
+  /** A placement blocked by a clearable bush / rock: which one (the client offers "Clear"). */
+  natureId?: string;
   ok: boolean;
   reason?: BuildRefusal;
   /** Short human-readable reason (shown next to the ghost). */
@@ -678,6 +721,9 @@ export interface S2CPayloads {
   [S2C.buildPlaced]: BuildPlacedPayload;
   [S2C.buildRemoved]: BuildRemovedPayload;
   [S2C.buildResult]: BuildResultPayload;
+  [S2C.natureCleared]: NatureClearedPayload;
+  [S2C.natureRestored]: NatureRestoredPayload;
+  [S2C.buildUpdated]: BuildUpdatedPayload;
   [S2C.activityResult]: ActivityResultPayload;
   [S2C.pianoNote]: PianoNoteEvent;
   [S2C.activityEvent]: ActivityEvent;
@@ -722,6 +768,12 @@ export const API = {
   adminBuildProfile: '/api/admin/build/profiles/:profileId',
   /** Admin GET — building stats (counts, timing of collision/validation, event-loop delay). */
   adminBuildStats: '/api/admin/build/stats',
+  /** Admin GET ?profile= — cleared bushes / rocks (who cleared what, when). */
+  adminBuildNature: '/api/admin/build/nature',
+  /** Admin DELETE — restore one cleared bush / rock now. */
+  adminBuildNatureOne: '/api/admin/build/nature/:id',
+  /** Admin DELETE — restore everything a profile cleared. */
+  adminBuildNatureProfile: '/api/admin/build/nature/profiles/:profileId',
   /** Admin GET ?board=&limit= — notices / guest-book entries (incl. removed). */
   adminNotes: '/api/admin/notes',
   /** Admin DELETE one notice / guest-book entry. */

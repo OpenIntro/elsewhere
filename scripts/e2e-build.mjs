@@ -40,7 +40,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@colyseus/sdk';
-import { CONFIG, PIECES, PIECE_KINDS, ROOM_NAME, buildableAt, defaultCollisionWorld, pieceColliders } from '@elsewhere/shared';
+import { CONFIG, PIECES, PIECE_CATEGORIES, PIECE_KINDS, ROOM_NAME, buildableAt, defaultCollisionWorld, pieceColliders } from '@elsewhere/shared';
 import { SITE, hutPlan } from './lib/cottage.mjs';
 import { aimGhost, assert, buildState, choosePiece, hopToward, keyboardRoute, keyboardWalk, openBuild, placeHere, rotateTo, screenOf, sleep, snap, tapOrClick, waitSnap, zoomOut } from './lib/browser.mjs';
 
@@ -228,14 +228,14 @@ try {
     await a.keyboard.press('KeyB');
     await a.waitForSelector('[data-testid=build-dock]', { timeout: 20_000 });
     const tiles = [];
-    for (const cat of ['structure', 'roof', 'garden', 'furnishing']) {
+    for (const cat of PIECE_CATEGORIES.map((c) => c.id)) {
       await a.click(`[data-testid=build-tab-${cat}]`);
       tiles.push(...(await a.$$eval('[data-testid^=build-piece-]', (els) => els.map((e) => e.getAttribute('data-testid').replace('build-piece-', '')))));
     }
     const missing = PIECE_KINDS.filter((k) => !tiles.includes(k));
     assert(missing.length === 0, `palette misses ${missing.join(', ')}`);
     await shot(a, 'e2e-1-palette');
-    return `${tiles.length} pieces in 4 tabs`;
+    return `${tiles.length} pieces in ${PIECE_CATEGORIES.length} tabs`;
   });
 
   await check('3. A builds a hut through the UI (floor, walls, doorway, window, roof, lamp, sign); B sees every piece at the same place', async () => {
@@ -274,7 +274,7 @@ try {
     const count = sa0.build.count;
     const sent = sa0.net?.sent ?? null;
     // (a) A protected spot near A (the nearest on screen).
-    await choosePiece(a, 'crate', { category: 'furnishing', variant: 'oak' });
+    await choosePiece(a, 'crate', { category: PIECES.crate.category, variant: 'oak' });
     const me = sa0.local;
     let spot = null;
     for (let r = 2; r <= 8 && !spot; r++)

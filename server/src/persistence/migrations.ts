@@ -205,6 +205,22 @@ CREATE TABLE IF NOT EXISTS poll_votes (
 )
 `,
   },
+  {
+    id: 5,
+    name: 'building_round_2',
+    sql: `
+ALTER TABLE build_pieces ADD COLUMN IF NOT EXISTS params TEXT;
+CREATE TABLE IF NOT EXISTS nature_cleared (
+  world_id     TEXT NOT NULL DEFAULT 'default',
+  nature_id    TEXT NOT NULL,
+  profile_id   TEXT NOT NULL,
+  profile_name TEXT NOT NULL,
+  cleared_at   BIGINT NOT NULL,
+  PRIMARY KEY (world_id, nature_id)
+);
+CREATE INDEX IF NOT EXISTS nature_cleared_profile_idx ON nature_cleared (world_id, profile_id, cleared_at)
+`,
+  },
 ];
 
 /** Apply pending migrations. Returns the ids applied this run. */

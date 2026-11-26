@@ -30,6 +30,8 @@ export type WorldEventKind =
   | 'first_build'
   /** A player-built structure (walls incl. a doorway) got its roof. */
   | 'structure_roofed'
+  /** A finished player-built house (walls, doorway, roof) got a name on a facade sign. */
+  | 'building_named'
   // --- Building activities (server/src/activities) — always real players' actions ---
   /** Someone played the café piano (throttled per player). */
   | 'piano_played'

@@ -2,11 +2,12 @@
  * Build-mode input: B toggles build mode (any time), and while building R
  * rotates the piece (instead of the camera; Q still turns the camera), E is
  * swallowed (no interacting while building), Esc finishes, Enter places,
- * X/Delete switch to the remove tool. Pointer: mouse hover aims, click places / selects; touch tap
+ * X/Delete switch to the remove tool, PgUp/PgDn lock the storey up/down,
+ * N puts the ghost on the next segment of the run. Pointer: mouse hover aims, click places / selects; touch tap
  * aims (placing needs the explicit Place button) or selects.
  */
 import { setKeyInterceptor } from '../player/index.js';
-import { aimFromScreen, exitBuild, isBuilding, placeGhost, rotate, selectAt, setTool, toggleBuild, undo } from './actions.js';
+import { aimFromScreen, cancelRoofSpan, exitBuild, isBuilding, nextSegment, placeGhost, rotate, selectAt, setTool, stepStorey, toggleBuild, undo } from './actions.js';
 import { useBuildStore } from './store.js';
 
 export function installBuildInput(): () => void {
@@ -21,7 +22,18 @@ export function installBuildInput(): () => void {
         rotate(e.shiftKey ? -1 : 1);
         return true;
       case 'Escape':
-        exitBuild();
+        if (!cancelRoofSpan()) exitBuild();
+        return true;
+      case 'PageUp':
+        e.preventDefault();
+        stepStorey(1);
+        return true;
+      case 'PageDown':
+        e.preventDefault();
+        stepStorey(-1);
+        return true;
+      case 'KeyN':
+        nextSegment();
         return true;
       case 'Enter':
       case 'NumpadEnter':
@@ -49,7 +61,7 @@ export const buildPointer = {
   tap(x: number, y: number, type: string): boolean {
     const st = useBuildStore.getState();
     if (st.mode === 'off') return false;
-    if (st.mode === 'remove') {
+    if (st.mode === 'remove' || st.mode === 'clear') {
       selectAt(x, y);
       return true;
     }

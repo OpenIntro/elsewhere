@@ -38,7 +38,7 @@ describe('persistence (PGlite)', { timeout: 60_000 }, () => {
 
   it('migrations are idempotent', async () => {
     const db = await openDb({ dataDir: 'memory://' });
-    expect(await migrate(db)).toEqual([1, 2, 3, 4]);
+    expect(await migrate(db)).toEqual([1, 2, 3, 4, 5]);
     expect(await migrate(db)).toEqual([]);
     await db.close();
   });
@@ -48,7 +48,7 @@ describe('persistence (PGlite)', { timeout: 60_000 }, () => {
     await migrate(db, MIGRATIONS.slice(0, 1));
     await db.query("INSERT INTO world_kv (key, value, updated_at) VALUES ('facts', '{\"fountainStage\":2}', 1)");
     await db.query("INSERT INTO world_sets (set_name, member, added_at) VALUES ('s', 'a', 1)");
-    expect(await migrate(db)).toEqual([2, 3, 4]);
+    expect(await migrate(db)).toEqual([2, 3, 4, 5]);
     const rows = await db.query<{ world_id: string }>('SELECT world_id FROM world_kv');
     expect(rows.map((r) => r.world_id)).toEqual(['default']);
     await db.close();

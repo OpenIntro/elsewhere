@@ -2,7 +2,7 @@
  * Screen → piece picking against the instanced piece meshes (BuildLayer
  * registers them with the piece id of every instance).
  */
-import { Raycaster, Vector2, type InstancedMesh, type Object3D } from 'three';
+import { Raycaster, Vector2, type BufferAttribute, type InstancedMesh, type Object3D } from 'three';
 import type { Vec2 } from '@elsewhere/shared';
 import { view3d } from '../player/picking.js';
 
@@ -17,7 +17,13 @@ export const pickTargets = new Set<PickTarget>();
 const ray = new Raycaster();
 const ndc = new Vector2();
 
-function cast(clientX: number, clientY: number) {
+/**
+ * Nearest piece under a screen point. Pieces dissolved for the local player
+ * (roofs / upper storeys / walls thinned between camera and player) are
+ * looked through — you point at what you can see. `accept` narrows the hit
+ * further (e.g. only walls, for wall mounts).
+ */
+function cast(clientX: number, clientY: number, accept?: (id: string) => boolean) {
   const cam = view3d.camera;
   const el = view3d.canvas;
   if (!cam || !el || !pickTargets.size) return null;
@@ -36,14 +42,17 @@ function cast(clientX: number, clientY: number) {
     const t = byMesh.get(h.object);
     if (!t || h.instanceId === undefined) continue;
     const id = t.ids[h.instanceId];
+    const fade = (t.mesh.geometry.getAttribute('aFade') as BufferAttribute | undefined)?.getX(h.instanceId) ?? 0;
+    if (fade > 0.5) continue;
+    if (id && accept && !accept(id)) continue;
     if (id) return { id, point: h.point, normalY: h.face?.normal ? h.face.normal.clone().transformDirection(h.object.matrixWorld).y : 0 };
   }
   return null;
 }
 
 /** Piece under a screen point: id, world hit point and the world-space normal's Y (1 = a top face). */
-export function pickPieceHit(clientX: number, clientY: number): { id: string; point: { x: number; y: number; z: number }; normalY: number } | null {
-  const h = cast(clientX, clientY);
+export function pickPieceHit(clientX: number, clientY: number, accept?: (id: string) => boolean): { id: string; point: { x: number; y: number; z: number }; normalY: number } | null {
+  const h = cast(clientX, clientY, accept);
   return h ? { id: h.id, point: { x: h.point.x, y: h.point.y, z: h.point.z }, normalY: h.normalY } : null;
 }
 

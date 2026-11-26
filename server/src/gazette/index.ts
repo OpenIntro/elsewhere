@@ -100,6 +100,7 @@ export function buildArticles(events: readonly WorldEvent[], clock: ClockParams,
     else if (m === 'build_pieces') one('build_pieces', e, { count: Number(e.data?.contributions ?? 0) }, 32);
   }
   for (const e of byKind('structure_roofed')) one('structure_roofed', e, { count: Number(e.data?.walls ?? 0) }, 52);
+  for (const e of byKind('building_named')) one('building_named', e, { title: String(e.data?.name ?? 'a house') }, 50);
   many('first_build', byKind('first_build'), {}, 22);
   // Building activities (all real players' actions; keepers never appear as actors).
   const lower = (x: string) => x.charAt(0).toLowerCase() + x.slice(1);

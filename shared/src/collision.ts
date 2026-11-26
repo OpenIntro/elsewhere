@@ -151,11 +151,13 @@ export interface CollisionWorld {
   groundWalkable: (p: Vec2) => boolean;
   /** Player-built pieces (mutable). Every collision query consults it too. */
   dynamic: DynamicColliderLayer;
+  /** Static collider ids switched off (cleared rocks). Every query skips them. */
+  disabled: Set<string>;
 }
 
 /** Build a collision world (tests can pass custom colliders / ground). Each world has its own empty dynamic layer. */
 export function createCollisionWorld(colliders: readonly Collider[] = COLLIDERS, groundWalkable: (p: Vec2) => boolean = isGroundWalkable): CollisionWorld {
-  return { colliders, grid: new ColliderGrid(colliders), groundWalkable, dynamic: new DynamicColliderLayer() };
+  return { colliders, grid: new ColliderGrid(colliders), groundWalkable, dynamic: new DynamicColliderLayer(), disabled: new Set() };
 }
 
 let defaultWorld: CollisionWorld | null = null;
@@ -173,6 +175,7 @@ export function defaultCollisionWorld(): CollisionWorld {
 /** Static + dynamic colliders near p. */
 function queryAll(cw: CollisionWorld, p: Vec2, radius: number, out: Set<Collider>): Set<Collider> {
   cw.grid.query(p, radius, out);
+  if (cw.disabled.size) for (const c of out) if (cw.disabled.has(c.id)) out.delete(c);
   cw.dynamic.queryInto(p, radius, out);
   return out;
 }

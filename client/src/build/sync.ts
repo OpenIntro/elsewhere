@@ -13,17 +13,23 @@ import {
   PIECE_KINDS,
   defaultCollisionWorld,
   footprint,
+  natureItem,
   pieceColliders,
+  pieceIdOfInteract,
+  pieceSeatInteractable,
+  registerInteractableResolver,
   type PieceRecord,
   type PieceView,
+  type Interactable,
   type PieceWire,
   S2C,
 } from '@elsewhere/shared';
-import { net, registerDebugSection } from '../net/index.js';
-import { refreshNavRect } from '../player/index.js';
+import { net, registerDebugQuery, registerDebugSection } from '../net/index.js';
+import { refreshNavRect, setExtraInteractables } from '../player/index.js';
 import { useGameStore } from '../state/gameStore.js';
 import { toasts } from '../ui/toasts.js';
-import { reaim } from './actions.js';
+import { afterPlaced, reaim } from './actions.js';
+import { natureVisible, resetNatureHidden, setNatureHidden } from '../world/natureMask.js';
 import { markDirty, pieces, useBuildStore } from './store.js';
 
 /** The world changed: re-check the ghost where it is (it may now be blocked, or stackable). */
@@ -38,9 +44,34 @@ function reaimSoon(): void {
 
 const collision = () => defaultCollisionWorld();
 
+/** Cleared bushes / rocks: collider off (rocks), nav grid re-sampled, visual hidden, UI set updated. */
+function applyCleared(ids: readonly string[], on: boolean, reset = false): void {
+  const st = useBuildStore.getState();
+  const next = reset ? new Set<string>() : new Set(st.cleared);
+  if (reset) for (const id of st.cleared) if (!ids.includes(id)) refreshNature(id, false);
+  for (const id of ids) {
+    if (on) next.add(id);
+    else next.delete(id);
+    refreshNature(id, on);
+  }
+  if (reset) resetNatureHidden(ids);
+  else setNatureHidden(ids, on);
+  st.set({ cleared: next, selectedNature: st.selectedNature && !on ? st.selectedNature : null });
+  reaimSoon();
+}
+function refreshNature(id: string, on: boolean): void {
+  const n = natureItem(id);
+  if (!n) return;
+  if (n.colliderId) {
+    if (on) collision().disabled.add(n.colliderId);
+    else collision().disabled.delete(n.colliderId);
+  }
+  refreshNavRect(n.position.x - n.radius - 0.5, n.position.z - n.radius - 0.5, n.position.x + n.radius + 0.5, n.position.z + n.radius + 0.5);
+}
+
 /** Accumulates the snapshot until the last chunk arrives (applied in one go). */
 let incoming: PieceRecord[] | null = null;
-const stats = { snapshots: 0, snapshotChunks: 0, snapshotBytes: 0, lastSnapshotMs: 0, placed: 0, removed: 0, results: { ok: 0, refused: 0 } };
+const stats = { snapshots: 0, snapshotChunks: 0, snapshotBytes: 0, lastSnapshotMs: 0, placed: 0, removed: 0, cleared: 0, restored: 0, results: { ok: 0, refused: 0 } };
 let snapshotStartedAt = 0;
 
 function fromWire(w: PieceWire, owners: [string, string][]): PieceRecord | null {
@@ -60,12 +91,14 @@ function fromWire(w: PieceWire, owners: [string, string][]): PieceRecord | null 
     ownerName: owner[1],
   };
   if (w[9]) p.text = w[9];
+  if (w[10]) p.params = w[10];
   return p;
 }
 
 function fromView(v: PieceView): PieceRecord {
   const p: PieceRecord = { id: v.id, kind: v.kind, variant: v.variant, x: v.x, z: v.z, rot: v.rot, level: v.level, y: v.y, ownerId: v.ownerId, ownerName: v.ownerName };
   if (v.text) p.text = v.text;
+  if (v.params) p.params = v.params;
   return p;
 }
 
@@ -130,6 +163,7 @@ export function installBuildSync(): () => void {
         incoming = [];
         snapshotStartedAt = performance.now();
       }
+      if (s.cleared) applyCleared(s.cleared, true, true);
       stats.snapshotChunks++;
       stats.snapshotBytes += JSON.stringify(s).length;
       for (const w of s.pieces) {
@@ -173,19 +207,53 @@ export function installBuildSync(): () => void {
       reaimSoon();
       if (by === 'admin' && mine > 0) toasts.push({ level: 'warning', text: mine === 1 ? 'A moderator removed one of your pieces.' : `A moderator removed ${mine} of your pieces.`, ttlMs: 6000 });
     }),
+    net.on(S2C.natureCleared, ({ ids }) => {
+      stats.cleared += ids.length;
+      applyCleared(ids, true);
+    }),
+    net.on(S2C.natureRestored, ({ ids }) => {
+      stats.restored += ids.length;
+      applyCleared(ids, false);
+    }),
+    net.on(S2C.buildUpdated, ({ piece }) => {
+      const p = fromView(piece);
+      addPiece(p);
+      markDirty(p.kind);
+      const st = useBuildStore.getState();
+      st.set({ version: st.version + 1 });
+    }),
     net.on(S2C.buildResult, (r) => {
       const st = useBuildStore.getState();
       const pending = Math.max(0, st.pending - 1);
       if (r.ok) {
         stats.results.ok++;
-        if (r.action === 'place' && r.pieceId) st.set({ pending, undo: [...st.undo.slice(-49), r.pieceId], refusal: null });
-        else st.set({ pending, refusal: null });
+        if (r.action === 'place' && r.pieceId) {
+          st.set({ pending, undo: [...st.undo.slice(-49), r.pieceId], refusal: null });
+          afterPlaced(r.reqId);
+        } else st.set({ pending, refusal: null });
       } else {
         stats.results.refused++;
         st.set({ pending, refusal: { text: r.message ?? 'Not here', at: Date.now() } });
       }
     }),
   ];
+
+  // Built seats are interactables ("bp:<pieceId>") for the sit flow (targeting, getSeat, seated rendering).
+  registerInteractableResolver((id) => {
+    const pid = pieceIdOfInteract(id);
+    const p = pid ? pieces.index.get(pid) : undefined;
+    return p ? (pieceSeatInteractable(p) ?? undefined) : undefined;
+  });
+
+  setExtraInteractables((x, z, r) => {
+    const out: Interactable[] = [];
+    for (const p of pieces.index.query({ minX: x - r, maxX: x + r, minZ: z - r, maxZ: z + r })) {
+      if (!PIECES[p.kind].seats) continue;
+      const it = pieceSeatInteractable(p);
+      if (it) out.push(it);
+    }
+    return out;
+  });
 
   registerDebugSection('build', () => {
     const b = useBuildStore.getState();
@@ -198,6 +266,12 @@ export function installBuildSync(): () => void {
       rot: b.rot,
       ghost: b.ghost,
       selected: b.selected,
+      selectedNature: b.selectedNature,
+      lockLevel: b.lockLevel,
+      editing: b.editing,
+      roof: { style: b.roofStyle, pitch: b.roofPitch },
+      cleared: [...b.cleared].sort(),
+      disabledColliders: [...collision().disabled].sort(),
       refusal: b.refusal,
       pending: b.pending,
       count: list.length,
@@ -209,9 +283,10 @@ export function installBuildSync(): () => void {
       pieces: list
         .sort((a, b) => (a.id < b.id ? -1 : 1))
         .slice(0, 5000)
-        .map((p) => ({ id: p.id, kind: p.kind, variant: p.variant, x: p.x, z: p.z, rot: p.rot, level: p.level, y: p.y, ownerId: p.ownerId, ...(p.text ? { text: p.text } : {}) })),
+        .map((p) => ({ id: p.id, kind: p.kind, variant: p.variant, x: p.x, z: p.z, rot: p.rot, level: p.level, y: p.y, ownerId: p.ownerId, ...(p.text ? { text: p.text } : {}), ...(p.params ? { params: p.params } : {}) })),
     };
   });
+  registerDebugQuery('natureVisible', (id: string) => natureVisible(id));
 
   return () => {
     for (const off of offs) off();

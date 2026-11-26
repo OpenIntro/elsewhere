@@ -256,6 +256,21 @@ export const CONFIG = {
     snapshotChunk: 500,
     /** World milestones (pieces ever placed) recorded in World Memory. */
     milestones: [10, 100, 500, 1000, 2500, 5000, 10000] as readonly number[],
+    /** House roofs (one parametric piece): span limits between wall centre lines (metres). */
+    roof: { minSpan: 2, maxSpan: 12 },
+    /** Clearing bushes / small rocks (env BUILD_CLEAR_DAILY, BUILD_REGROW_HOURS). */
+    clear: {
+      /** Clears one profile may make per real day. */
+      dailyPerPlayer: 20,
+      /** A cleared plant/rock comes back after this long… */
+      regrowMs: 24 * 3_600_000,
+      /** …unless a built piece stands within this radius of it (or a player stands on it). */
+      regrowClearance: 1.5,
+      /** Rocks up to this radius count as small (bigger ones and trees are never clearable). */
+      maxRockRadius: 0.6,
+    },
+    /** Longest building name on a facade sign. */
+    nameMaxLength: 24,
   },
 } as const;
 

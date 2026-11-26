@@ -39,6 +39,12 @@ export async function screenOf(page, x, z, y) {
   return p;
 }
 
+/** Click (desktop) or tap (touch) a UI element. */
+export async function press(page, sel) {
+  if (page.__touch) await page.locator(sel).tap();
+  else await page.click(sel);
+}
+
 export async function tapOrClick(page, x, y) {
   if (page.__touch) await page.touchscreen.tap(x, y);
   else await page.mouse.click(x, y);
@@ -232,10 +238,12 @@ export async function closeBuild(page) {
 /** Pick a piece (category tab → tile) and optionally a style, through the palette. */
 export async function choosePiece(page, kind, { variant, category } = {}) {
   const st = await buildState(page);
-  if (st.mode !== 'place') await page.click('[data-testid=build-tool-remove]');
-  if (category) await page.click(`[data-testid=build-tab-${category}]`);
-  await page.click(`[data-testid=build-piece-${kind}]`);
-  if (variant) await page.click(`[data-testid=build-variant-${variant}]`);
+  const tap = (sel) => (page.__touch ? page.locator(sel).tap() : page.click(sel));
+  if (st.mode === 'remove') await tap('[data-testid=build-tool-remove]');
+  if (st.mode === 'clear') await tap('[data-testid=build-tool-clear]');
+  if (category) await tap(`[data-testid=build-tab-${category}]`);
+  await tap(`[data-testid=build-piece-${kind}]`);
+  if (variant) await tap(`[data-testid=build-variant-${variant}]`);
   await waitSnap(page, (s) => s.build?.kind === kind && s.build.mode === 'place', `piece ${kind} chosen`, 10_000);
 }
 
@@ -245,8 +253,8 @@ export async function rotateTo(page, rot, { key = false } = {}) {
     const st = await buildState(page);
     if (st.rot === rot) return;
     if (key) await page.keyboard.press('KeyR');
-    else await page.click('[data-testid=build-rotate]');
-    await waitSnap(page, (s) => s.build?.rot === (st.rot + 1) % 4, 'rotated', 10_000);
+    else await press(page, '[data-testid=build-rotate]');
+    await waitSnap(page, (s) => s.build?.rot !== st.rot, 'rotated', 10_000);
   }
   throw new Error(`could not rotate to ${rot}`);
 }
@@ -272,7 +280,7 @@ export async function placeHere(page, x, z, y, { level } = {}) {
   assert(s0.build.ghost.ok, `ghost refused at (${x}, ${z}): ${s0.build.ghost.message}`);
   const before = new Set(s0.build.pieces.map((p) => p.id));
   const okBefore = s0.build.stats.results.ok;
-  if (page.__touch) await page.click('[data-testid=build-place]');
+  if (page.__touch) await press(page, '[data-testid=build-place]');
   else {
     const p = await screenOf(page, x, z, y);
     await page.mouse.click(p.x, p.y);

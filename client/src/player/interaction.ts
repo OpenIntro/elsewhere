@@ -29,6 +29,7 @@ import { useUiStore } from '../state/uiStore.js';
 import { cameraControls, useCameraStore } from './camera.js';
 import { onAction } from './input.js';
 import { interactErrorNotice } from './interactionMessages.js';
+import { extraInteractables } from './extraInteractables.js';
 import { cancelPath, hasPath, walkToInteract } from './navigation.js';
 
 /** Players closer than this can be targeted. */
@@ -56,6 +57,12 @@ function eligible(it: Interactable): boolean {
     const full = (1 << it.seats.length) - 1;
     if ((obj.value & full) === full) return false;
   }
+  // Built seats keep no object state: they are full when every seat is someone's synced `seat`.
+  if (isSeatInteractable(it) && !obj && it.id.startsWith('bp:')) {
+    let taken = 0;
+    for (const p of Object.values(useGameStore.getState().players)) if (p.seat.startsWith(`${it.id}#`)) taken++;
+    if (taken >= it.seats.length) return false;
+  }
   return true;
 }
 
@@ -65,7 +72,8 @@ export function findTarget(x: number, z: number, yaw = runtime.localPlayer.rot):
   let bestScore = Infinity;
   const fx = Math.sin(yaw);
   const fz = Math.cos(yaw);
-  for (const it of INTERACTABLES) {
+  const extra = extraInteractables(x, z, 4);
+  for (const it of extra.length ? [...INTERACTABLES, ...extra] : INTERACTABLES) {
     const r = it.radius ?? CONFIG.interaction.radius;
     const dx = it.position.x - x;
     const dz = it.position.z - z;

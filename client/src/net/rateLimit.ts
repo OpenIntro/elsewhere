@@ -29,6 +29,8 @@ const ACTION_FOR: Record<C2SType, string | null> = {
   [C2S.buildRemove]: 'build',
   [C2S.unstuck]: 'unstuck',
   [C2S.buildSync]: 'buildSync',
+  [C2S.buildClear]: 'build',
+  [C2S.buildEditText]: 'build',
   [C2S.activity]: 'activity',
   [C2S.pianoNote]: 'piano',
 };

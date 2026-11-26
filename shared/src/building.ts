@@ -30,9 +30,11 @@ import { defaultCollisionWorld, penetration, type CollisionWorld } from './colli
 import { distanceToPolyline, rotateOffset, type Vec2 } from './math.js';
 import { BUILDINGS } from './world/buildings.js';
 import type { BoxCollider, Collider } from './world/colliders.js';
-import { INTERACTABLES } from './world/interactables.js';
+import { INTERACTABLES, type Seat, type SeatInteractable } from './world/interactables.js';
+import { groundHeight } from './world/ground.js';
 import { protectedZoneAt } from './world/interiors.js';
-import { LOCATIONS } from './world/locations.js';
+import { LOCATIONS, locationAt } from './world/locations.js';
+import { BUSHES, ROCKS, TREES } from './world/nature.js';
 import { DECKS, PATHS, deckAt } from './world/paths.js';
 import { SPAWN_POINTS } from './world/spawn.js';
 import { FOUNTAIN, PORTAL_ARCH, STANDING_STONES } from './world/structures.js';
@@ -64,15 +66,71 @@ export const PIECE_KINDS = [
   'crate',
   'rug',
   'sign',
+  // Round 2: the house-roof tool, chimney, facade name signs, furnishings.
+  'house_roof',
+  'chimney',
+  'name_board',
+  'name_hanging',
+  'name_plaque',
+  'bed',
+  'sofa',
+  'armchair',
+  'stool',
+  'desk',
+  'dining_table',
+  'bookshelf',
+  'dresser',
+  'kitchen_counter',
+  'stove',
+  'sink',
+  'fireplace',
+  'bathtub',
+  'chest',
+  'barrel',
+  'floor_lamp',
+  'table_lamp',
+  'plant_tall',
+  'plant_small',
+  'wall_shelf',
+  'picture',
+  'wall_clock',
+  'mirror',
+  'curtains',
+  'rug_round',
+  'shop_counter',
+  'record_player',
 ] as const;
 export type PieceKind = (typeof PIECE_KINDS)[number];
 
 /**
  * Occupancy layer. base = floor slabs/steps, surface = rugs, solid = walls and
- * furniture, roof = roof slabs, gable = triangular end walls under a roof.
+ * furniture, roof = roof slabs, gable = triangular end walls under a roof
+ * (and chimneys), mount = hung on a wall face, top = small things that stand
+ * on a table / counter (or on the floor).
  */
-export type PieceLayer = 'base' | 'surface' | 'solid' | 'roof' | 'gable';
-export type PieceCategory = 'structure' | 'roof' | 'garden' | 'furnishing';
+export type PieceLayer = 'base' | 'surface' | 'solid' | 'roof' | 'gable' | 'mount' | 'top';
+export type PieceCategory = 'structure' | 'roof' | 'garden' | 'living' | 'bedbath' | 'kitchen' | 'decor' | 'sign';
+
+/** Hung on a wall face: stored at the wall's centre (x, z, level) with rot = the face's outward direction. */
+export interface MountSpec {
+  /** Vertical band above the wall's base (metres): two mounts on one face may not share height. */
+  y0: number;
+  y1: number;
+  /** How far it stands out from the wall face. */
+  depth: number;
+  /** Only on a wall with a window (curtains). */
+  windowOnly?: boolean;
+}
+
+/** A seat on a piece, in its local frame (facing = local yaw, +Z forward). */
+export interface PieceSeatSpec {
+  x: number;
+  z: number;
+  /** Seat surface above the piece's base. */
+  h: number;
+  /** Extra local yaw (0 = facing local +Z). */
+  yaw: number;
+}
 
 export interface PieceVariant {
   id: string;
@@ -105,6 +163,20 @@ export interface PieceDef {
   text?: boolean;
   /** Lights up at night. */
   light?: boolean;
+  /** Longest text (characters) for text pieces (default CONFIG.building.signMaxLength). */
+  textMax?: number;
+  /** Wall-mounted (see MountSpec). */
+  mount?: MountSpec;
+  /** Can stand on top of a `surface` piece (table lamp, small plant). */
+  top?: boolean;
+  /** Offers its top (at height h) to `top` pieces. */
+  surface?: boolean;
+  /** Seats (sit interaction). */
+  seats?: readonly PieceSeatSpec[];
+  /** Parametric piece (house roof): size/style come with the piece (PieceLike.params). */
+  param?: 'roof';
+  /** Not offered in the palette any more (kept so existing worlds still load and render). */
+  legacy?: boolean;
   variants: readonly PieceVariant[];
   /** One-line description for the palette. */
   hint: string;
@@ -151,10 +223,67 @@ const IRON: readonly PieceVariant[] = [
   { id: 'green', name: 'Garden green', colors: { main: '#4e6150', trim: '#34423a', accent: '#ffcf8a' } },
 ];
 
-/** Posts at both ends of a 2 m span, leaving a walkable gap in the middle. */
+const ROOF_HOUSE: readonly PieceVariant[] = [
+  { id: 'clay', name: 'Clay tiles', colors: { main: '#b4644c', trim: '#7e4636', accent: '#cf8a6c' } },
+  { id: 'slate', name: 'Slate', colors: { main: '#66707a', trim: '#474e56', accent: '#8a939b' } },
+  { id: 'moss', name: 'Moss', colors: { main: '#6f7f58', trim: '#4f5a40', accent: '#93a274' } },
+  { id: 'thatch', name: 'Thatch', colors: { main: '#c4a46a', trim: '#93784a', accent: '#dcc390' } },
+];
+const BRICK: readonly PieceVariant[] = [
+  { id: 'brick', name: 'Brick', colors: { main: '#a8705a', trim: '#7e5242', accent: '#c4917a' } },
+  { id: 'stone', name: 'Fieldstone', colors: { main: '#a59a89', trim: '#7d7364', accent: '#c2b8a6' } },
+  { id: 'plaster', name: 'Plaster', colors: { main: '#e3d6bd', trim: '#9a7656', accent: '#c9b48e' } },
+];
+const BOARD: readonly PieceVariant[] = [
+  { id: 'oak', name: 'Oak & cream', colors: { main: '#b48a63', trim: '#6f5038', accent: '#f1e6cf', ink: '#4a3627' } },
+  { id: 'green', name: 'Garden green', colors: { main: '#5f7a66', trim: '#3f5246', accent: '#e9e0c6', ink: '#f3ead2' } },
+  { id: 'navy', name: 'Harbour blue', colors: { main: '#55627e', trim: '#39425a', accent: '#e2d6bb', ink: '#f1e8d2' } },
+  { id: 'red', name: 'Madder', colors: { main: '#9a5448', trim: '#6f3a34', accent: '#ecd9b8', ink: '#f6ead0' } },
+];
+const FABRIC: readonly PieceVariant[] = [
+  { id: 'sage', name: 'Sage', colors: { main: '#8d9c7e', trim: '#7d5a43', accent: '#e6dcc6' } },
+  { id: 'rose', name: 'Dusty rose', colors: { main: '#c49a8f', trim: '#6f5038', accent: '#efe2cf' } },
+  { id: 'ochre', name: 'Ochre', colors: { main: '#c4a061', trim: '#5c4233', accent: '#efe4cc' } },
+  { id: 'blue', name: 'Cornflower', colors: { main: '#7d8fa8', trim: '#5c4233', accent: '#e8e0cf' } },
+];
+const KITCHEN: readonly PieceVariant[] = [
+  { id: 'cream', name: 'Cream', colors: { main: '#e6dac2', trim: '#8a6648', accent: '#b9ae9b' } },
+  { id: 'sage', name: 'Sage', colors: { main: '#a7b39a', trim: '#6e6a52', accent: '#c8bfae' } },
+  { id: 'blue', name: 'Duck egg', colors: { main: '#a9bcc0', trim: '#5f6f6a', accent: '#d3cabb' } },
+];
+const IRONWARE: readonly PieceVariant[] = [
+  { id: 'iron', name: 'Black iron', colors: { main: '#4a4a4c', trim: '#2f2f31', accent: '#c87c4a' } },
+  { id: 'enamel', name: 'Cream enamel', colors: { main: '#e2d6bd', trim: '#5c4233', accent: '#c87c4a' } },
+  { id: 'green', name: 'Bottle green', colors: { main: '#55705e', trim: '#2f3d35', accent: '#c87c4a' } },
+];
+const POTS: readonly PieceVariant[] = [
+  { id: 'terracotta', name: 'Terracotta pot', colors: { main: '#b8735a', trim: '#6f8f52', accent: '#8fac62' } },
+  { id: 'glazed', name: 'Glazed pot', colors: { main: '#6f8a8a', trim: '#6f8f52', accent: '#a6bd74' } },
+  { id: 'cream', name: 'Cream pot', colors: { main: '#e2d6bd', trim: '#5d7d4a', accent: '#8fac62' } },
+];
+const PICTURES: readonly PieceVariant[] = [
+  { id: 'meadow', name: 'Meadow', colors: { main: '#8a6648', trim: '#a8b97f', accent: '#cfe0e6' } },
+  { id: 'harbour', name: 'Harbour', colors: { main: '#5c4233', trim: '#7d93a8', accent: '#e6d6b4' } },
+  { id: 'flowers', name: 'Flowers', colors: { main: '#b48a63', trim: '#e7a0a6', accent: '#efe6d2' } },
+];
+const BRASS_WOOD: readonly PieceVariant[] = [
+  { id: 'oak', name: 'Oak', colors: { main: '#b48a63', trim: '#8a6648', accent: '#e9dcc0' } },
+  { id: 'walnut', name: 'Walnut', colors: { main: '#7d5a43', trim: '#5c4233', accent: '#d9c3a2' } },
+  { id: 'painted', name: 'Painted', colors: { main: '#8d9c7e', trim: '#5c4233', accent: '#efe4cc' } },
+];
+const RUGS2: readonly PieceVariant[] = [
+  { id: 'wool', name: 'Undyed wool', colors: { main: '#d9cdb4', trim: '#9a8468', accent: '#b9a586' } },
+  { id: 'indigo', name: 'Indigo', colors: { main: '#55627e', trim: '#e2d6bb', accent: '#39425a' } },
+  { id: 'rose', name: 'Rose', colors: { main: '#b77e74', trim: '#efdfc6', accent: '#8a5a50' } },
+];
+
+/**
+ * Posts at both ends of a 2 m span, leaving a 1.64 m walkable gap: wide enough that the
+ * click-to-move nav grid (0.5 m cells, radius + 0.1 m clearance) always has a cell row through it.
+ */
 const POSTS_2M = [
-  { x: -0.85, z: 0, hw: 0.15, hd: 0.12 },
-  { x: 0.85, z: 0, hw: 0.15, hd: 0.12 },
+  { x: -0.91, z: 0, hw: 0.09, hd: 0.12 },
+  { x: 0.91, z: 0, hw: 0.09, hd: 0.12 },
 ] as const;
 
 const def = (d: Omit<PieceDef, 'minLevel' | 'maxLevel' | 'snap'> & Partial<Pick<PieceDef, 'minLevel' | 'maxLevel' | 'snap'>>): PieceDef => ({
@@ -171,29 +300,73 @@ export const PIECES: Readonly<Record<PieceKind, PieceDef>> = {
   doorway: def({ kind: 'doorway', name: 'Doorway', category: 'structure', w: 2, d: 0.24, h: H, layer: 'solid', solid: true, structural: true, colliders: POSTS_2M, variants: PLASTER, hint: 'A wall you can walk through.' }),
   half_wall: def({ kind: 'half_wall', name: 'Half wall', category: 'structure', w: 2, d: 0.24, h: 1.05, layer: 'solid', solid: true, structural: false, variants: PLASTER, hint: 'Waist-high; good for porches.' }),
   pillar: def({ kind: 'pillar', name: 'Pillar', category: 'structure', w: 0.4, d: 0.4, h: H, layer: 'solid', solid: true, structural: true, variants: WOOD, hint: 'Holds up a roof or a floor.' }),
-  roof_flat: def({ kind: 'roof_flat', name: 'Flat roof', category: 'roof', w: 2, d: 2, h: 0.3, layer: 'roof', solid: false, structural: false, minLevel: 1, maxLevel: ML, variants: ROOF, hint: 'Sits on top of walls.' }),
-  roof_slope: def({ kind: 'roof_slope', name: 'Roof slope', category: 'roof', w: 2, d: 2, h: 1.25, layer: 'roof', solid: false, structural: false, minLevel: 1, maxLevel: ML, variants: ROOF, hint: 'Two facing each other make a gable roof.' }),
-  roof_peak: def({ kind: 'roof_peak', name: 'Peaked roof', category: 'roof', w: 2, d: 2, h: 1.0, layer: 'roof', solid: false, structural: false, minLevel: 1, maxLevel: ML, variants: ROOF, hint: 'A small pitched roof with closed ends.' }),
-  gable: def({ kind: 'gable', name: 'Gable', category: 'roof', w: 2, d: 0.24, h: 1.25, layer: 'gable', solid: false, structural: false, minLevel: 1, maxLevel: ML, variants: PLASTER, hint: 'Closes the end under a roof slope.' }),
+  roof_flat: def({ kind: 'roof_flat', name: 'Flat roof tile', category: 'roof', w: 2, d: 2, h: 0.3, layer: 'roof', solid: false, structural: false, minLevel: 1, maxLevel: ML, variants: ROOF, hint: 'Sits on top of walls.' }),
+  roof_slope: def({ kind: 'roof_slope', legacy: true, name: 'Roof slope tile', category: 'roof', w: 2, d: 2, h: 1.25, layer: 'roof', solid: false, structural: false, minLevel: 1, maxLevel: ML, variants: ROOF, hint: 'Two facing each other make a gable roof.' }),
+  roof_peak: def({ kind: 'roof_peak', legacy: true, name: 'Peaked roof tile', category: 'roof', w: 2, d: 2, h: 1.0, layer: 'roof', solid: false, structural: false, minLevel: 1, maxLevel: ML, variants: ROOF, hint: 'A small pitched roof with closed ends.' }),
+  gable: def({ kind: 'gable', legacy: true, name: 'Gable', category: 'roof', w: 2, d: 0.24, h: 1.25, layer: 'gable', solid: false, structural: false, minLevel: 1, maxLevel: ML, variants: PLASTER, hint: 'Closes the end under a roof slope.' }),
   steps: def({ kind: 'steps', name: 'Steps', category: 'structure', w: 2, d: 1, h: 0.36, layer: 'base', solid: false, structural: false, maxLevel: 0, variants: FLOOR, hint: 'A low stone step up to a door.' }),
   fence: def({ kind: 'fence', name: 'Fence', category: 'garden', w: 2, d: 0.16, h: 0.95, layer: 'solid', solid: true, structural: false, maxLevel: 0, variants: WOOD, hint: 'A picket fence, 2 m.' }),
   gate: def({ kind: 'gate', name: 'Gate', category: 'garden', w: 2, d: 0.16, h: 0.95, layer: 'solid', solid: true, structural: false, maxLevel: 0, colliders: POSTS_2M, variants: WOOD, hint: 'An open garden gate.' }),
-  table: def({ kind: 'table', name: 'Table', category: 'furnishing', w: 1.4, d: 0.9, h: 0.78, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'A sturdy farmhouse table.' }),
-  bench: def({ kind: 'bench', name: 'Bench', category: 'furnishing', w: 1.6, d: 0.5, h: 0.85, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'A garden bench.' }),
-  chair: def({ kind: 'chair', name: 'Chair', category: 'furnishing', w: 0.6, d: 0.6, h: 0.95, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'A ladder-back chair.' }),
+  table: def({ kind: 'table', name: 'Table', category: 'kitchen', surface: true, w: 1.4, d: 0.9, h: 0.78, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'A sturdy farmhouse table.' }),
+  bench: def({ kind: 'bench', name: 'Bench', category: 'garden', seats: [{ x: -0.4, z: 0.04, h: 0.48, yaw: 0 }, { x: 0.4, z: 0.04, h: 0.48, yaw: 0 }], w: 1.6, d: 0.5, h: 0.85, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'A garden bench.' }),
+  chair: def({ kind: 'chair', name: 'Chair', category: 'kitchen', seats: [{ x: 0, z: 0.04, h: 0.5, yaw: 0 }], w: 0.6, d: 0.6, h: 0.95, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'A ladder-back chair.' }),
   lamp: def({ kind: 'lamp', name: 'Lamp', category: 'garden', w: 0.4, d: 0.4, h: 2.1, layer: 'solid', solid: true, structural: false, snap: 0.5, light: true, variants: IRON, hint: 'Lights itself at dusk.' }),
   planter: def({ kind: 'planter', name: 'Planter', category: 'garden', w: 1, d: 0.5, h: 0.75, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: FLOWERS, hint: 'A box of flowers.' }),
-  crate: def({ kind: 'crate', name: 'Crate', category: 'furnishing', w: 0.8, d: 0.8, h: 0.72, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'For keeping things in.' }),
-  rug: def({ kind: 'rug', name: 'Rug', category: 'furnishing', w: 2, d: 1.4, h: 0.03, layer: 'surface', solid: false, structural: false, snap: 0.5, variants: RUG, hint: 'Woven, soft underfoot.' }),
-  sign: def({ kind: 'sign', name: 'Sign', category: 'garden', w: 0.8, d: 0.3, h: 1.35, layer: 'solid', solid: true, structural: false, snap: 0.5, text: true, maxLevel: 0, variants: WOOD, hint: 'A little signpost with your words.' }),
+  crate: def({ kind: 'crate', name: 'Crate', category: 'garden', surface: true, w: 0.8, d: 0.8, h: 0.72, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'For keeping things in.' }),
+  rug: def({ kind: 'rug', name: 'Rug', category: 'living', w: 2, d: 1.4, h: 0.03, layer: 'surface', solid: false, structural: false, snap: 0.5, variants: RUG, hint: 'Woven, soft underfoot.' }),
+  sign: def({ kind: 'sign', name: 'Signpost', category: 'sign', w: 0.8, d: 0.3, h: 1.35, layer: 'solid', solid: true, structural: false, snap: 0.5, text: true, maxLevel: 0, variants: WOOD, hint: 'A little signpost with your words.' }),
+  // --- Round 2 -----------------------------------------------------------------
+  house_roof: def({ kind: 'house_roof', name: 'House roof', category: 'roof', w: 4, d: 4, h: 1.6, layer: 'roof', solid: false, structural: false, minLevel: 1, maxLevel: ML, snap: 0.5, param: 'roof', variants: ROOF_HOUSE, hint: 'One whole roof over your walls. Rotate turns the ridge.' }),
+  chimney: def({ kind: 'chimney', name: 'Chimney', category: 'roof', w: 0.7, d: 0.7, h: 2.6, layer: 'gable', solid: false, structural: false, minLevel: 1, maxLevel: ML, snap: 0.5, variants: BRICK, hint: 'Stands on a wall top and rises through the roof.' }),
+  name_board: def({ kind: 'name_board', name: 'Name board', category: 'sign', w: 1.76, d: 0.08, h: 0.5, layer: 'mount', solid: false, structural: false, snap: 1, text: true, textMax: 24, light: true, mount: { y0: 2.1, y1: 2.58, depth: 0.08 }, variants: BOARD, hint: 'Your building’s name, above the door.' }),
+  name_hanging: def({ kind: 'name_hanging', name: 'Hanging sign', category: 'sign', w: 0.9, d: 0.75, h: 0.9, layer: 'mount', solid: false, structural: false, snap: 1, text: true, textMax: 18, light: true, mount: { y0: 1.62, y1: 2.5, depth: 0.75 }, variants: BOARD, hint: 'A sign on an iron bracket.' }),
+  name_plaque: def({ kind: 'name_plaque', name: 'Plaque', category: 'sign', w: 0.62, d: 0.05, h: 0.34, layer: 'mount', solid: false, structural: false, snap: 1, text: true, textMax: 18, light: true, mount: { y0: 1.45, y1: 1.8, depth: 0.05 }, variants: BOARD, hint: 'A small plaque by the door.' }),
+  bed: def({ kind: 'bed', name: 'Bed', category: 'bedbath', w: 1.3, d: 2.1, h: 1.0, layer: 'solid', solid: true, structural: false, snap: 0.5, seats: [{ x: -0.5, z: 0.5, h: 0.5, yaw: -Math.PI / 2 }, { x: 0.5, z: 0.5, h: 0.5, yaw: Math.PI / 2 }], variants: FABRIC, hint: 'A quilted bed. Sit on its edge.' }),
+  sofa: def({ kind: 'sofa', name: 'Sofa', category: 'living', w: 1.8, d: 0.85, h: 0.85, layer: 'solid', solid: true, structural: false, snap: 0.5, seats: [{ x: -0.42, z: 0.05, h: 0.44, yaw: 0 }, { x: 0.42, z: 0.05, h: 0.44, yaw: 0 }], variants: FABRIC, hint: 'Two seats, soft cushions.' }),
+  armchair: def({ kind: 'armchair', name: 'Armchair', category: 'living', w: 0.9, d: 0.85, h: 0.9, layer: 'solid', solid: true, structural: false, snap: 0.5, seats: [{ x: 0, z: 0.05, h: 0.44, yaw: 0 }], variants: FABRIC, hint: 'A deep armchair.' }),
+  stool: def({ kind: 'stool', name: 'Stool', category: 'kitchen', w: 0.45, d: 0.45, h: 0.62, layer: 'solid', solid: true, structural: false, snap: 0.5, seats: [{ x: 0, z: 0, h: 0.62, yaw: 0 }], variants: WOOD, hint: 'For counters and corners.' }),
+  desk: def({ kind: 'desk', name: 'Desk', category: 'living', w: 1.3, d: 0.65, h: 0.76, layer: 'solid', solid: true, structural: false, snap: 0.5, surface: true, variants: WOOD, hint: 'A writing desk with a drawer.' }),
+  dining_table: def({ kind: 'dining_table', name: 'Dining table', category: 'kitchen', w: 1.8, d: 1.0, h: 0.76, layer: 'solid', solid: true, structural: false, snap: 0.5, surface: true, variants: WOOD, hint: 'Long enough for friends.' }),
+  bookshelf: def({ kind: 'bookshelf', name: 'Bookshelf', category: 'living', w: 1.2, d: 0.4, h: 1.9, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: WOOD, hint: 'Full of well-read books.' }),
+  dresser: def({ kind: 'dresser', name: 'Dresser', category: 'bedbath', w: 1.1, d: 0.5, h: 0.95, layer: 'solid', solid: true, structural: false, snap: 0.5, surface: true, variants: BRASS_WOOD, hint: 'Drawers; things can stand on top.' }),
+  kitchen_counter: def({ kind: 'kitchen_counter', name: 'Counter', category: 'kitchen', w: 1.2, d: 0.65, h: 0.92, layer: 'solid', solid: true, structural: false, snap: 0.5, surface: true, variants: KITCHEN, hint: 'A kitchen counter with cupboards.' }),
+  stove: def({ kind: 'stove', name: 'Stove', category: 'kitchen', w: 0.8, d: 0.65, h: 0.95, layer: 'solid', solid: true, structural: false, snap: 0.5, light: true, variants: IRONWARE, hint: 'A wood stove; it glows in the evening.' }),
+  sink: def({ kind: 'sink', name: 'Sink', category: 'kitchen', w: 0.9, d: 0.6, h: 0.92, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: KITCHEN, hint: 'A deep stone sink.' }),
+  fireplace: def({ kind: 'fireplace', name: 'Fireplace', category: 'living', w: 1.4, d: 0.6, h: 1.45, layer: 'solid', solid: true, structural: false, snap: 0.5, light: true, variants: BRICK, hint: 'A hearth that glows from dusk.' }),
+  bathtub: def({ kind: 'bathtub', name: 'Bathtub', category: 'bedbath', w: 1.7, d: 0.8, h: 0.62, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: IRONWARE, hint: 'A roll-top tub on little feet.' }),
+  chest: def({ kind: 'chest', name: 'Chest', category: 'bedbath', w: 0.9, d: 0.55, h: 0.58, layer: 'solid', solid: true, structural: false, snap: 0.5, surface: true, variants: WOOD, hint: 'A blanket chest.' }),
+  barrel: def({ kind: 'barrel', name: 'Barrel', category: 'garden', w: 0.62, d: 0.62, h: 0.9, layer: 'solid', solid: true, structural: false, snap: 0.5, surface: true, variants: WOOD, hint: 'A stout barrel.' }),
+  floor_lamp: def({ kind: 'floor_lamp', name: 'Floor lamp', category: 'living', w: 0.42, d: 0.42, h: 1.6, layer: 'solid', solid: true, structural: false, snap: 0.5, light: true, variants: FABRIC, hint: 'A standing lamp, lit at dusk.' }),
+  table_lamp: def({ kind: 'table_lamp', name: 'Table lamp', category: 'living', w: 0.32, d: 0.32, h: 0.46, layer: 'top', solid: false, structural: false, snap: 0.5, top: true, light: true, variants: FABRIC, hint: 'Stands on a table, desk or counter.' }),
+  plant_tall: def({ kind: 'plant_tall', name: 'Tall plant', category: 'decor', w: 0.6, d: 0.6, h: 1.35, layer: 'solid', solid: true, structural: false, snap: 0.5, variants: POTS, hint: 'A leafy plant in a big pot.' }),
+  plant_small: def({ kind: 'plant_small', name: 'Small plant', category: 'decor', w: 0.34, d: 0.34, h: 0.45, layer: 'top', solid: false, structural: false, snap: 0.5, top: true, variants: POTS, hint: 'A pot for a table or a sill.' }),
+  wall_shelf: def({ kind: 'wall_shelf', name: 'Wall shelf', category: 'decor', w: 1.0, d: 0.24, h: 0.4, layer: 'mount', solid: false, structural: false, snap: 1, mount: { y0: 1.05, y1: 1.45, depth: 0.24 }, variants: WOOD, hint: 'A shelf with jars and books.' }),
+  picture: def({ kind: 'picture', name: 'Picture', category: 'decor', w: 0.8, d: 0.05, h: 0.6, layer: 'mount', solid: false, structural: false, snap: 1, mount: { y0: 1.5, y1: 2.1, depth: 0.05 }, variants: PICTURES, hint: 'A framed painting.' }),
+  wall_clock: def({ kind: 'wall_clock', name: 'Wall clock', category: 'decor', w: 0.44, d: 0.07, h: 0.44, layer: 'mount', solid: false, structural: false, snap: 1, mount: { y0: 2.12, y1: 2.56, depth: 0.07 }, variants: BRASS_WOOD, hint: 'Keeps the island’s time.' }),
+  mirror: def({ kind: 'mirror', name: 'Mirror', category: 'decor', w: 0.6, d: 0.05, h: 1.0, layer: 'mount', solid: false, structural: false, snap: 1, mount: { y0: 0.9, y1: 1.9, depth: 0.05 }, variants: BRASS_WOOD, hint: 'A tall mirror.' }),
+  curtains: def({ kind: 'curtains', name: 'Curtains', category: 'decor', w: 1.3, d: 0.08, h: 1.3, layer: 'mount', solid: false, structural: false, snap: 1, mount: { y0: 0.85, y1: 2.15, depth: 0.08, windowOnly: true }, variants: FABRIC, hint: 'For a wall with a window.' }),
+  rug_round: def({ kind: 'rug_round', name: 'Round rug', category: 'living', w: 1.6, d: 1.6, h: 0.03, layer: 'surface', solid: false, structural: false, snap: 0.5, variants: RUGS2, hint: 'A braided round rug.' }),
+  shop_counter: def({ kind: 'shop_counter', name: 'Shop counter', category: 'kitchen', w: 1.6, d: 0.6, h: 1.0, layer: 'solid', solid: true, structural: false, snap: 0.5, surface: true, variants: WOOD, hint: 'A counter with shelves behind.' }),
+  record_player: def({ kind: 'record_player', name: 'Record player', category: 'living', w: 0.42, d: 0.36, h: 0.3, layer: 'top', solid: false, structural: false, snap: 0.5, top: true, variants: BRASS_WOOD, hint: 'Stands on a table or a chest.' }),
 };
 
 export const PIECE_CATEGORIES: readonly { id: PieceCategory; name: string }[] = [
   { id: 'structure', name: 'Build' },
   { id: 'roof', name: 'Roofs' },
+  { id: 'sign', name: 'Signs' },
+  { id: 'living', name: 'Living' },
+  { id: 'kitchen', name: 'Kitchen' },
+  { id: 'bedbath', name: 'Bed & bath' },
+  { id: 'decor', name: 'Walls & decor' },
   { id: 'garden', name: 'Garden' },
-  { id: 'furnishing', name: 'Home' },
 ];
+
+/** Palette order inside each tab (the house roof first in Roofs; legacy roof tiles after it). */
+export const PALETTE_ORDER: readonly PieceKind[] = (() => {
+  const first: PieceKind[] = ['house_roof', 'chimney'];
+  const rest = PIECE_KINDS.filter((k) => !first.includes(k));
+  return [...first, ...rest];
+})();
 
 export function isPieceKind(v: unknown): v is PieceKind {
   return typeof v === 'string' && (PIECE_KINDS as readonly string[]).includes(v);
@@ -219,6 +392,8 @@ export interface PieceLike {
   level: number;
   y: number;
   ownerId: string;
+  /** Parametric pieces only (house roof): compact JSON, see RoofParams. */
+  params?: string;
 }
 
 /** Axis-aligned footprint rectangle. */
@@ -240,6 +415,125 @@ export function footprint(kind: PieceKind, x: number, z: number, rot: number): R
   const hw = (odd ? d.d : d.w) / 2;
   const hd = (odd ? d.w : d.d) / 2;
   return { minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd };
+}
+
+// ---------------------------------------------------------------------------
+// House roofs (parametric) and wall mounts
+// ---------------------------------------------------------------------------
+
+export type RoofStyle = 'gable' | 'hip';
+/**
+ * One whole roof over a rectangle of walls. In the piece's local frame the
+ * ridge runs along local Z: `w` = span across the ridge (local X), `d` =
+ * length along it (local Z), both measured between wall centre lines. rot 0 →
+ * ridge along world Z, rot 1 → ridge along world X ("Rotate turns the ridge").
+ */
+export interface RoofParams {
+  w: number;
+  d: number;
+  style: RoofStyle;
+  /** 0 = gentle (≈ 32°), 1 = steep (≈ 42°). */
+  pitch: 0 | 1;
+}
+export const ROOF_STYLES: readonly RoofStyle[] = ['gable', 'hip'];
+/** Eave overhang beyond the wall lines on every side (metres). */
+export const ROOF_OVERHANG = 0.45;
+/** Rise per metre of half-span for each pitch. */
+export const ROOF_PITCH_SLOPE = [0.62, 0.9] as const;
+
+export function roofRise(r: RoofParams): number {
+  return (r.w / 2) * ROOF_PITCH_SLOPE[r.pitch];
+}
+
+/** Parse/validate roof params (object from a request, or the stored JSON string). Null when invalid. */
+export function parseRoofParams(v: unknown): RoofParams | null {
+  let o: unknown = v;
+  if (typeof v === 'string') {
+    try {
+      o = JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const { minSpan, maxSpan } = CONFIG.building.roof;
+  const ok = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= minSpan && n <= maxSpan;
+  if (!ok(r.w) || !ok(r.d)) return null;
+  const style = r.style ?? r.s;
+  if (style !== 'gable' && style !== 'hip') return null;
+  const pitch = r.pitch ?? r.p;
+  if (pitch !== 0 && pitch !== 1) return null;
+  return { w: r.w, d: r.d, style, pitch };
+}
+export function roofParamsString(r: RoofParams): string {
+  return JSON.stringify({ w: r.w, d: r.d, s: r.style, p: r.pitch });
+}
+
+/** Local frame size (w × d) of a piece: params for parametric pieces, else the catalog's. */
+export function pieceSize(kind: PieceKind, params?: string | RoofParams | null): { w: number; d: number } {
+  const def = PIECES[kind];
+  if (def.param === 'roof') {
+    const r = typeof params === 'string' || params == null ? parseRoofParams(params) : params;
+    if (r) return { w: r.w, d: r.d };
+  }
+  return { w: def.w, d: def.d };
+}
+
+/** Kinds a mount can hang on, and whether that wall has a door / window opening. */
+const MOUNT_WALLS: Partial<Record<PieceKind, 'plain' | 'window' | 'door'>> = { wall: 'plain', wall_window: 'window', doorway: 'door' };
+/** Half the thickness of a wall (mounts start at the face). */
+export const WALL_HALF = 0.12;
+
+/** World centre of what a mount occupies (it hangs off the face of the wall at x, z). */
+export function mountCentre(kind: PieceKind, x: number, z: number, rot: number): Vec2 {
+  const m = PIECES[kind].mount!;
+  const yaw = yawOfRot(rot);
+  const off = WALL_HALF + m.depth / 2;
+  return { x: x + Math.sin(yaw) * off, z: z + Math.cos(yaw) * off };
+}
+
+/** Footprint of any placed piece (parametric size, wall mounts off the wall face). */
+export function footprintOf(p: Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot'> & { params?: string | undefined }): Rect {
+  const def = PIECES[p.kind];
+  const { w, d } = pieceSize(p.kind, p.params);
+  const odd = (((p.rot % 4) + 4) % 4) % 2 === 1;
+  const hw = (odd ? d : w) / 2;
+  const hd = (odd ? w : d) / 2;
+  const c = def.mount ? mountCentre(p.kind, p.x, p.z, p.rot) : { x: p.x, z: p.z };
+  return { minX: c.x - hw, maxX: c.x + hw, minZ: c.z - hd, maxZ: c.z + hd };
+}
+
+/**
+ * Wall-mount rule: the wall a mount hangs on — one of the builder's walls at
+ * the same level whose centre is (x, z) and which runs across `rot` (the
+ * mount faces out of it). Doorways only take mounts above the door, window
+ * walls only curtains or mounts above the window.
+ */
+export function mountWall<P extends PieceLike>(index: PieceIndex<P>, kind: PieceKind, x: number, z: number, rot: number, level: number): { wall: P | null; reason?: 'unsupported' | 'mount_blocked' } {
+  const m = PIECES[kind].mount;
+  if (!m) return { wall: null, reason: 'unsupported' };
+  for (const q of index.query({ minX: x - 0.05, maxX: x + 0.05, minZ: z - 0.05, maxZ: z + 0.05 })) {
+    const type = MOUNT_WALLS[q.kind];
+    if (!type || q.level !== level || Math.abs(q.x - x) > 1e-6 || Math.abs(q.z - z) > 1e-6 || q.rot % 2 !== rot % 2) continue;
+    if (m.windowOnly && type !== 'window') return { wall: null, reason: 'mount_blocked' };
+    if (!m.windowOnly && type === 'window' && m.y0 < 1.97) return { wall: null, reason: 'mount_blocked' };
+    if (type === 'door' && m.y0 < 2.1) return { wall: null, reason: 'mount_blocked' };
+    return { wall: q };
+  }
+  return { wall: null, reason: 'unsupported' };
+}
+
+/** World pose of seat `i` of a piece (null when it has none). */
+export function pieceSeat(p: Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot' | 'y'>, i: number): { position: Vec2; y: number; yaw: number; exit: Vec2 } | null {
+  const s = PIECES[p.kind].seats?.[i];
+  if (!s) return null;
+  const yaw = yawOfRot(p.rot);
+  const o = rotateOffset({ x: s.x, z: s.z }, yaw);
+  const facing = yaw + s.yaw;
+  const out = rotateOffset({ x: s.x, z: s.z + 0.8 }, yaw);
+  const sideways = Math.abs(s.yaw) > 0.1 ? rotateOffset({ x: s.x + Math.sign(s.x || 1) * 0.85, z: s.z }, yaw) : out;
+  return { position: { x: p.x + o.x, z: p.z + o.z }, y: p.y + s.h, yaw: facing, exit: { x: p.x + sideways.x, z: p.z + sideways.z } };
 }
 
 function rectsOverlap(a: Rect, b: Rect, shrink = 0.02): boolean {
@@ -310,7 +604,7 @@ export class PieceIndex<P extends PieceLike = PieceLike> {
     if (this.byId.has(p.id)) this.remove(p.id);
     this.byId.set(p.id, p);
     this.perOwner.set(p.ownerId, (this.perOwner.get(p.ownerId) ?? 0) + 1);
-    this.cellRange(footprint(p.kind, p.x, p.z, p.rot), (k) => {
+    this.cellRange(footprintOf(p), (k) => {
       let s = this.cells.get(k);
       if (!s) this.cells.set(k, (s = new Set()));
       s.add(p);
@@ -324,7 +618,7 @@ export class PieceIndex<P extends PieceLike = PieceLike> {
     const n = (this.perOwner.get(p.ownerId) ?? 1) - 1;
     if (n <= 0) this.perOwner.delete(p.ownerId);
     else this.perOwner.set(p.ownerId, n);
-    this.cellRange(footprint(p.kind, p.x, p.z, p.rot), (k) => {
+    this.cellRange(footprintOf(p), (k) => {
       const s = this.cells.get(k);
       if (!s) return;
       s.delete(p);
@@ -348,7 +642,7 @@ export class PieceIndex<P extends PieceLike = PieceLike> {
       if (s) for (const p of s) seen.add(p);
     });
     const out: P[] = [];
-    for (const p of seen) if (rectsOverlap(footprint(p.kind, p.x, p.z, p.rot), q, 0)) out.push(p);
+    for (const p of seen) if (rectsOverlap(footprintOf(p), q, 0)) out.push(p);
     return out;
   }
 }
@@ -501,7 +795,17 @@ export type BuildRefusal =
   | 'muted'
   | 'not_found'
   | 'not_owner'
-  | 'supports_others';
+  | 'supports_others'
+  // Round 2
+  | 'bad_params'
+  | 'nature'
+  | 'not_clearable'
+  | 'already_cleared'
+  | 'clear_cap'
+  | 'mount_blocked'
+  | 'not_a_seat'
+  | 'occupied'
+  | 'not_text';
 
 /** Short human text for a refusal (the client shows it next to the ghost). */
 export function refusalText(reason: BuildRefusal, label?: string): string {
@@ -531,7 +835,7 @@ export function refusalText(reason: BuildRefusal, label?: string): string {
     case 'overlap':
       return 'Overlaps another piece';
     case 'unsupported':
-      return 'Needs something underneath';
+      return label ?? 'Needs something underneath';
     case 'not_your_support':
       return 'You can only build on top of your own pieces';
     case 'player_in_way':
@@ -551,7 +855,7 @@ export function refusalText(reason: BuildRefusal, label?: string): string {
     case 'text_required':
       return 'Write something for the sign';
     case 'text_too_long':
-      return `Signs hold up to ${CONFIG.building.signMaxLength} characters`;
+      return `Signs hold up to ${label ?? CONFIG.building.signMaxLength} characters`;
     case 'muted':
       return 'You can’t write signs while muted';
     case 'not_found':
@@ -560,12 +864,32 @@ export function refusalText(reason: BuildRefusal, label?: string): string {
       return 'You can only remove your own pieces';
     case 'supports_others':
       return 'Remove what rests on it first';
+    case 'bad_params':
+      return `Roofs span ${CONFIG.building.roof.minSpan}–${CONFIG.building.roof.maxSpan} m between walls`;
+    case 'nature':
+      return label === 'a rock' ? 'A small rock is in the way — clear it first' : 'A bush is in the way — clear it first';
+    case 'not_clearable':
+      return label ? `${label.charAt(0).toUpperCase()}${label.slice(1)} can’t be cleared` : 'That can’t be cleared';
+    case 'already_cleared':
+      return 'Already cleared';
+    case 'clear_cap':
+      return 'You’ve cleared enough plants for today';
+    case 'mount_blocked':
+      return 'Not on that wall — try a plain wall';
+    case 'not_a_seat':
+      return 'You can’t sit on that';
+    case 'occupied':
+      return 'Someone is sitting there';
+    case 'not_text':
+      return 'That piece has no words';
   }
 }
 
 export interface PlaceRequest {
   kind: unknown;
   variant: unknown;
+  /** House roof: { w, d, style, pitch } (see RoofParams). */
+  params?: unknown;
   x: unknown;
   z: unknown;
   rot: unknown;
@@ -582,11 +906,13 @@ export interface PlacementContext<P extends PieceLike = PieceLike> {
   players: readonly Vec2[];
   /** Static world colliders (defaults to the island's). */
   collision?: CollisionWorld;
+  /** Bushes / rocks already cleared (they no longer block). */
+  cleared?: ReadonlySet<string>;
 }
 
 export type PlacementResult =
-  | { ok: true; kind: PieceKind; variant: string; x: number; z: number; rot: number; level: number; y: number }
-  | { ok: false; reason: BuildRefusal; label?: string };
+  | { ok: true; kind: PieceKind; variant: string; x: number; z: number; rot: number; level: number; y: number; params?: string }
+  | { ok: false; reason: BuildRefusal; label?: string; natureId?: string };
 
 /** Walls, fences, gables and pillars (thin in one direction). */
 const isSlim = (k: PieceKind) => Math.min(PIECES[k].w, PIECES[k].d) <= 0.4;
@@ -603,7 +929,17 @@ const LAYER_CLASH: Readonly<Record<PieceLayer, readonly PieceLayer[]>> = {
   solid: ['solid', 'roof', 'gable'],
   roof: ['roof', 'base', 'solid'],
   gable: ['gable', 'solid'],
+  // Mounts only clash with mounts on the same face (see mountClash); tops with tops.
+  mount: [],
+  top: ['top'],
 };
+
+/** Two house roofs may intersect (L-shaped houses) unless one mostly covers the other. */
+const ROOF_MAX_SHARED = 0.6;
+function overlapArea(a: Rect, b: Rect): number {
+  return Math.max(0, Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX)) * Math.max(0, Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ));
+}
+const area = (r: Rect) => (r.maxX - r.minX) * (r.maxZ - r.minZ);
 
 /** Rectangle vs static collider overlap (box via SAT, circle via closest point). */
 function rectHitsCollider(r: Rect, c: Collider, margin: number): boolean {
@@ -641,22 +977,48 @@ export function staticObstacleAt(r: Rect, collision: CollisionWorld = defaultCol
   const cx = (r.minX + r.maxX) / 2;
   const cz = (r.minZ + r.maxZ) / 2;
   const rad = Math.hypot(r.maxX - r.minX, r.maxZ - r.minZ) / 2 + 0.2;
-  for (const c of collision.grid.query({ x: cx, z: cz }, rad, new Set())) if (rectHitsCollider(r, c, 0.05)) return c;
+  for (const c of collision.grid.query({ x: cx, z: cz }, rad, new Set())) if (!collision.disabled.has(c.id) && rectHitsCollider(r, c, 0.05)) return c;
   return null;
 }
 
-/** Pieces that hold `p` up (empty for ground-level pieces). */
-export function supportsOf<P extends PieceLike>(index: PieceIndex<P>, p: Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot' | 'level'> & { id?: string }, exclude?: ReadonlySet<string>): P[] {
-  if (p.level <= 0) return [];
+/** Surface pieces (tables, counters…) at `level` whose footprint holds the point. */
+function surfaceUnder<P extends PieceLike>(index: PieceIndex<P>, x: number, z: number, level: number, exclude?: ReadonlySet<string>): P | null {
+  let best: P | null = null;
+  for (const q of index.query({ minX: x, maxX: x, minZ: z, maxZ: z }, 0.01)) {
+    if (exclude?.has(q.id) || q.level !== level || !PIECES[q.kind].surface) continue;
+    if (!rectContains(footprintOf(q), { x, z }, 0.05)) continue;
+    if (!best || q.y + PIECES[q.kind].h > best.y + PIECES[best.kind].h) best = q;
+  }
+  return best;
+}
+
+/**
+ * Pieces that hold `p` up. Ground-level pieces have none, except wall mounts
+ * (their wall) and table-top things standing on a surface piece.
+ */
+export function supportsOf<P extends PieceLike>(index: PieceIndex<P>, p: Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot' | 'level'> & { id?: string; params?: string | undefined }, exclude?: ReadonlySet<string>): P[] {
   const d = PIECES[p.kind];
-  const fp = footprint(p.kind, p.x, p.z, p.rot);
+  if (d.mount) {
+    const { wall } = mountWall(index, p.kind, p.x, p.z, p.rot, p.level);
+    return wall && !exclude?.has(wall.id) && wall.id !== p.id ? [wall] : [];
+  }
+  if (d.top) {
+    const s = surfaceUnder(index, p.x, p.z, p.level, exclude);
+    if (s) return [s];
+    if (p.level <= 0) return [];
+  }
+  if (p.level <= 0) return [];
+  const fp = footprintOf(p);
   const out: P[] = [];
   const below = (q: P) => q.level === p.level - 1 && PIECES[q.kind].structural;
-  const floorHere = (q: P) => q.level === p.level && q.kind === 'floor' && rectContains(footprint(q.kind, q.x, q.z, q.rot), { x: p.x, z: p.z }, -0.01);
-  for (const q of index.query(fp, 0.15)) {
+  const floorHere = (q: P) => q.level === p.level && q.kind === 'floor' && rectContains(footprintOf(q), { x: p.x, z: p.z }, -0.01);
+  for (const q of index.query(fp, 0.25)) {
     if (q.id === p.id || exclude?.has(q.id)) continue;
-    const qfp = footprint(q.kind, q.x, q.z, q.rot);
-    if (d.layer === 'base' || d.layer === 'roof') {
+    const qfp = footprintOf(q);
+    if (d.param === 'roof') {
+      // A house roof rests on the walls/pillars along its edges.
+      if (below(q) && rectsOverlap(expand(fp, 0.2), qfp, 0) && !rectsOverlap(expand(fp, -0.2), qfp, 0)) out.push(q);
+    } else if (d.layer === 'base' || d.layer === 'roof') {
       // Slabs rest on structural pieces of the storey below touching their footprint.
       if (below(q) && rectsOverlap(expand(fp, 0.15), qfp, 0)) out.push(q);
     } else if (d.structural || d.layer === 'gable') {
@@ -669,21 +1031,57 @@ export function supportsOf<P extends PieceLike>(index: PieceIndex<P>, p: Pick<Pi
   return out;
 }
 
+/**
+ * House roof support rule: the walls/pillars of the storey below run along at
+ * least 3 of its 4 edges — an edge counts when at least half of its length is
+ * walled (a wall end merely touching a corner does not count). Returns how
+ * many edges are supported.
+ */
+export function roofEdgesSupported(fp: Rect, supports: readonly Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot'>[]): number {
+  const m = 0.2;
+  const along = (horizontal: boolean, line: number, a: number, b: number) => {
+    const spans: [number, number][] = [];
+    for (const q of supports) {
+      const f = footprintOf(q);
+      if (horizontal ? f.minZ - m <= line && f.maxZ + m >= line : f.minX - m <= line && f.maxX + m >= line) {
+        const lo = Math.max(a, horizontal ? f.minX : f.minZ);
+        const hi = Math.min(b, horizontal ? f.maxX : f.maxZ);
+        if (hi > lo) spans.push([lo, hi]);
+      }
+    }
+    spans.sort((p, q) => p[0] - q[0]);
+    let covered = 0;
+    let at = a;
+    for (const [lo, hi] of spans) {
+      const s0 = Math.max(lo, at);
+      if (hi > s0) {
+        covered += hi - s0;
+        at = hi;
+      }
+    }
+    return covered / (b - a);
+  };
+  const edges = [along(true, fp.minZ, fp.minX, fp.maxX), along(true, fp.maxZ, fp.minX, fp.maxX), along(false, fp.minX, fp.minZ, fp.maxZ), along(false, fp.maxX, fp.minZ, fp.maxZ)];
+  return edges.filter((c) => c >= 0.5).length;
+}
+
 /** Base height for a piece at a level, given its supports (server stores the result). */
-export function baseHeightFor<P extends PieceLike>(index: PieceIndex<P>, kind: PieceKind, x: number, z: number, rot: number, level: number, supports: readonly P[]): number {
+export function baseHeightFor<P extends PieceLike>(index: PieceIndex<P>, kind: PieceKind, x: number, z: number, rot: number, level: number, supports: readonly P[], params?: string): number {
+  const d = PIECES[kind];
+  if (d.mount) return supports[0]?.y ?? 0;
+  if (d.top && supports[0] && PIECES[supports[0].kind].surface) return supports[0].y + PIECES[supports[0].kind].h;
   if (level > 0) {
     let y = -Infinity;
     for (const s of supports) y = Math.max(y, s.kind === 'floor' ? s.y : pieceTop(s));
     return y;
   }
-  const fp = footprint(kind, x, z, rot);
+  const fp = footprintOf({ kind, x, z, rot, ...(params ? { params } : {}) });
   let ground = -Infinity;
   for (const s of footprintSamples(fp)) ground = Math.max(ground, terrainHeight(s.x, s.z));
-  const d = PIECES[kind];
   if (!d.structural && d.layer !== 'base') {
     // Furniture / rugs on a ground floor tile rest on its top.
     for (const q of index.query(fp)) {
-      if (q.level === 0 && q.kind === 'floor' && rectContains(footprint(q.kind, q.x, q.z, q.rot), { x, z }, -0.01)) ground = Math.max(ground, pieceTop(q));
+      if (q.level === 0 && q.kind === 'floor' && rectContains(footprintOf(q), { x, z }, -0.01)) ground = Math.max(ground, pieceTop(q));
     }
   }
   return ground;
@@ -701,47 +1099,97 @@ export function validatePlacement<P extends PieceLike>(req: PlaceRequest, ctx: P
   if (!d.variants.some((v) => v.id === variant)) return { ok: false, reason: 'bad_variant' };
   if (!isNum(req.x) || !isNum(req.z) || !onGrid(req.x) || !onGrid(req.z)) return { ok: false, reason: 'off_grid' };
   if (!isNum(req.rot) || !Number.isInteger(req.rot) || req.rot < 0 || req.rot > 3) return { ok: false, reason: 'bad_rotation' };
+  if (d.param === 'roof' && req.rot > 1) return { ok: false, reason: 'bad_rotation' };
   if (!isNum(req.level) || !Number.isInteger(req.level) || req.level < d.minLevel || req.level > d.maxLevel || req.level > CONFIG.building.maxLevel) return { ok: false, reason: 'bad_level' };
   const x = req.x;
   const z = req.z;
   const rot = req.rot;
   const level = req.level;
+  let params: string | undefined;
+  if (d.param === 'roof') {
+    const r = parseRoofParams(req.params);
+    if (!r) return { ok: false, reason: 'bad_params' };
+    params = roofParamsString(r);
+  }
+  const probe = { kind, x, z, rot, level, ...(params ? { params } : {}) };
 
   if (ctx.builderPos) {
     const range = ctx.range ?? CONFIG.building.range;
     if (Math.hypot(ctx.builderPos.x - x, ctx.builderPos.z - z) > range) return { ok: false, reason: 'too_far' };
   }
 
-  const fp = footprint(kind, x, z, rot);
-  // Where: every sample point of the footprint must be buildable land.
+  const fp = footprintOf(probe);
+  // Where: every sample point of the footprint (a roof: including its eaves) must be buildable land.
+  const whereFp = d.param === 'roof' ? expand(fp, ROOF_OVERHANG) : fp;
   let minH = Infinity;
   let maxH = -Infinity;
-  for (const s of footprintSamples(fp)) {
+  for (const s of footprintSamples(whereFp)) {
     const b = buildableAt(s);
     if (b.code !== 'ok') return b.label !== undefined ? { ok: false, reason: b.code, label: b.label } : { ok: false, reason: b.code };
     const h = terrainHeight(s.x, s.z);
     minH = Math.min(minH, h);
     maxH = Math.max(maxH, h);
   }
-  if (level === 0 && maxH - minH > CONFIG.building.maxSlope) return { ok: false, reason: 'too_steep' };
-  if (level === 0 && staticObstacleAt(fp, ctx.collision)) return { ok: false, reason: 'obstructed' };
+  if (level === 0 && !d.mount && !d.top) {
+    if (maxH - minH > CONFIG.building.maxSlope) return { ok: false, reason: 'too_steep' };
+  }
+  if (level === 0 && !d.mount) {
+    // A clearable bush or small rock in the way: say so (the client offers "Clear").
+    const n = natureBlocking(fp, ctx.cleared);
+    if (n) return { ok: false, reason: 'nature', label: n.kind === 'rock' ? 'a rock' : 'a bush', natureId: n.id };
+    if (staticObstacleAt(fp, ctx.collision)) return { ok: false, reason: 'obstructed' };
+  }
 
   // Overlap with existing pieces on the same level. Slim pieces (walls, fences, pillars) may share
   // corners and T-junctions: they only clash when they overlap by more than SLIM_JOINT on both axes.
   const clash = LAYER_CLASH[d.layer];
   for (const q of ctx.index.query(fp)) {
     if (q.level !== level) continue;
-    if (!clash.includes(PIECES[q.kind].layer)) continue;
+    const qd = PIECES[q.kind];
+    if (d.mount || qd.mount) {
+      // Two mounts on the same wall face may not share height.
+      if (d.mount && qd.mount && q.x === x && q.z === z && q.rot === rot && d.mount.y0 < qd.mount.y1 - 0.01 && qd.mount.y0 < d.mount.y1 - 0.01) return { ok: false, reason: 'overlap' };
+      continue;
+    }
+    if (d.param === 'roof' && qd.param === 'roof') {
+      const qfp = footprintOf(q);
+      if (overlapArea(fp, qfp) > ROOF_MAX_SHARED * Math.min(area(fp), area(qfp))) return { ok: false, reason: 'overlap' };
+      continue;
+    }
+    // A table-top thing on the floor must not stand inside furniture or walls.
+    const layerClash = clash.includes(qd.layer) || (d.top && !surfaceUnder(ctx.index, x, z, level) && qd.layer === 'solid');
+    if (!layerClash) continue;
     const shrink = isSlim(kind) && isSlim(q.kind) ? SLIM_JOINT : 0.02;
-    if (rectsOverlap(fp, footprint(q.kind, q.x, q.z, q.rot), shrink)) return { ok: false, reason: 'overlap' };
+    if (rectsOverlap(fp, footprintOf(q), shrink)) return { ok: false, reason: 'overlap' };
   }
 
-  // Support (stacking).
+  // Support (stacking, wall mounts, table tops).
   let supports: P[] = [];
-  if (level > 0) {
-    supports = supportsOf(ctx.index, { kind, x, z, rot, level });
-    if (!supports.length) return { ok: false, reason: 'unsupported' };
-    if (supports.some((s) => s.ownerId !== ctx.builderId)) return { ok: false, reason: 'not_your_support' };
+  if (d.mount) {
+    const m = mountWall(ctx.index, kind, x, z, rot, level);
+    if (!m.wall) return m.reason === 'mount_blocked' ? { ok: false, reason: 'mount_blocked' } : { ok: false, reason: 'unsupported', label: 'Hangs on one of your walls — point at a wall' };
+    if (m.wall.ownerId !== ctx.builderId) return { ok: false, reason: 'not_your_support' };
+    supports = [m.wall];
+  } else if (d.top) {
+    const s = surfaceUnder(ctx.index, x, z, level);
+    if (s) {
+      if (s.ownerId !== ctx.builderId) return { ok: false, reason: 'not_your_support' };
+      supports = [s];
+    } else if (level > 0) {
+      supports = supportsOf(ctx.index, probe);
+      if (!supports.length) return { ok: false, reason: 'unsupported' };
+      if (supports.some((q) => q.ownerId !== ctx.builderId)) return { ok: false, reason: 'not_your_support' };
+    }
+  } else if (level > 0) {
+    supports = supportsOf(ctx.index, probe);
+    if (d.param === 'roof') {
+      const own = supports.filter((q) => q.ownerId === ctx.builderId);
+      if (roofEdgesSupported(fp, own) < 3) return supports.length > own.length ? { ok: false, reason: 'not_your_support' } : { ok: false, reason: 'unsupported', label: 'A roof needs walls along at least three sides' };
+      supports = own;
+    } else {
+      if (!supports.length) return { ok: false, reason: 'unsupported' };
+      if (supports.some((s) => s.ownerId !== ctx.builderId)) return { ok: false, reason: 'not_your_support' };
+    }
   }
 
   // Never trap or overlap a player: any solid ground-level piece near a player is refused.
@@ -754,8 +1202,8 @@ export function validatePlacement<P extends PieceLike>(req: PlaceRequest, ctx: P
     for (const pl of ctx.players) if (rectContains(expand(fp, r), pl)) return { ok: false, reason: 'player_in_way' };
   }
 
-  const y = Math.round(baseHeightFor(ctx.index, kind, x, z, rot, level, supports) * 100) / 100;
-  return { ok: true, kind, variant, x, z, rot, level, y };
+  const y = Math.round(baseHeightFor(ctx.index, kind, x, z, rot, level, supports, params) * 100) / 100;
+  return params ? { ok: true, kind, variant, x, z, rot, level, y, params } : { ok: true, kind, variant, x, z, rot, level, y };
 }
 
 /** Pieces that would lose all support (directly) if `id` were removed. */
@@ -764,9 +1212,16 @@ export function directDependents<P extends PieceLike>(index: PieceIndex<P>, id: 
   if (!p) return [];
   const gone = new Set([id]);
   const out: P[] = [];
-  const fp = footprint(p.kind, p.x, p.z, p.rot);
-  for (const q of index.query(fp, 0.2)) {
+  const fp = footprintOf(p);
+  for (const q of index.query(fp, 0.8)) {
     if (q.id === id) continue;
+    const qd = PIECES[q.kind];
+    if (qd.mount || qd.top) {
+      if (q.level !== p.level) continue;
+      const before = supportsOf(index, q);
+      if (before.some((s) => s.id === id) && supportsOf(index, q, gone).length === 0) out.push(q);
+      continue;
+    }
     if (q.level > 0 && (q.level === p.level + 1 || q.level === p.level)) {
       const before = supportsOf(index, q);
       if (!before.some((s) => s.id === id)) continue;
@@ -774,7 +1229,7 @@ export function directDependents<P extends PieceLike>(index: PieceIndex<P>, id: 
     } else if (q.level === 0 && p.level === 0 && p.kind === 'floor' && PIECES[q.kind].layer !== 'base' && !PIECES[q.kind].structural) {
       // Furniture resting on a ground floor tile.
       if (q.y > p.y + 0.05 && rectContains(fp, { x: q.x, z: q.z }, -0.01)) {
-        const others = index.query(footprint(q.kind, q.x, q.z, q.rot)).some((o) => o.id !== id && o.id !== q.id && o.kind === 'floor' && o.level === 0 && rectContains(footprint(o.kind, o.x, o.z, o.rot), { x: q.x, z: q.z }, -0.01));
+        const others = index.query(footprintOf(q)).some((o) => o.id !== id && o.id !== q.id && o.kind === 'floor' && o.level === 0 && rectContains(footprintOf(o), { x: q.x, z: q.z }, -0.01));
         if (!others) out.push(q);
       }
     }
@@ -857,7 +1312,7 @@ export function walkSurfaceAt<P extends PieceLike>(index: PieceIndex<P>, p: Vec2
   let top: number | null = null;
   for (const q of index.query({ minX: p.x, maxX: p.x, minZ: p.z, maxZ: p.z }, 0.01)) {
     if (q.level !== 0 || (q.kind !== 'floor' && q.kind !== 'steps')) continue;
-    if (!rectContains(footprint(q.kind, q.x, q.z, q.rot), p, -0.01)) continue;
+    if (!rectContains(footprintOf(q), p, -0.01)) continue;
     let h = q.y + PIECES[q.kind].h;
     if (q.kind === 'steps') {
       // Lower tread over the whole step, upper tread over the back half (local -Z).
@@ -872,3 +1327,242 @@ export function walkSurfaceAt<P extends PieceLike>(index: PieceIndex<P>, p: Vec2
 /** Tread heights of the `steps` piece (must match the renderer). */
 export const STEP_LOWER = 0.2;
 export const STEP_UPPER = 0.36;
+
+// ---------------------------------------------------------------------------
+// Clearing bushes and small rocks
+// ---------------------------------------------------------------------------
+
+export interface NatureItem {
+  id: string;
+  kind: 'bush' | 'rock' | 'tree';
+  position: Vec2;
+  /** Footprint radius (placement blocking). */
+  radius: number;
+  /** Shared collision collider id (rocks), if any. */
+  colliderId?: string;
+}
+/** Radius a bush covers per unit of its scale. */
+export const BUSH_RADIUS = 0.42;
+
+let natureAll: Map<string, NatureItem> | null = null;
+let natureClearable: Map<string, NatureItem> | null = null;
+function natureMaps(): { all: Map<string, NatureItem>; clearable: Map<string, NatureItem> } {
+  if (natureAll && natureClearable) return { all: natureAll, clearable: natureClearable };
+  natureAll = new Map();
+  natureClearable = new Map();
+  for (const t of TREES) natureAll.set(t.id, { id: t.id, kind: 'tree', position: t.position, radius: t.trunkRadius, colliderId: `col_${t.id}` });
+  for (const r of ROCKS) natureAll.set(r.id, { id: r.id, kind: 'rock', position: r.position, radius: r.radius, colliderId: `col_${r.id}` });
+  for (const b of BUSHES) natureAll.set(b.id, { id: b.id, kind: 'bush', position: b.position, radius: BUSH_RADIUS * b.scale });
+  for (const n of natureAll.values()) {
+    if (n.kind === 'tree') continue;
+    if (n.kind === 'rock' && n.radius > CONFIG.building.clear.maxRockRadius) continue;
+    // Never anything in protected town zones (plaza planters, path verges, by doors), on the shore or off-island.
+    if (buildableAt(n.position).code !== 'ok') continue;
+    natureClearable.set(n.id, n);
+  }
+  return { all: natureAll, clearable: natureClearable };
+}
+/** Every bush and small rock a player may clear (open, buildable land only). */
+export function clearableNature(): ReadonlyMap<string, NatureItem> {
+  return natureMaps().clearable;
+}
+/** Any tree, rock or bush of the island by id. */
+export function natureItem(id: string): NatureItem | undefined {
+  return natureMaps().all.get(id);
+}
+
+/** The first clearable bush/rock (not yet cleared) overlapping a footprint. */
+export function natureBlocking(r: Rect, cleared?: ReadonlySet<string>): NatureItem | null {
+  for (const n of natureMaps().clearable.values()) {
+    if (cleared?.has(n.id)) continue;
+    const qx = Math.max(r.minX, Math.min(r.maxX, n.position.x));
+    const qz = Math.max(r.minZ, Math.min(r.maxZ, n.position.z));
+    if ((qx - n.position.x) ** 2 + (qz - n.position.z) ** 2 < n.radius * n.radius) return n;
+  }
+  return null;
+}
+
+export type ClearResult = { ok: true; item: NatureItem } | { ok: false; reason: BuildRefusal; label?: string };
+/** Can this bush/rock be cleared by a player standing at builderPos? (Caps/rate limits: the server.) */
+export function validateClear(id: unknown, ctx: { builderPos: Vec2 | null; range?: number; cleared?: ReadonlySet<string> }): ClearResult {
+  const n = typeof id === 'string' ? natureItem(id) : undefined;
+  if (!n) return { ok: false, reason: 'not_found' };
+  if (!natureMaps().clearable.has(n.id)) return { ok: false, reason: 'not_clearable', label: n.kind === 'tree' ? 'a tree' : n.kind === 'rock' ? (n.radius > CONFIG.building.clear.maxRockRadius ? 'a big rock' : 'this rock') : 'this plant' };
+  if (ctx.cleared?.has(n.id)) return { ok: false, reason: 'already_cleared' };
+  if (ctx.builderPos && Math.hypot(ctx.builderPos.x - n.position.x, ctx.builderPos.z - n.position.z) > (ctx.range ?? CONFIG.building.range)) return { ok: false, reason: 'too_far' };
+  return { ok: true, item: n };
+}
+
+/** Regrow rule: a cleared plant comes back only if no built piece stands within the clearance and nobody stands on it. */
+export function canRegrow<P extends PieceLike>(index: PieceIndex<P>, n: NatureItem, players: readonly Vec2[]): boolean {
+  const c = CONFIG.building.clear.regrowClearance;
+  const near = index.query({ minX: n.position.x - c, maxX: n.position.x + c, minZ: n.position.z - c, maxZ: n.position.z + c });
+  for (const q of near) {
+    const f = footprintOf(q);
+    const qx = Math.max(f.minX, Math.min(f.maxX, n.position.x));
+    const qz = Math.max(f.minZ, Math.min(f.maxZ, n.position.z));
+    if (Math.hypot(qx - n.position.x, qz - n.position.z) < c) return false;
+  }
+  return !players.some((p) => Math.hypot(p.x - n.position.x, p.z - n.position.z) < n.radius + CONFIG.movement.playerRadius + 0.1);
+}
+
+// ---------------------------------------------------------------------------
+// Building upward and along a run (UI helpers, shared so they are testable)
+// ---------------------------------------------------------------------------
+
+/** Kinds that form a storey (stack wall-on-wall). */
+export const WALL_KINDS: readonly PieceKind[] = ['wall', 'wall_window', 'doorway', 'half_wall', 'pillar'];
+export function isWallKind(k: PieceKind): boolean {
+  return WALL_KINDS.includes(k);
+}
+
+/** Extend a wall upward: the same line and orientation, one storey higher. */
+export function stackOnto(wall: Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot' | 'level'>, kind: PieceKind): { x: number; z: number; rot: number; level: number } | null {
+  if (!PIECES[wall.kind].structural || !isWallKind(kind)) return null;
+  // Pillars are square: keep the wall's orientation only for wall-shaped pieces.
+  const rot = kind === 'pillar' ? 0 : wall.kind === 'pillar' ? 0 : ((wall.rot % 4) + 4) % 4;
+  return { x: wall.x, z: wall.z, rot, level: wall.level + 1 };
+}
+
+/** Next piece along a run of walls/fences: one piece-width further along its line (direction from the previous one). */
+export function nextInRun(last: Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot'>, prev?: Pick<PieceLike, 'x' | 'z'> | null): Vec2 {
+  const w = PIECES[last.kind].w;
+  const yaw = yawOfRot(last.rot);
+  // Local +X in world space (rotateOffset: local x → (cos, -sin)).
+  let dx = Math.cos(yaw);
+  let dz = -Math.sin(yaw);
+  if (prev && (prev.x - last.x) * dx + (prev.z - last.z) * dz > 0.01) {
+    dx = -dx;
+    dz = -dz;
+  }
+  const r = (v: number) => Math.round(v / CONFIG.building.grid) * CONFIG.building.grid + 0;
+  return { x: r(last.x + dx * w), z: r(last.z + dz * w) };
+}
+
+// ---------------------------------------------------------------------------
+// Sitting on built seats (chairs, benches, stools, sofas, armchairs, beds)
+// ---------------------------------------------------------------------------
+
+/** Interactable id of a built piece ("bp:<pieceId>"). */
+export const PIECE_INTERACT_PREFIX = 'bp:';
+export function pieceInteractId(pieceId: string): string {
+  return `${PIECE_INTERACT_PREFIX}${pieceId}`;
+}
+export function pieceIdOfInteract(id: string): string | null {
+  return id.startsWith(PIECE_INTERACT_PREFIX) ? id.slice(PIECE_INTERACT_PREFIX.length) : null;
+}
+
+/**
+ * A built seat as a regular seat interactable, so the existing sit
+ * interaction (seat refs, getSeat, stand-up exits, seated rendering) works
+ * for it unchanged. Ground-level pieces only (upstairs is not walkable).
+ */
+export function pieceSeatInteractable(p: PieceLike): SeatInteractable | null {
+  const def = PIECES[p.kind];
+  if (!def.seats?.length || p.level !== 0) return null;
+  const seats: Seat[] = [];
+  for (let i = 0; i < def.seats.length; i++) {
+    const s = pieceSeat(p, i)!;
+    seats.push({ position: s.position, height: s.y - groundHeight(s.position.x, s.position.z), yaw: s.yaw, exit: s.exit });
+  }
+  const loc = locationAt(p);
+  return {
+    id: pieceInteractId(p.id),
+    kind: def.seats.length > 1 ? 'bench' : 'chair',
+    name: def.name,
+    locationId: (loc?.id ?? 'town_square') as SeatInteractable['locationId'],
+    position: { x: p.x, z: p.z },
+    yaw: yawOfRot(p.rot),
+    prompt: 'Sit',
+    synced: false,
+    radius: Math.max(1.6, Math.max(def.w, def.d) / 2 + 1.1),
+    seats,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// House-roof tool: find the rectangle of walls a roof should cover
+// ---------------------------------------------------------------------------
+
+/** A roof span in world terms: centre, extents between wall centre lines, and the storey it sits on. */
+export interface RoofSpan {
+  x: number;
+  z: number;
+  /** World X / Z extent between wall centre lines. */
+  sx: number;
+  sz: number;
+  level: number;
+}
+
+/** Roof params for a span and a ridge choice (rot 0: ridge along world Z, rot 1: along world X). */
+export function roofParamsFor(span: Pick<RoofSpan, 'sx' | 'sz'>, rot: number, style: RoofStyle, pitch: 0 | 1): RoofParams {
+  return rot % 2 === 0 ? { w: span.sx, d: span.sz, style, pitch } : { w: span.sz, d: span.sx, style, pitch };
+}
+
+/**
+ * The walled rectangle under `seed`: the connected top-storey walls/pillars
+ * (same owner, same level), their bounding box measured between wall centre
+ * lines. Null when the shape is not a clean rectangle (each side must be at
+ * least 70% walled — doorways and windows count) so the UI falls back to a
+ * two-corner span.
+ */
+export function detectRoofSpan<P extends PieceLike>(index: PieceIndex<P>, seed: P): RoofSpan | null {
+  if (!PIECES[seed.kind].structural) return null;
+  const comp = new Map<string, P>();
+  const queue = [seed];
+  while (queue.length && comp.size < 200) {
+    const q = queue.pop()!;
+    if (comp.has(q.id)) continue;
+    comp.set(q.id, q);
+    for (const n of index.query(footprintOf(q), 0.2)) if (!comp.has(n.id) && n.level === seed.level && n.ownerId === seed.ownerId && PIECES[n.kind].structural) queue.push(n);
+  }
+  let box: Rect = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (const q of comp.values()) {
+    const f = footprintOf(q);
+    box = { minX: Math.min(box.minX, f.minX), maxX: Math.max(box.maxX, f.maxX), minZ: Math.min(box.minZ, f.minZ), maxZ: Math.max(box.maxZ, f.maxZ) };
+  }
+  const x0 = Math.round(box.minX + WALL_HALF);
+  const x1 = Math.round(box.maxX - WALL_HALF);
+  const z0 = Math.round(box.minZ + WALL_HALF);
+  const z1 = Math.round(box.maxZ - WALL_HALF);
+  const sx = x1 - x0;
+  const sz = z1 - z0;
+  const { minSpan, maxSpan } = CONFIG.building.roof;
+  if (sx < minSpan || sz < minSpan || sx > maxSpan || sz > maxSpan) return null;
+  // Coverage of each side by the component's pieces.
+  const cover = (horizontal: boolean, line: number, a: number, b: number) => {
+    const spans: [number, number][] = [];
+    for (const q of comp.values()) {
+      const f = footprintOf(q);
+      if (horizontal ? f.minZ - 0.15 <= line && f.maxZ + 0.15 >= line : f.minX - 0.15 <= line && f.maxX + 0.15 >= line) spans.push(horizontal ? [f.minX, f.maxX] : [f.minZ, f.maxZ]);
+    }
+    spans.sort((p, q) => p[0] - q[0]);
+    let covered = 0;
+    let at = a;
+    for (const [s0, s1] of spans) {
+      const lo = Math.max(at, s0);
+      const hi = Math.min(b, s1);
+      if (hi > lo) {
+        covered += hi - lo;
+        at = hi;
+      }
+    }
+    return covered / (b - a);
+  };
+  const ok = [cover(true, z0, x0, x1), cover(true, z1, x0, x1), cover(false, x0, z0, z1), cover(false, x1, z0, z1)].every((c) => c >= 0.7);
+  if (!ok) return null;
+  return { x: (x0 + x1) / 2, z: (z0 + z1) / 2, sx, sz, level: seed.level + 1 };
+}
+
+/** Two-corner span (fallback): corners on wall centre lines (whole metres). */
+export function roofSpanFromCorners(a: Vec2, b: Vec2, level: number): RoofSpan | null {
+  const x0 = Math.round(Math.min(a.x, b.x));
+  const x1 = Math.round(Math.max(a.x, b.x));
+  const z0 = Math.round(Math.min(a.z, b.z));
+  const z1 = Math.round(Math.max(a.z, b.z));
+  const { minSpan, maxSpan } = CONFIG.building.roof;
+  const sx = x1 - x0;
+  const sz = z1 - z0;
+  if (sx < minSpan || sz < minSpan || sx > maxSpan || sz > maxSpan) return null;
+  return { x: (x0 + x1) / 2, z: (z0 + z1) / 2, sx, sz, level };
+}

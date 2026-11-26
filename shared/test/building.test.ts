@@ -7,6 +7,7 @@ import {
   PROTECTED_ZONES,
   PieceIndex,
   autoLevel,
+  clearableNature,
   buildableAt,
   cascadeRemoval,
   createCollisionWorld,
@@ -31,8 +32,10 @@ const SITE = { x: -17, z: 17 };
 const ME = 'me';
 const OTHER = 'other';
 
+/** Rule tests other than "clear the bush first" run as if every clearable plant had been cleared. */
+const ALL_CLEARED = new Set(clearableNature().keys());
 function ctx(index: PieceIndex, extra: Partial<PlacementContext> = {}): PlacementContext {
-  return { index, builderId: ME, builderPos: null, players: [], ...extra };
+  return { index, builderId: ME, builderPos: null, players: [], cleared: ALL_CLEARED, ...extra };
 }
 function req(kind: string, x: number, z: number, rot = 0, level = 0, variant?: string): PlaceRequest {
   const v = variant ?? (PIECE_KINDS.includes(kind as never) ? PIECES[kind as keyof typeof PIECES].variants[0]!.id : 'x');

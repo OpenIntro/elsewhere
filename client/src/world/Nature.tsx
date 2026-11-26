@@ -22,6 +22,7 @@ import {
   type TreeKind,
 } from '@elsewhere/shared';
 import { cone, cyl, GeoBuilder, lathe, T } from './geom.js';
+import { registerNatureSlot, resetNatureSlots } from './natureMask.js';
 import { barkMaterial, foliageMaterial, plantMaterial } from './materials.js';
 import { fbm, groundColor, vnoise } from './Terrain.js';
 
@@ -217,6 +218,8 @@ function bushGeometry(kind: 'shrub' | 'fern' | 'flowers' | 'reeds' | 'tuft', var
 interface Inst {
   m: Matrix4;
   c: Color;
+  /** Bush / rock id (players can clear them: see natureMask). */
+  id?: string;
 }
 
 /** Instanced meshes split into spatial cells so frustum culling (main + shadow pass) works. */
@@ -237,6 +240,7 @@ function makeInstanced(geo: BufferGeometry, mat: Material, list: Inst[], shadows
     items.forEach((it, i) => {
       mesh.setMatrixAt(i, it.m);
       mesh.setColorAt(i, it.c);
+      if (it.id) registerNatureSlot(it.id, mesh, i, it.m);
     });
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -261,6 +265,7 @@ function pathDist(x: number, z: number): number {
 
 export function Nature({ shadows, density }: { shadows: boolean; density: number }) {
   const meshes = useMemo(() => {
+    resetNatureSlots();
     const out: InstancedMesh[] = [];
     const rnd = mulberry32(0xa11ce);
     // Trees: 2 variants per kind.
@@ -286,7 +291,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
       ROCKS.forEach((r, idx) => {
         if (idx % 3 !== v) return;
         const y = terrainHeight(r.position.x, r.position.z) - 0.1 * r.scale;
-        list.push({ m: T(r.position.x, y, r.position.z, r.yaw, 0, 0, r.scale * 0.62, r.scale * 0.62, r.scale * 0.55), c: jitterColor(rnd, 0.08, 0.01) });
+        list.push({ m: T(r.position.x, y, r.position.z, r.yaw, 0, 0, r.scale * 0.62, r.scale * 0.62, r.scale * 0.55), c: jitterColor(rnd, 0.08, 0.01), id: r.id });
       });
       out.push(...makeInstanced(rockGeometry(v * 7.3 + 1), barkMaterial, list, shadows));
     }
@@ -309,7 +314,7 @@ export function Nature({ shadows, density }: { shadows: boolean; density: number
       const s = b.scale;
       const m = T(b.position.x, Math.max(y, -0.2) - 0.03, b.position.z, rnd() * 6.28, 0, 0, s, s * (0.85 + rnd() * 0.3), s);
       const key = b.kind === 'flowers' ? `flowers${idx % 4}` : `${b.kind}${idx % 2}`;
-      pushB(key, { m, c: jitterColor(rnd, 0.1, 0.03) });
+      pushB(key, { m, c: jitterColor(rnd, 0.1, 0.03), id: b.id });
     });
 
     // Ground cover (non-solid): grass tufts tinted by the ground, wildflowers, woodland ferns.
