@@ -263,8 +263,8 @@ export async function rotateTo(page, rot, { key = false } = {}) {
  * Aim the ghost at world (x, z) — hover (mouse) or tap (touch) the screen
  * point of (x, y, z) — and wait until the ghost sits on that grid cell.
  */
-export async function aimGhost(page, x, z, y, { level } = {}) {
-  const p = await screenOf(page, x, z, y);
+export async function aimGhost(page, x, z, y, { level, aim } = {}) {
+  const p = await screenOf(page, aim?.x ?? x, aim?.z ?? z, y);
   if (page.__touch) await page.touchscreen.tap(p.x, p.y);
   else await page.mouse.move(p.x, p.y, { steps: 2 });
   return waitSnap(page, (s) => s.build?.ghost && Math.abs(s.build.ghost.x - x) < 0.01 && Math.abs(s.build.ghost.z - z) < 0.01 && (level === undefined || s.build.ghost.level === level), `ghost at (${x}, ${z})${level !== undefined ? ` level ${level}` : ''}`, 20_000);
@@ -275,14 +275,14 @@ export async function aimGhost(page, x, z, y, { level } = {}) {
  * (desktop) or tap Place (touch). Resolves with the new piece (as the build
  * debug section lists it) once the server has confirmed it.
  */
-export async function placeHere(page, x, z, y, { level } = {}) {
-  const s0 = await aimGhost(page, x, z, y, { level });
+export async function placeHere(page, x, z, y, { level, aim } = {}) {
+  const s0 = await aimGhost(page, x, z, y, { level, aim });
   assert(s0.build.ghost.ok, `ghost refused at (${x}, ${z}): ${s0.build.ghost.message}`);
   const before = new Set(s0.build.pieces.map((p) => p.id));
   const okBefore = s0.build.stats.results.ok;
   if (page.__touch) await press(page, '[data-testid=build-place]');
   else {
-    const p = await screenOf(page, x, z, y);
+    const p = await screenOf(page, aim?.x ?? x, aim?.z ?? z, y);
     await page.mouse.click(p.x, p.y);
   }
   const s1 = await waitSnap(page, (s) => s.build.stats.results.ok > okBefore || (s.build.refusal && Date.now() - s.build.refusal.at < 4000 && s.build.stats.results.refused > s0.build.stats.results.refused), 'server answer', 20_000);

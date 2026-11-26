@@ -147,7 +147,7 @@ async function build(page, item, opts = {}) {
   await choosePiece(page, item.kind, { category: PIECES[item.kind].category, variant: item.variant });
   if (!PIECES[item.kind].mount && PIECES[item.kind].param !== 'roof') await rotateTo(page, item.rot ?? 0);
   if (item.text) await page.fill('[data-testid=build-sign-text]', item.text);
-  const p = await placeHere(page, item.x, item.z, opts.y, { level: item.level ?? 0 });
+  const p = await placeHere(page, item.x, item.z, opts.y, { level: item.level ?? 0, aim: opts.aim });
   assert(p.kind === item.kind && p.x === item.x && p.z === item.z && p.level === (item.level ?? 0) && (item.rot === undefined || p.rot === item.rot), `placed ${JSON.stringify(p)} for ${JSON.stringify(item)}`);
   return p;
 }
@@ -393,7 +393,10 @@ try {
         continue;
       }
       const yAim = PIECES[f.kind].mount ? (await buildState(a)).pieces.find((p) => p.x === f.x && p.z === f.z && p.level === 0 && PIECES[p.kind].structural).y + 1.5 : undefined;
-      const p = await build(a, f, { y: yAim });
+      // A wall mount is pointed at the wall's inner face (the side A stands on), like a player would.
+      const n = f.rot % 2 === 0 ? { x: 0, z: Math.sign(HOUSE.z - f.z) } : { x: Math.sign(HOUSE.x - f.x), z: 0 };
+      const aim = PIECES[f.kind].mount ? { x: f.x + n.x * 0.14, z: f.z + n.z * 0.14 } : undefined;
+      const p = await build(a, f, { y: yAim, aim });
       placed.push(`${p.kind}(${p.x},${p.z} r${p.rot})`);
     }
     await shot(a, 'r2-06-furnished');
@@ -423,7 +426,13 @@ try {
     assert(c, 'no chair');
     const ref = `bp:${c.id}#0`;
     // Tap the chair (its pick anchor sits 0.7 m above the ground): click-to-move routes in through the doorway.
-    const pt = await screenOf(b, c.x, c.z, c.y + 0.7);
+    // If a HUD element covers the chair on the phone, zoom out (the chair moves toward the centre).
+    let pt = null;
+    for (let i = 0; i < 3 && !pt; i++) {
+      pt = await screenOf(b, c.x, c.z, c.y + 0.7).catch(() => null);
+      if (!pt) await zoomOut(b, 1);
+    }
+    assert(pt, 'the chair is not tappable on B’s screen');
     const pick = await query(b, 'pick', pt.x, pt.y, 'touch');
     assert(pick?.id === `bp:${c.id}`, `a tap there picks ${JSON.stringify(pick)}`);
     await b.touchscreen.tap(pt.x, pt.y);
