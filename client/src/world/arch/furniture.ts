@@ -11,7 +11,7 @@
 import { getInterior, groundHeight, type Building, type FurniturePiece, type Interior } from '@elsewhere/shared';
 import { box, cone, cyl, quad, rbox, sphere, T, torus, type ColorLike, type GeoBuilder } from '../geom.js';
 import { signUV } from '../signs.js';
-import { cutSlot } from '../cutaway.js';
+import { cutSlot } from '../cutawayRuntime.js';
 import { anchors, barrel, crate, mix, P, shade, shrub, worldPoint } from './kit.js';
 import { innerFace } from './walkin.js';
 

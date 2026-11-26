@@ -4,7 +4,7 @@
  * All patches read the shared `uniforms` from env.ts.
  */
 import { AdditiveBlending, CanvasTexture, Color, DoubleSide, MeshBasicMaterial, MeshDepthMaterial, MeshStandardMaterial, RGBADepthPacking, type Material, type WebGLProgramParametersWithUniforms } from 'three';
-import { CUT_VEC4S, cutUniform, occluderDirUniform, occluderUniform } from './cutaway.js';
+import { CUT_VEC4S, cutUniform, occluderDirUniform, occluderUniform } from './cutawayRuntime.js';
 import { uniforms } from './env.js';
 
 type Shader = WebGLProgramParametersWithUniforms;

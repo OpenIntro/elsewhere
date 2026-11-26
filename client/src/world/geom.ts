@@ -190,7 +190,7 @@ export class GeoBuilder {
   private parts = new Map<string, BufferGeometry[]>();
   /**
    * Cutaway slot written into every part's `cut` vertex attribute (0 = never cut;
-   * n = slot n-1 of the cutaway uniform, see ../cutaway.ts). Set around the
+   * n = slot n-1 of the cutaway uniform, see ./cutawayRuntime.ts). Set around the
    * walls / roof of walk-in buildings so they can fade when you are inside.
    */
   cut = 0;

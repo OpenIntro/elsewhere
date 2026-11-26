@@ -27,7 +27,7 @@ import { useGameStore } from '../state/gameStore.js';
 import { runtime } from '../state/runtime.js';
 import { useSettingsStore } from '../state/settingsStore.js';
 import { ZOOM_DEFAULT, cameraRuntime } from '../player/camera.js';
-import { isHiddenIndoors } from '../world/cutaway.js';
+import { isHiddenIndoors } from '../world/cutawayRuntime.js';
 import { devOverrides } from '../world/env.js';
 import { perfAdd, perfFrame } from './perf.js';
 import { REACTION_MS, bubbles, installSocialFeed, pruneSocial, reactions } from './social.js';

@@ -14,7 +14,7 @@ import { Character } from '../characters/index.js';
 import { registerOverlayActor } from '../game/WorldOverlay.js';
 import { useGameStore } from '../state/gameStore.js';
 import { runtime } from '../state/runtime.js';
-import { isHiddenIndoors } from '../world/cutaway.js';
+import { isHiddenIndoors } from '../world/cutawayRuntime.js';
 import { devOverrides } from '../world/env.js';
 
 const FADE_S = 0.6;

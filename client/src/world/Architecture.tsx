@@ -5,7 +5,7 @@
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import { Vector3, type BufferGeometry, type Material, type Mesh } from 'three';
-import { roofFade } from './cutaway.js';
+import { roofFade } from './cutawayRuntime.js';
 import { env } from './env.js';
 import { BUILDINGS, DECKS, INTERACTABLES, PROPS, buildingLocal, getBuilding, interiorAt, terrainHeight, type LocationId } from '@elsewhere/shared';
 import { GeoBuilder } from './geom.js';
