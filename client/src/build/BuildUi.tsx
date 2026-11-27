@@ -175,15 +175,25 @@ function Palette({ onPick }: { onPick?: () => void }) {
 function StoreyControl() {
   const lock = useBuildStore((s) => s.lockLevel);
   const level = useBuildStore((s) => s.ghost?.level ?? 0);
-  const shown = lock ?? level;
+  // House roofs sit on the walls they cover and ignore the storey lock: the control must not claim one
+  // while the roof tool is chosen (the lock itself is kept and shows again for the next piece).
+  const roofTool = useBuildStore((s) => s.mode === 'place' && PIECES[s.kind].param === 'roof');
+  const locked = lock !== null && !roofTool;
+  const shown = locked ? lock : level;
   return (
-    <div className="build-storey" role="group" aria-label="Storey" data-testid="build-storey" data-lock={lock === null ? 'auto' : String(lock)}>
+    <div className="build-storey" role="group" aria-label="Storey" data-testid="build-storey" data-lock={lock === null ? 'auto' : String(lock)} data-roof-tool={roofTool ? '1' : undefined}>
       <button type="button" className="build-storey__btn" onClick={() => stepStorey(1)} aria-label="Up a storey" title="Up a storey (PgUp)" data-testid="build-storey-up">
         <Glyph d={UP} size={16} />
       </button>
-      <button type="button" className={`build-storey__label${lock === null ? '' : ' is-locked'}`} onClick={() => setAutoStorey()} title={lock === null ? 'Storey follows what you point at' : 'Locked — tap for automatic'} data-testid="build-storey-label">
+      <button
+        type="button"
+        className={`build-storey__label${locked ? ' is-locked' : ''}`}
+        onClick={() => setAutoStorey()}
+        title={roofTool ? 'A house roof goes on top of the walls it covers' : lock === null ? 'Storey follows what you point at' : 'Locked — tap for automatic'}
+        data-testid="build-storey-label"
+      >
         <span className="build-storey__n">{shown === 0 ? 'Ground' : `Storey ${shown + 1}`}</span>
-        <span className="build-storey__hint">{lock === null ? 'auto' : 'locked'}</span>
+        <span className="build-storey__hint">{roofTool ? 'on walls' : lock === null ? 'auto' : 'locked'}</span>
       </button>
       <button type="button" className="build-storey__btn" onClick={() => stepStorey(-1)} aria-label="Down a storey" title="Down a storey (PgDn)" data-testid="build-storey-down">
         <Glyph d={DOWN} size={16} />
@@ -530,7 +540,7 @@ function StripDock({ touch, dockRef }: { touch: boolean; dockRef: React.RefObjec
             <button type="button" className={`build-chip${palette ? ' is-on' : ''}`} onClick={() => dockEvent({ type: 'chip' })} aria-expanded={palette} aria-label={`${PIECES[kind].name} — choose a piece`} data-testid="build-chip" data-kind={kind}>
               <span className="build-chip__img">{thumb ? <img src={thumb} alt="" draggable={false} /> : <span className="build-tile__ph" />}</span>
               <span className="build-chip__name">{PIECES[kind].name}</span>
-              {lock !== null ? <span className="build-chip__lvl">{lock === 0 ? 'G' : lock + 1}</span> : null}
+              {lock !== null && !isRoof ? <span className="build-chip__lvl">{lock === 0 ? 'G' : lock + 1}</span> : null}
             </button>
           ) : (
             <button type="button" className="build-act build-act--wide is-on" onClick={() => setTool('place')} aria-pressed="true" data-testid={mode === 'remove' ? 'build-tool-remove' : 'build-tool-clear'}>

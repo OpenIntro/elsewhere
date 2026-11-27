@@ -20,7 +20,7 @@ Status: proposed / approved / deferred / built / rejected / parked.
 | Shared rain and snow | update | 01 | parked | After the frame budget. |
 | Keepers walk home and talk among themselves | update | 01 | parked | After the frame budget. |
 | World-wide online count across instances | update | 01 | parked | Small; do as a chore. |
-| Fix the phone tap-to-move stall to the Town Hall | maintenance | 01 | parked | Not recorded in the repo; Brief C's door-walk audit tries to reproduce it. |
+| Fix the phone tap-to-move stall to the Town Hall | maintenance | 01 | parked | Not reproduced in 144 emulated-phone walks by `npm run e2e:doors` (cycle 01). Reopen only with a repro. |
 | Gifts: hand a curiosity to another player | new feature | 01 | parked | Needs accept/decline. |
 | Event listings with "I'll come" | new feature | 01 | parked | After homes. |
 | Move tool and repaint a placed piece | update | 01 | parked | Good filler work. |
@@ -37,3 +37,4 @@ Status: proposed / approved / deferred / built / rejected / parked.
 | A gentle currency / buying pieces | new feature | 01 | parked | Delegated: for the committee to decide next cycle (earned-only, no money). |
 | Co-building permission | new feature | 01 | parked | Delegated: for the committee to decide next cycle (anti-pinning rule). |
 | Doors that close and lock | update | 01 | parked | Delegated: for the committee to decide next cycle (no trapping). |
+| Tap-to-move detours round House 1 (nav grid closes the House 1/House 2 gap) | maintenance | 01 | proposed | Found by the door audit. Repro: `npm run build && npm run e2e:doors -- --doors house_2 --spawns 2`. |

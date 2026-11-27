@@ -333,7 +333,21 @@ try {
       const upper = await stripPlace(b, GARDEN.x, GARDEN.z, garden.y + CONFIG.building.storeyHeight, { level: 1 });
       assert(upper.level === 1 && upper.x === GARDEN.x && upper.z === GARDEN.z, `upper wall ${JSON.stringify(upper)}`);
       mine.push(upper);
+      // With the lock still set, the house-roof tool must not claim it (roofs sit on the walls they cover) …
+      const hintOf = () => b.evaluate(() => {
+        const l = document.querySelector('[data-testid=build-storey-label]');
+        return { hint: l?.querySelector('.build-storey__hint')?.textContent ?? '', locked: !!l?.classList.contains('is-locked'), lock: document.querySelector('[data-testid=build-storey]')?.getAttribute('data-lock') };
+      });
+      await stripChoose(b, 'house_roof');
       await menu(b, true);
+      const onRoof = await hintOf();
+      await menu(b, false);
+      assert(onRoof.lock === '1' && !onRoof.locked && !/locked/i.test(onRoof.hint), `roof tool shows the storey lock: ${JSON.stringify(onRoof)}`);
+      // … and another piece shows it again.
+      await stripChoose(b, 'wall');
+      await menu(b, true);
+      const onWall = await hintOf();
+      assert(onWall.locked && /locked/i.test(onWall.hint), `the lock is not shown again for a wall: ${JSON.stringify(onWall)}`);
       await tap(b, '[data-testid=build-storey-label]'); // back to automatic
       await waitFor(async () => (await b.getAttribute('[data-testid=build-storey]', 'data-lock')) === 'auto' || 'locked', 'storey auto', 10_000);
       await menu(b, false);
@@ -353,7 +367,7 @@ try {
         const p = sa.build.pieces.find((q) => q.id === m.id);
         assert(p.kind === m.kind && p.x === m.x && p.z === m.z && p.level === m.level && p.rot === m.rot && (p.text ?? '') === (m.text ?? '') && (p.params ?? '') === (m.params ?? ''), `A sees ${JSON.stringify(p)} for ${JSON.stringify(m)}`);
       }
-      return `${mine.length} pieces (${mine.map((m) => `${m.kind}${m.level ? `@${m.level}` : ''}`).join(', ')}); storey control said "${label?.trim()}"; identical on A`;
+      return `${mine.length} pieces (${mine.map((m) => `${m.kind}${m.level ? `@${m.level}` : ''}`).join(', ')}); storey control said "${label?.trim()}"; with the roof tool it said "${onRoof.hint}" (not locked), for a wall "${onWall.hint}" again; identical on A`;
     });
 
     // Check 3, first half (B is here with the strip open).

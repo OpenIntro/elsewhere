@@ -234,6 +234,15 @@ port fails at once with a message naming it. With `E2E_RESULT=<file>` any suite 
 | `e2e:camera` | `CAMERA_PORT` | 2644 |
 | `e2e-player` | `E2E_SERVER_PORT` / `E2E_VITE_PORT` | 2604 / 5184 |
 
+Harness before / after (cycle 01): six production-server suites each carried their own server
+spawn/stop code (6 implementations, 28-32 lines each, 178 lines in all; `e2e:build` and `e2e:build2`
+both defaulted to port 2634); now one `scripts/lib/server.mjs` and a 3-10 line wrapper per suite
+(`e2e-player` keeps its own: it runs a `tsx` dev server and Vite, not the production build). Wall-clock
+of the six run one after another, measured on a 4-core machine that was busy with two other workers'
+browser runs and rebuilds (load 6-9), so neither number is a quiet-machine figure: by hand with the old
+scripts 102 min 29 s (acceptance 12:27, interiors 3:26, build 13:29, build2 32:24, activities 19:39,
+combined 21:04); through `e2e:all` 125 min 50 s. Check-name lists per suite are identical before and after.
+
 ## Controls
 
 | Input | Action |
