@@ -21,10 +21,14 @@
  *     wall is a neighbour's, with a garden wall at a corner; a 2x3; a 2x2
  *     right next to House 1 (its eaves shorten) — at all four camera
  *     rotations, by mouse and by touch; the other client sees each roof
- *  12. every deliberately invalid case shows its specific reason in the build
+ *  12. a HIP roof put on through the roof tool (Hip pressed in the dock, one
+ *      click), seen by both clients with the same shape; the build layer's
+ *      triangle count (snapshot().buildRender.triangles) before and after on
+ *      both clients is reported
+ *  13. every deliberately invalid case shows its specific reason in the build
  *      status (two sides only, half walls, someone else's walls, too far) and
  *      clicking places nothing
- *  13. zero console / page errors in both clients
+ *  14. zero console / page errors in both clients
  *
  * Env: ROOFS_PORT (default 2674), ROOFS_DATA_DIR, ROOFS_SHOTS (screenshot dir), ROOFS_VERBOSE=1.
  */
@@ -36,7 +40,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assert, buildState, choosePiece, closeBuild, hopToward, onCanvas, openBuild, press, query, sleep, snap, waitSnap, zoomOut } from './lib/browser.mjs';
 import { builderClient } from './lib/seed.mjs';
-import { ROOF_HOUSES, ROOF_REFUSALS } from './lib/roofPlans.mjs';
+import { ROOF_HOUSES, ROOF_REFUSALS, rectWalls } from './lib/roofPlans.mjs';
 import { resultFile, shotsDir } from './lib/report.mjs';
 import { createServer } from './lib/server.mjs';
 
@@ -50,6 +54,8 @@ const VERBOSE = process.env.ROOFS_VERBOSE === '1';
 const SECRET = randomBytes(32).toString('hex');
 const STOREY = 2.6;
 const log = (...a) => console.log('[roofs]', ...a);
+/** A 4x4 house of A's for the hip roof check (an open site beside build-screenshots2's hip cottage). */
+const HIP_HOUSE = { id: 'hip', box: { x0: -6, z0: 17, x1: -2, z1: 21 }, build: (b) => rectWalls(b, { kindAt: (s, i) => (s === 's' && i === 0 ? 'doorway' : 'wall') }), by: 'A' };
 const vlog = (...a) => VERBOSE && log(...a);
 
 // --- checks -------------------------------------------------------------------
@@ -217,7 +223,7 @@ try {
   const stagers = { A: await builderClient(BASE, { token: tokens.A }), B: await builderClient(BASE, { token: tokens.B }) };
   let staged = 0;
   const stageRefused = [];
-  for (const h of [...ROOF_HOUSES, ...ROOF_REFUSALS])
+  for (const h of [...ROOF_HOUSES, ...ROOF_REFUSALS, HIP_HOUSE])
     for (const w of h.build(h.box)) {
       const c = stagers[w.owner];
       let r = await c.place(w);
@@ -294,6 +300,44 @@ try {
       return `${roof.params} at (${roof.x}, ${roof.z}) storey ${roof.level} y ${roof.y}; aimed at ${aimed.point.label}${h.lock ? `; storey lock was on storey ${(s0.build.lockLevel ?? 0) + 1}` : ''}; yaw ${(((aimed.ghost && (await snap(page)).view.yaw) * 180) / Math.PI).toFixed(0)}°`;
     });
   }
+
+  await check(`${n++}. a hip roof through the roof tool (Hip, one click): both clients see it; build-layer triangles reported`, async () => {
+    const h = HIP_HOUSE;
+    const c = centre(h);
+    await leaveBuild(a).catch(() => undefined);
+    await hopToward(a, { x: c.x + 0.6, z: h.box.z1 + 2.4 }, 1.3, 240_000);
+    await turnCameraTo(a, 0);
+    const tri = async (page) => (await snap(page)).buildRender?.triangles;
+    const before = { A: await tri(a), B: await tri(b) };
+    assert(Number.isFinite(before.A) && Number.isFinite(before.B), `no buildRender triangles: ${JSON.stringify(before)}`);
+    await enterBuild(a);
+    await choosePiece(a, 'house_roof', { category: 'roof' });
+    await press(a, '[data-testid=build-roof-hip]');
+    await waitSnap(a, (s) => s.build.roof?.style === 'hip', 'roof style hip', 10_000);
+    const expect = { x: c.x, z: c.z, level: 1 };
+    const aimed = await aimRoof(a, h, expect);
+    const s0 = await snap(a);
+    await a.mouse.click(aimed.screen.x, aimed.screen.y);
+    const s1 = await waitSnap(a, (q) => q.build.stats.results.ok + q.build.stats.results.refused > s0.build.stats.results.ok + s0.build.stats.results.refused, 'server answer', 20_000);
+    assert(s1.build.stats.results.ok === s0.build.stats.results.ok + 1, `not placed: ${JSON.stringify(s1.build.refusal)}`);
+    const roof = s1.build.pieces.find((p) => p.kind === 'house_roof' && p.x === expect.x && p.z === expect.z && p.level === 1);
+    assert(roof, 'no roof piece where the ghost was');
+    const params = JSON.parse(roof.params);
+    assert(params.s === 'hip' && params.w === 4 && params.d === 4, `roof params ${roof.params}`);
+    const seen = await waitSnap(b, (q) => q.build.pieces.some((p) => p.id === roof.id), 'B sees the hip roof', 20_000);
+    const onB = seen.build.pieces.find((p) => p.id === roof.id);
+    assert(onB.params === roof.params && onB.rot === roof.rot && onB.y === roof.y, `B has ${JSON.stringify(onB)} vs A ${JSON.stringify(roof)}`);
+    // The instanced roof is drawn on the next frames: wait for the build layer's triangle count to take it in.
+    const after = {};
+    for (const [k, page] of [['A', a], ['B', b]]) after[k] = (await waitSnap(page, (q) => q.buildRender?.triangles > before[k], `${k} draws the roof`, 20_000)).buildRender.triangles;
+    const delta = { A: after.A - before.A, B: after.B - before.B };
+    assert(delta.A === delta.B, `the two clients drew different triangle counts for the same roof: ${JSON.stringify(delta)}`);
+    // Back to gable for anything after (the shape is a remembered dock choice).
+    await press(a, '[data-testid=build-roof-gable]');
+    await leaveBuild(a);
+    await shot(a, 'roof-hip');
+    return `${roof.params} at (${roof.x}, ${roof.z}) storey ${roof.level}; buildRender.triangles A ${before.A} -> ${after.A}, B ${before.B} -> ${after.B} (+${delta.A} for one 4x4 hip roof)`;
+  });
 
   await check(`${n++}. invalid houses: the build status says exactly why, and a click places nothing`, async () => {
     const out = [];

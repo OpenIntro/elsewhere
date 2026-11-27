@@ -166,7 +166,7 @@ export function MapPanel({ onClose }: { onClose(): void }) {
                   <rect x={-(h.rect.maxX - h.rect.minX) / 2} y={-(h.rect.maxZ - h.rect.minZ) / 2} width={h.rect.maxX - h.rect.minX} height={h.rect.maxZ - h.rect.minZ} rx={0.5} fill="#c98b5a" stroke="rgba(40, 28, 18, 0.55)" strokeWidth={0.4} />
                   <g transform={counter}>
                     <path d="M0 -2.2 L-1.6 -0.8 V1.2 H1.6 V-0.8 Z" fill="#f4ecdc" stroke="rgba(40, 28, 18, 0.7)" strokeWidth={0.35} strokeLinejoin="round" />
-                    <text y={-3.6} textAnchor="middle" className="map__label" style={{ fontSize: '3px', fontWeight: 500 }}>
+                    <text y={4.4} textAnchor="middle" className="map__label" style={{ fontSize: '2.8px', fontWeight: 500 }}>
                       {label}
                     </text>
                   </g>

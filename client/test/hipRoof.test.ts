@@ -18,6 +18,8 @@ const CASES: RoofParams[] = [];
 for (const w of SPANS) for (const d of SPANS) for (const pitch of [0, 1] as const) CASES.push({ w, d, style: 'hip', pitch, overhang: ROOF_OVERHANGS[0]! });
 /** The shortened eaves the roof tool uses next to protected land, on a spread of sizes. */
 for (const overhang of ROOF_OVERHANGS.slice(1)) for (const [w, d] of [[2, 2], [4, 6], [6, 4], [12, 3], [12, 12]]) for (const pitch of [0, 1] as const) CASES.push({ w: w!, d: d!, style: 'hip', pitch, overhang });
+/** Builds ~250 roof templates of each style; generous under a loaded parallel run. */
+const SLOW = 120_000;
 const label = (r: RoofParams) => `${r.w}x${r.d} pitch ${r.pitch} eaves ${r.overhang}`;
 
 function bounds(t: Map<string, BufferGeometry>): Box3 {
@@ -71,7 +73,7 @@ describe('hip roof', () => {
       }
       expect(open, label(r)).toBe(4); // one per eave
     }
-  });
+  }, SLOW);
 
   it('reaches roofRise above the eave datum, no higher than the earlier hip, within its footprint', () => {
     for (const r of CASES) {
@@ -88,7 +90,7 @@ describe('hip roof', () => {
       // Caps and finials never stand above the earlier hip's (the cutaway's clip heights are unchanged).
       expect(now.max.y, `${label(r)} top`).toBeLessThanOrEqual(before.max.y + 0.02);
     }
-  });
+  }, SLOW);
 
   it('has tile courses on all four facets and never more triangles than the same-size gable', () => {
     const rows: string[] = [];
@@ -101,7 +103,7 @@ describe('hip roof', () => {
       if (r.overhang === ROOF_OVERHANGS[0] && ((r.w === 4 && r.d === 6) || (r.w === 12 && r.d === 12))) rows.push(`${label(r)}: hip ${hip}, gable ${gable}`);
     }
     expect(rows.length).toBe(4);
-  });
+  }, SLOW);
 
   it('reads roofs stored before this change (no migration): the same params string renders', () => {
     // As stored by roofParamsString since round 2 (default eaves left out) and with shortened eaves.

@@ -4,7 +4,7 @@
  * reads what the build layer and the whole frame cost in three fixed views. Test tooling only.
  *
  *   npm run perf:baseline                       (needs shared built: `npm run build -w shared` or `npm run build`)
- *   node scripts/perf-baseline.mjs [--pieces 2000] [--out <file>] [--no-compare] [--write]
+ *   node scripts/perf-baseline.mjs [--pieces 2000] [--out <file>] [--no-compare] [--write] [--views a,b,a]
  *
  * Runs against the DEV client, because the fixed views need the dev-only `?time=` / `?cam=` overrides:
  * a tsx server from the sources (PORT $PERF_SERVER_PORT, default 2672, fresh temp DATA_DIR, generous
@@ -15,7 +15,8 @@
  *
  * Then one fresh desktop browser (1440x900, headless Chromium, software WebGL) per view, always in this
  * order (the server hands out spawn points by join order, so the default view is the same every run):
- *   default      `?autojoin=1&time=0.5&quality=medium`         the default spawn, camera following you
+ *   default      `?autojoin=1&time=0.5&quality=medium&weather=clear&doors=0&fountain=0&portal=0&runes=0`
+ *                the default spawn, camera following you (world state fixed: it follows the server otherwise)
  *   town_square  `… &cam=town_square`
  *   corner       `… &cam=-62,-74,30`                           a corner of the island with no pieces in view
  * Each view: `snapshot().buildRender` — all groups (`drawCalls` / `triangles`: every instanced mesh with
@@ -28,7 +29,9 @@
  * other file) and exits non-zero if, in any view, visible build triangles or whole-frame calls are more
  * than 10% above the reference: the committed docs/perf/baseline.json (`git show HEAD:`), else the file
  * on disk before the run. A run that regresses does not overwrite the reference unless `--write`.
- * `--no-compare` measures only (used for docs/perf/baseline-before.json).
+ * `--no-compare` measures only (used for docs/perf/baseline-before.json). `--views town_square,town_square`
+ * (diagnostics) measures only those views, repeats allowed, without comparing, into
+ * e2e-results/perf-views.json unless `--out` is given.
  */
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -55,19 +58,27 @@ const arg = (name, def) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : def;
 };
 const N = Number(arg('pieces', '2000'));
-const COMPARE = !args.includes('--no-compare');
+const DIAG = !!arg('views', '');
+const COMPARE = !args.includes('--no-compare') && !DIAG;
 const FORCE_WRITE = args.includes('--write');
 const SERVER_PORT = Number(process.env.PERF_SERVER_PORT ?? 2672);
 const VITE_PORT = Number(process.env.PERF_VITE_PORT ?? 2673);
 const REF_REL = 'docs/perf/baseline.json';
-const OUT = path.resolve(ROOT, arg('out', process.env.PERF_OUT_DIR ? path.join(process.env.PERF_OUT_DIR, 'baseline.json') : REF_REL));
+const OUT = path.resolve(ROOT, arg('out', DIAG ? 'e2e-results/perf-views.json' : process.env.PERF_OUT_DIR ? path.join(process.env.PERF_OUT_DIR, 'baseline.json') : REF_REL));
 const SEEDERS = 8;
-const QUERY = 'autojoin=1&time=0.5&quality=medium';
-const VIEWS = [
+/** Fixed time, quality and world state (weather, doors, fountain, portal, runes follow the server otherwise). */
+const QUERY = 'autojoin=1&time=0.5&quality=medium&weather=clear&doors=0&fountain=0&portal=0&runes=0';
+const ALL_VIEWS = [
   { name: 'default', query: '' },
   { name: 'town_square', query: '&cam=town_square' },
   { name: 'corner', query: '&cam=-62,-74,30' },
 ];
+/** `--views a,b,a` (diagnostics: measure some views, repeats allowed, in that order); the baseline uses all three. */
+const VIEWS = arg('views', '')
+  ? arg('views', '')
+      .split(',')
+      .map((n, i, a) => ({ ...ALL_VIEWS.find((v) => v.name === n), name: a.indexOf(n) === i ? n : `${n}#${i}` }))
+  : ALL_VIEWS;
 const MEDIUM = `try { localStorage.setItem('elsewhere.settings.v1', JSON.stringify({ state: { graphics: 'medium' }, version: 1 })); } catch {}`;
 const DATA_DIR = mkdtempSync(path.join(tmpdir(), 'elsewhere-perf-'));
 const log = (...a) => console.log('[perf]', ...a);
@@ -154,12 +165,14 @@ function planPieces() {
   const ix = new PieceIndex();
   const out = [];
   let n = 0;
+  // Placement order matters where a piece rests on another seeder's (its height): place phase by phase.
+  let phase = 0;
   const tryPut = (seeder, kind, x, z, rot = 0, level = 0, params, text) => {
     const variant = PIECES[kind].variants[(x + z + level) % PIECES[kind].variants.length | 0]?.id ?? PIECES[kind].variants[0].id;
     const v = validatePlacement({ kind, variant, x, z, rot, level, ...(params ? { params } : {}) }, { index: ix, builderId: `s${seeder}`, builderPos: null, players: [], cleared: CLEARED });
     if (!v.ok) return false;
     ix.add({ id: `l${n++}`, kind, x, z, rot, level, y: v.y, ownerId: `s${seeder}`, ...(v.params ? { params: v.params } : {}) });
-    out.push({ seeder, kind, variant, x, z, rot, level, ...(params ? { params } : {}), ...(text ? { text } : {}) });
+    out.push({ phase, seeder, kind, variant, x, z, rot, level, ...(params ? { params } : {}), ...(text ? { text } : {}) });
     return true;
   };
   let plot = 0;
@@ -193,6 +206,7 @@ function planPieces() {
     }
   }
   let k = 0;
+  phase = 1;
   for (let cz = Math.ceil(WORLD_BOUNDS.minZ / 2) * 2; cz < WORLD_BOUNDS.maxZ && out.length < N; cz += 2) {
     for (let cx = Math.ceil(WORLD_BOUNDS.minX / 2) * 2; cx < WORLD_BOUNDS.maxX && out.length < N; cx += 2) {
       const s = k++ % SEEDERS;
@@ -201,6 +215,7 @@ function planPieces() {
       if (out.length < N) tryPut(s, FILL[k % FILL.length], cx, cz);
     }
   }
+  phase = 2;
   for (let cz = Math.ceil(WORLD_BOUNDS.minZ / 2) * 2 + 1; cz < WORLD_BOUNDS.maxZ && out.length < N; cz += 2) {
     for (let cx = Math.ceil(WORLD_BOUNDS.minX / 2) * 2 + 1; cx < WORLD_BOUNDS.maxX && out.length < N; cx += 2) {
       const s = k++ % SEEDERS;
@@ -226,14 +241,18 @@ async function seed(base) {
         }
       }),
     );
-    await Promise.all(
-      clients.map(async (c, i) => {
-        for (const o of plan.filter((p) => p.seeder === i)) {
-          const r = await c.place(o);
-          if (!r.ok) refused[r.reason ?? 'unknown'] = (refused[r.reason ?? 'unknown'] ?? 0) + 1;
-        }
-      }),
-    );
+    // Huts, then yards, then pillars and lamps: each phase finishes before the next, so a piece resting
+    // on another seeder's piece always finds it (the same heights, hence the same bounds, every run).
+    for (const phase of [0, 1, 2]) {
+      await Promise.all(
+        clients.map(async (c, i) => {
+          for (const o of plan.filter((p) => p.seeder === i && p.phase === phase)) {
+            const r = await c.place(o);
+            if (!r.ok) refused[r.reason ?? 'unknown'] = (refused[r.reason ?? 'unknown'] ?? 0) + 1;
+          }
+        }),
+      );
+    }
   } finally {
     for (const c of clients) await c.leave();
   }
@@ -275,6 +294,8 @@ async function measureView(browser, view, expect) {
       expect,
       { timeout: 240_000, polling: 250 },
     );
+    // Alone in the room: the previous view's player stays for the reconnection grace (and would be drawn).
+    await page.waitForFunction(() => window.__ELSEWHERE__.snapshot().players.length === 1, null, { timeout: 120_000, polling: 500 });
     // Settle: camera ease, fades, shadow maps, first-use shader compiles.
     await frames(page, 8);
     await sleep(2000);
@@ -283,7 +304,12 @@ async function measureView(browser, view, expect) {
       await frames(page, 2);
       samples.push(await page.evaluate(() => {
         const s = window.__ELSEWHERE__.snapshot();
-        return { buildRender: s.buildRender, frame: s.frame, local: s.local, camera: s.camera, pieces: s.build.count };
+        // Where two fixed world points land on screen: the same numbers in two runs mean the same view.
+        const q = (x, z) => {
+          const p = window.__ELSEWHERE__.query('worldToScreen', x, z, 0);
+          return p ? [Math.round(p.x), Math.round(p.y)] : null;
+        };
+        return { buildRender: s.buildRender, frame: s.frame, local: s.local, camera: s.camera, pieces: s.build.count, players: s.players.length, probe: [q(0, 0), q(20, 20)] };
       }));
     }
     const last = samples.at(-1);
@@ -291,7 +317,8 @@ async function measureView(browser, view, expect) {
     return {
       pieces: last.pieces,
       local: { x: Math.round(last.local.x * 100) / 100, z: Math.round(last.local.z * 100) / 100 },
-      camera: last.camera ? { yaw: last.camera.yaw, zoom: Math.round(last.camera.zoom * 100) / 100, focus: last.camera.focus } : null,
+      players: last.players,
+      screenProbe: last.probe,
       build: {
         groups: br.groups,
         meshes: br.meshes ?? null,
@@ -356,11 +383,11 @@ try {
     const m = views[v.name];
     record(`view ${v.name} measured`, m.pieces >= expect, `${Math.round((Date.now() - t0) / 1000)} s; pieces ${m.pieces}; build all ${m.build.all.drawCalls} calls / ${m.build.all.triangles} tris; visible ${m.build.visible.drawCalls} calls / ${m.build.visible.triangles} tris / ${m.build.visible.pieces} pieces; frame ${m.frame.calls} calls (${m.frame.callsRange.join('-')}) / ${m.frame.triangles} tris`);
   }
-  record('corner view shows no pieces', views.corner.build.visible.pieces === 0, `${views.corner.build.visible.pieces} pieces in view`);
+  if (views.corner) record('corner view shows no pieces', views.corner.build.visible.pieces === 0, `${views.corner.build.visible.pieces} pieces in view`);
   const busiest = Object.entries(views).sort((a, b) => b[1].build.visible.pieces - a[1].build.visible.pieces)[0][0];
   const result = {
     measuredAt: new Date().toISOString(),
-    setup: { client: 'dev (tsx server + Vite)', viewport: '1440x900', quality: 'medium', time: 0.5, renderer: 'headless Chromium, software WebGL (SwiftShader)', pieces: views.default.pieces, seeding },
+    setup: { client: 'dev (tsx server + Vite)', viewport: '1440x900', quality: 'medium', time: 0.5, renderer: 'headless Chromium, software WebGL (SwiftShader)', pieces: Object.values(views)[0].pieces, seeding },
     note: 'Counts are what is compared; frame times on a software renderer say nothing about real devices.',
     busiest,
     views,

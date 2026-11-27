@@ -59,6 +59,7 @@ let a;
 let b;
 let c;
 let restarting = false;
+let ctxC = null;
 function record(name, ok, detail = '') {
   results.push({ name, ok, detail });
   out.add(name, ok, detail);
@@ -338,16 +339,31 @@ try {
     await sleep(500);
     assert(!(await b.$('[data-testid^=map-home-]')), 'B sees a pin before A switched it on');
     await openHomePanel(a);
-    const t0 = Date.now();
+    // Latency measured in the pages (one machine, one clock): A's click on the toggle → the pin in B's DOM.
+    await a.evaluate(() => {
+      window.__homePinClickAt = 0;
+      document.querySelector('[data-testid=home-pin]').addEventListener('click', () => (window.__homePinClickAt = Date.now()), { capture: true, once: true });
+    });
+    await b.evaluate((sel) => {
+      window.__homePinSeenAt = 0;
+      const look = () => {
+        if (!window.__homePinSeenAt && document.querySelector(sel)) window.__homePinSeenAt = Date.now();
+      };
+      new MutationObserver(look).observe(document.body, { childList: true, subtree: true, attributes: true });
+    }, pinSel(pidA));
     await a.click('[data-testid=home-pin]');
-    await b.waitForSelector(pinSel(pidA), { timeout: 2000 });
-    const ms = Date.now() - t0;
+    await b.waitForSelector(pinSel(pidA), { timeout: 15_000 });
+    const clickAt = await a.evaluate(() => window.__homePinClickAt);
+    const seenAt = await b.evaluate(() => window.__homePinSeenAt);
+    assert(clickAt > 0 && seenAt > 0, `timestamps click ${clickAt} seen ${seenAt}`);
+    const ms = seenAt - clickAt;
+    assert(ms <= 2000, `pin appeared on B ${ms} ms after A's click (limit 2000 ms)`);
     const label = await b.getAttribute(pinSel(pidA), 'data-label');
     assert(label === `${NAME} · ${nameA}`, `pin label "${label}"`);
     assert((await a.getAttribute('[data-testid=home-pin]', 'aria-checked')) === 'true', 'A toggle not on');
     await shot(b, 'map-pin-phone');
     await closePanel(a);
-    return `no pin before; pin "${label}" on B ${ms} ms after A's click`;
+    return `no pin before; pin "${label}" on B ${ms} ms after A's click (in-page clocks)`;
   });
 
   await check('4. B blocks A: B’s map loses the pin; B unblocks A: the pin is back', async () => {
@@ -414,17 +430,23 @@ try {
     restarting = false;
     const ha = sa.homes.mine;
     const hb = homesOf(sb).find((h) => h.profileId === pidA);
+    // A guest that reloads with ?autojoin=1 may come back under a new random name: the home follows its owner's current name.
+    const before = nameA;
+    nameA = nameOf(sa, sa.sessionId);
+    idA = sa.sessionId;
+    await waitSnap(b, (s) => homesOf(s).find((h) => h.profileId === pidA)?.ownerName === nameA, `B sees the owner name ${nameA}`, 20_000);
+    assert(ha.ownerName === nameA, `A's home owner name ${ha.ownerName}, A is now ${nameA}`);
     assert(ha.doorPieceId === doorId && ha.pinned && ha.name === NAME, `A after restart ${JSON.stringify(ha)}`);
     assert(hb.doorPieceId === doorId && hb.pinned && hb.name === NAME, `B after restart ${JSON.stringify(hb)}`);
     // Late joiner.
-    const ctxC = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    ctxC = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     await ctxC.addInitScript(LOW_GFX);
     c = await ctxC.newPage();
     watch(c, 'C(late)');
     await c.goto(`${BASE}/?autojoin=1`);
     const sc = await waitSnap(c, (s) => s.local?.ready && ready(s) && s.navReady && homesOf(s).some((h) => h.profileId === pidA), 'C has the home', 90_000);
     const hc = homesOf(sc).find((h) => h.profileId === pidA);
-    assert(hc.pinned && hc.doorPieceId === doorId, `C sees ${JSON.stringify(hc)}`);
+    assert(hc.pinned && hc.doorPieceId === doorId && hc.ownerName === nameA, `C sees ${JSON.stringify(hc)}`);
     await openMap(c);
     await c.waitForSelector(pinSel(pidA), { timeout: 10_000 });
     await shot(c, 'map-pin-desktop');
@@ -440,10 +462,18 @@ try {
     }
     assert(label === want, `C's prompt "${label}", want "${want}"`);
     await shot(c, 'approach-label-desktop');
-    return `re-roofed (${roof.id}); home + pin intact on A and B after restart; C: pin on map, prompt "${label}"`;
+    // C's part is done: close it (three software-rendered pages at once starve the phone page).
+    await ctxC.close();
+    c = null;
+    return `re-roofed (${roof.id}); home + pin intact on A and B after restart (owner name ${before === nameA ? 'unchanged' : `${before} → ${nameA} on both`}); C: pin on map, prompt "${label}"`;
   });
 
   await check('7. a forged homeSet from B on A’s house, and one on a bare floor tile, are refused with reasons', async () => {
+    if (ctxC) {
+      await ctxC.close().catch(() => undefined);
+      ctxC = null;
+      c = null;
+    }
     // B lays a floor tile by touch (its own piece, no house).
     await hopToward(b, { x: B_FLOOR.x, z: B_FLOOR.z + 2.5 }, 1.0);
     await openBuild(b);
@@ -476,6 +506,7 @@ try {
 } catch (err) {
   record('script', false, String(err?.stack ?? err));
 } finally {
+  if (ctxC) await ctxC.close().catch(() => undefined);
   await browser.close().catch(() => undefined);
   await server.stop();
 }
