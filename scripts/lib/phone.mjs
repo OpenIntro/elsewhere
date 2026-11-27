@@ -136,11 +136,12 @@ export async function hopInto(page, target, near = 1.2, timeout = 300_000) {
 }
 
 /** Walk next to an interactable (inside its building) and click / tap it; wait for its panel. */
-export async function useThing(page, id, { panel, approach = null, timeout = 60_000 } = {}) {
+export async function useThing(page, id, { panel, approach = null, near = 1.3, timeout = 60_000 } = {}) {
   const it = getInteractable(id);
   assert(it, `no interactable ${id}`);
   const interior = it.interiorId ? getInterior(it.interiorId) : null;
-  await hopInto(page, approach ?? it.position, 1.3);
+  // close enough to tap it (a tap on it walks the rest of the way, as a player's would)
+  await hopInto(page, approach ?? it.position, near);
   const t0 = Date.now();
   let lastErr = '';
   while (Date.now() - t0 < timeout) {

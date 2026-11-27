@@ -20,7 +20,7 @@ Status: proposed / approved / deferred / built / rejected / parked.
 | Shared rain and snow | update | 01 | parked | After the frame budget. |
 | Keepers walk home and talk among themselves | update | 01 | parked | After the frame budget. |
 | World-wide online count across instances | update | 01 | parked | Small; do as a chore. |
-| Fix the phone tap-to-move stall to the Town Hall | maintenance | 01 | parked | Not reproduced in 144 emulated-phone walks by `npm run e2e:doors` (cycle 01). Reopen only with a repro. |
+| Fix the phone tap-to-move stall to the Town Hall | maintenance | 01 | parked | Not reproduced in 144 emulated-phone walks by `npm run e2e:doors` (cycle 01). Seen twice more by the phone-layout worker (activities check 5, phone check 9: stopped ~1.9 m short of the notice board). Cycle 01 QA to chase. |
 | Gifts: hand a curiosity to another player | new feature | 01 | parked | Needs accept/decline. |
 | Event listings with "I'll come" | new feature | 01 | parked | After homes. |
 | Move tool and repaint a placed piece | update | 01 | parked | Good filler work. |

@@ -602,7 +602,7 @@ try {
     });
 
     await check('9. B opens the notice board in peek, starts writing: the sheet goes full; the pinned notice shows on A', async () => {
-      await useThing(b, 'station_hall_notices', { panel: 'panel-notices', approach: interiorAnchor('town_hall', 'notice_board').position, timeout: 120_000 });
+      await useThing(b, 'station_hall_notices', { panel: 'panel-notices', approach: interiorAnchor('town_hall', 'notice_board').position, near: 2.2, timeout: 120_000 });
       await b.waitForSelector('[data-testid=panel-notices][data-view=peek]', { timeout: 10_000 });
       await sleep(900);
       const c = await coverage(b, '[data-testid=panel-notices]');
