@@ -63,6 +63,28 @@ function cast(clientX: number, clientY: number, accept?: (id: string) => boolean
   return null;
 }
 
+/** Every piece a screen ray passes through, nearest first, with the hit height — ignoring fades and cuts (debug / tests). */
+export function rayPieces(clientX: number, clientY: number): { id: string; y: number; cut: number | null; fade: number }[] {
+  const cam = view3d.camera;
+  const el = view3d.canvas;
+  if (!cam || !el) return [];
+  const r = el.getBoundingClientRect();
+  ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, cam);
+  const byMesh = new Map<Object3D, PickTarget>();
+  for (const t of pickTargets) if (t.mesh.count > 0 && t.mesh.visible) byMesh.set(t.mesh, t);
+  const out: { id: string; y: number; cut: number | null; fade: number }[] = [];
+  for (const h of ray.intersectObjects([...byMesh.keys()], false)) {
+    const t = byMesh.get(h.object);
+    const id = t && h.instanceId !== undefined ? t.ids[h.instanceId] : undefined;
+    if (!t || !id || out.some((o) => o.id === id)) continue;
+    const cut = (t.mesh.geometry.getAttribute('aCut') as BufferAttribute | undefined)?.getX(h.instanceId!) ?? 0;
+    const fade = (t.mesh.geometry.getAttribute('aFade') as BufferAttribute | undefined)?.getX(h.instanceId!) ?? 0;
+    out.push({ id, y: Math.round(h.point.y * 1000) / 1000, cut: cut > 0.5 ? Math.round((cut - CUT_OFFSET) * 1000) / 1000 : null, fade: Math.round(fade * 1000) / 1000 });
+  }
+  return out;
+}
+
 /** Piece under a screen point: id, world hit point and the world-space normal's Y (1 = a top face). */
 export function pickPieceHit(clientX: number, clientY: number, accept?: (id: string) => boolean): { id: string; point: { x: number; y: number; z: number }; normalY: number } | null {
   const h = cast(clientX, clientY, accept);

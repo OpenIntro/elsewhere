@@ -101,6 +101,8 @@
   .sheet--piano.sheet--peekable .sheet__body { padding-left: 10px; padding-right: 10px; gap: 10px; }
   .sheet--piano.sheet--peekable .piano__whites { gap: 2px; }
   .sheet--piano.sheet--peek .piano { height: clamp(100px, 17dvh, 150px); }
+  /* the eyebrow wraps to two lines on a narrow phone: keep the peek header to one title line */
+  .sheet--piano.sheet--peek .sheet__eyebrow { display: none; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
   .sheet--piano.sheet--peek .sheet__body { padding-bottom: 12px; }

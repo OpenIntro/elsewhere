@@ -77,6 +77,10 @@ export const cameraRuntime = {
   freeZ: 0,
   /** Set by recenter(): the rig re-snaps focus smoothly to the player. */
   recenterAt: 0,
+  /** Rotation tween length (ms) for the current tween (shorter for a small settle after a drag). */
+  yawMs: ROTATE_MS,
+  /** Live drag / twist rotation: the yaw follows this directly until release (then eases to the nearest 90°). */
+  dragYaw: null as number | null,
   /**
    * Phone focus shift (CSS px, + = right / down): where on screen the rig puts what it follows,
    * relative to the viewport centre, so the player sits in the part of the screen that the build
@@ -166,13 +170,41 @@ function persistZoom(z: number): void {
   persistTimer = setTimeout(() => useSettingsStore.getState().setControls({ cameraZoom: Math.round(z * 10) / 10 }), 600);
 }
 
-function rotateBy(steps: number): void {
-  const s = useCameraStore.getState();
-  const rotation = s.rotation + steps;
-  cameraRuntime.yawFrom = cameraRuntime.yaw;
-  cameraRuntime.yawTo = BASE_YAW + (rotation * Math.PI) / 2;
+const QUARTER = Math.PI / 2;
+/** Yaw of a settled rotation index. */
+export function yawOfRotation(rotation: number): number {
+  return BASE_YAW + rotation * QUARTER;
+}
+/** The settled rotation index nearest to a (possibly mid-drag) yaw. */
+export function nearestRotation(yaw: number): number {
+  return Math.round((yaw - BASE_YAW) / QUARTER);
+}
+/** Tween length for turning `delta` radians: a full 90° step takes ROTATE_MS, a small settle less (≥ 160 ms). */
+export function rotateMsFor(delta: number): number {
+  return Math.max(160, Math.min(ROTATE_MS, (Math.abs(delta) / QUARTER) * ROTATE_MS));
+}
+/** Eased yaw of a tween at time `now` (pure; the rig calls it every frame). */
+export function tweenYaw(from: number, to: number, start: number, ms: number, now: number): number {
+  const t = clamp((now - start) / Math.max(1, ms), 0, 1);
+  return from + (to - from) * easeInOut(t);
+}
+/** Radians of view turn per pixel of a right / middle mouse drag (a 90° step ≈ 260 px). */
+export const DRAG_RAD_PER_PX = QUARTER / 260;
+
+function startTween(rotation: number): void {
+  const from = cameraRuntime.dragYaw ?? cameraRuntime.yaw;
+  cameraRuntime.dragYaw = null;
+  cameraRuntime.yawFrom = from;
+  cameraRuntime.yawTo = yawOfRotation(rotation);
+  cameraRuntime.yawMs = rotateMsFor(cameraRuntime.yawTo - from);
   cameraRuntime.yawStart = performance.now();
-  useCameraStore.setState({ rotation });
+  if (rotation !== useCameraStore.getState().rotation) useCameraStore.setState({ rotation });
+}
+
+function rotateBy(steps: number): void {
+  // Steps add up from where a running turn is heading (two quick presses = 180°).
+  const base = cameraRuntime.dragYaw !== null ? nearestRotation(cameraRuntime.dragYaw) : useCameraStore.getState().rotation;
+  startTween(base + steps);
 }
 
 export const cameraControls = {
@@ -183,6 +215,20 @@ export const cameraControls = {
   /** Orbit the camera 90° clockwise (seen from above). */
   rotateRight(): void {
     rotateBy(1);
+  },
+  /** Live rotation (right / middle drag, two-finger twist): turn the view by `delta` radians now. */
+  dragRotate(delta: number): void {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    cameraRuntime.dragYaw = (cameraRuntime.dragYaw ?? cameraRuntime.yaw) + delta;
+  },
+  /** Release a live rotation: ease to the nearest 90° orientation. */
+  endDragRotate(): void {
+    if (cameraRuntime.dragYaw === null) return;
+    startTween(nearestRotation(cameraRuntime.dragYaw));
+  },
+  /** True while a drag / twist is turning the view. */
+  isDragRotating(): boolean {
+    return cameraRuntime.dragYaw !== null;
   },
   zoomIn(): void {
     cameraControls.setZoom(useCameraStore.getState().zoom * ZOOM_STEP);
@@ -245,6 +291,24 @@ export function viewportScaleFor(width: number, height: number): number {
 /** Ease-in-out cubic. */
 export function easeInOut(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/** Two-finger gesture classes (decided once per gesture from its dominant motion, then kept). */
+export type TwoFingerMode = 'undecided' | 'pinch' | 'twist';
+/** Twist needs ≥ 12° of turn and to dominate the scale change; pinch needs ≥ 8% scale change. */
+export const TWIST_MIN_RAD = (12 * Math.PI) / 180;
+export const PINCH_MIN_LOG = Math.log(1.08);
+/**
+ * Classify a two-finger gesture from its total turn (radians) and total log scale change so far.
+ * A pinch always turns the fingers a little and a twist always changes their distance a little: the
+ * larger motion (turn weighted 1 : 1.5 against log-scale) wins once it passes its threshold.
+ */
+export function classifyTwoFinger(totalAngle: number, totalLogScale: number): TwoFingerMode {
+  const a = Math.abs(totalAngle);
+  const s = Math.abs(totalLogScale);
+  if (a >= TWIST_MIN_RAD && a >= 1.5 * s) return 'twist';
+  if (s >= PINCH_MIN_LOG && 1.5 * s > a) return 'pinch';
+  return 'undecided';
 }
 
 /**

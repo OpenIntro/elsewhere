@@ -13,7 +13,6 @@ import {
   clearableNature,
   collidesAt,
   createCollisionWorld,
-  detectRoofSpan,
   directDependents,
   footprintOf,
   getSeat,
@@ -23,6 +22,7 @@ import {
   pieceSeatInteractable,
   registerInteractableResolver,
   roofParamsFor,
+  roofSpanAt,
   roofSpanFromCorners,
   stackOnto,
   validateClear,
@@ -134,18 +134,19 @@ describe('house roof (one parametric piece)', () => {
     const v = validatePlacement(roof(-22, 6, 1, 2, 2), ctx(ix));
     expect(v.ok ? 'ok' : v.reason).toBe('protected');
   });
-  it('detects the walled rectangle (and refuses an L) for the roof tool; two corners as the fallback', () => {
+  it('finds the walled rectangle for the roof tool (an L: the wing under the cursor); two corners as the fallback', () => {
     const ix = new PieceIndex();
     const ws = walls(ix, 0);
-    const span = detectRoofSpan(ix, ws[0] as never)!;
+    const span = roofSpanAt(ix, ME, [{ x: ws[0]!.x, z: ws[0]!.z }])!;
     expect(span).toEqual({ x: -18, z: 1, sx: 4, sz: 4, level: 1 });
-    expect(roofParamsFor({ sx: 6, sz: 4 }, 0, 'gable', 1)).toEqual({ w: 6, d: 4, style: 'gable', pitch: 1 });
-    expect(roofParamsFor({ sx: 6, sz: 4 }, 1, 'hip', 0)).toEqual({ w: 4, d: 6, style: 'hip', pitch: 0 });
-    // An L of walls: no clean rectangle.
+    expect(roofParamsFor({ sx: 6, sz: 4 }, 0, 'gable', 1)).toEqual({ w: 6, d: 4, style: 'gable', pitch: 1, overhang: 0.45 });
+    expect(roofParamsFor({ sx: 6, sz: 4 }, 1, 'hip', 0)).toEqual({ w: 4, d: 6, style: 'hip', pitch: 0, overhang: 0.45 });
+    // An L of walls (the main block open to the south, a wing running west): the cursor picks the block it is in.
     const ixL = new PieceIndex();
     walls(ixL, 0, ['s']);
-    const extra = [put(ixL, req('wall', -21, 3, 0)), put(ixL, req('wall', -22, 4, 1))];
-    expect(detectRoofSpan(ixL, extra[0] as never)).toBeNull();
+    put(ixL, req('wall', -21, 3, 0));
+    put(ixL, req('wall', -22, 4, 1));
+    expect(roofSpanAt(ixL, ME, [{ x: -18, z: 1 }])).toEqual({ x: -18, z: 1, sx: 4, sz: 4, level: 1 });
     expect(roofSpanFromCorners({ x: -20.2, z: -1.1 }, { x: -16.1, z: 2.9 }, 1)).toEqual({ x: -18, z: 1, sx: 4, sz: 4, level: 1 });
     expect(roofSpanFromCorners({ x: 0, z: 0 }, { x: 0.4, z: 3 }, 1)).toBeNull();
   });

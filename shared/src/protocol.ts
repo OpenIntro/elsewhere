@@ -309,7 +309,7 @@ export interface BuildPlacePayload {
   /** Signs only: the text (sanitized, filtered and length-capped by the server). */
   text?: string;
   /** House roof only: { w, d, style: 'gable' | 'hip', pitch: 0 | 1 } (shared/src/building.ts RoofParams). */
-  params?: { w: number; d: number; style: string; pitch: number };
+  params?: { w: number; d: number; style: string; pitch: number; overhang?: number };
 }
 export interface BuildRemovePayload {
   reqId: number;

@@ -14,7 +14,10 @@
  * town's House 1; a hip-roofed cottage with a hanging sign and a chimney; an
  * L-shaped house with a cross gable and a plaque), then shoots them by day
  * and night on desktop (1440x900) and phones (390x844, 844x390), the
- * furnished interior from inside (roof dissolved), and the build UI: the
+ * furnished interior from inside (built-interior cutaway: roof and upper
+ * storey gone, the camera-side walls down to stubs) by day and night on all
+ * three viewports plus the four camera rotations on desktop by day
+ * (interior-rot0..3-day-desktop), and the build UI: the
  * palette's tabs, the storey control with the stacking highlight, and the
  * "Clear bush" offer. Exits 1 on console / page errors.
  */
@@ -75,6 +78,9 @@ const tokens = {};
     const r = await ivy.place(p);
     if (!r.ok) refused.push(`${p.kind} ${r.reason}`);
   }
+  // A rug under the table and chair (the interior views' review bar: bed, rug, table and lamp readable).
+  const rug = await ivy.place({ kind: 'rug', x: HOUSE.x0 + 1.5, z: HOUSE.z1 - 1.5, rot: 0, level: 0, variant: 'madder' });
+  if (!rug.ok) refused.push(`rug ${rug.reason}`);
   await ivy.place({ kind: 'lamp', x: HOUSE.x1 + 1.5, z: HOUSE.z1 + 1.5, variant: 'iron' });
   // A lone garden wall beside the house (where bush_37 grew): the stacking shot extends it.
   const gw = await ivy.place(BUSH_WALL);
@@ -129,17 +135,38 @@ try {
       await page.context().close();
     }
 
-  // --- the furnished interior, from inside (the roof dissolves for you) --------
+  // --- the furnished interior, from inside (built-interior cutaway) -------------
+  const inside = async (page) => {
+    await hopToward(page, { x: HOUSE.x0 + 1, z: HOUSE.z1 + 1.6 }, 0.8);
+    await hopToward(page, { x: HOUSE.x0 + 1.1, z: HOUSE.z + 0.3 }, 0.6);
+    await waitSnap(page, (s) => s.builtCutaway?.active && s.builtCutaway.settled, 'cutaway open', 30_000);
+    await page.addStyleTag({ content: '.hud > *:not(.build-nameprompt) { visibility: hidden !important; }' });
+    await sleep(4000);
+  };
   for (const [tod, t] of ONLY.includes('interior') ? [['day', DAY], ['night', NIGHT]] : [])
     for (const view of Object.keys(VIEWS)) {
       const page = await open(view, `time=${t}&quality=${view === 'desktop' ? 'high' : 'medium'}`, tokens.ivy);
-      await hopToward(page, { x: HOUSE.x0 + 1, z: HOUSE.z1 + 1.6 }, 0.8);
-      await hopToward(page, { x: HOUSE.x0 + 1.1, z: HOUSE.z + 0.3 }, 0.6);
-      await page.addStyleTag({ content: '.hud > *:not(.build-nameprompt) { visibility: hidden !important; }' });
-      await sleep(4000);
+      await inside(page);
       await shoot(page, `interior-${tod}-${view}`);
       await page.context().close();
     }
+  // Four camera rotations (Q), desktop by day: the cut follows the camera-facing walls.
+  if (ONLY.includes('interior')) {
+    const page = await open('desktop', `time=${DAY}&quality=high`, tokens.ivy);
+    await inside(page);
+    for (let k = 0; k < 4; k++) {
+      if (k) {
+        const y0 = (await snap(page)).view.yaw;
+        await page.keyboard.press('KeyQ');
+        await waitSnap(page, (s) => Math.abs(s.view.yaw - y0) > 1.2, 'camera turned', 15_000);
+        await sleep(1500);
+        await waitSnap(page, (s) => s.builtCutaway?.settled, 'cutaway settled', 15_000);
+        await sleep(2500);
+      }
+      await shoot(page, `interior-rot${k}-day-desktop`);
+    }
+    await page.context().close();
+  }
 
   // --- the build UI: palette tabs, storey control + stacking highlight, clear-bush offer
   for (const view of ONLY.includes('ui') ? Object.keys(VIEWS) : []) {

@@ -28,7 +28,7 @@ import { net, registerDebugQuery, registerDebugSection } from '../net/index.js';
 import { refreshNavRect, setExtraInteractables } from '../player/index.js';
 import { useGameStore } from '../state/gameStore.js';
 import { toasts } from '../ui/toasts.js';
-import { afterPlaced, reaim } from './actions.js';
+import { afterPlaced, reaim, roofToolProbes } from './actions.js';
 import { natureVisible, resetNatureHidden, setNatureHidden } from '../world/natureMask.js';
 import { markDirty, pieces, useBuildStore } from './store.js';
 
@@ -269,7 +269,7 @@ export function installBuildSync(): () => void {
       selectedNature: b.selectedNature,
       lockLevel: b.lockLevel,
       editing: b.editing,
-      roof: { style: b.roofStyle, pitch: b.roofPitch },
+      roof: { style: b.roofStyle, pitch: b.roofPitch, probes: roofToolProbes().map((p) => ({ x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 })) },
       cleared: [...b.cleared].sort(),
       disabledColliders: [...collision().disabled].sort(),
       refusal: b.refusal,

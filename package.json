@@ -23,9 +23,13 @@
     "e2e:interiors": "node scripts/e2e-interiors.mjs",
     "e2e:build": "node scripts/e2e-build.mjs",
     "e2e:build2": "node scripts/e2e-build2.mjs",
+    "e2e:roofs": "node scripts/e2e-roofs.mjs",
     "e2e:activities": "node scripts/e2e-activities.mjs",
     "e2e:combined": "node scripts/e2e-combined.mjs",
     "e2e:doors": "node scripts/e2e-doors.mjs",
+    "e2e:phone": "node scripts/e2e-phone.mjs",
+    "e2e:built-interiors": "node scripts/e2e-built-interiors.mjs",
+    "e2e:camera": "node scripts/e2e-camera.mjs",
     "e2e:all": "node scripts/e2e-all.mjs"
   },
   "devDependencies": {

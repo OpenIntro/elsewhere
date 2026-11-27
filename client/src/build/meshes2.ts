@@ -45,17 +45,17 @@ function glow(B: GeoBuilder, w: number, h: number, d: number, x: number, y: numb
 // ---------------------------------------------------------------------------
 
 export function houseRoof(B: GeoBuilder, c: C, params: string | undefined): void {
-  const r = parseRoofParams(params) ?? { w: 4, d: 4, style: 'gable' as const, pitch: 1 as const };
+  const r = parseRoofParams(params) ?? { w: 4, d: 4, style: 'gable' as const, pitch: 1 as const, overhang: ROOF_OVERHANG };
   const rise = roofRise(r);
   const color = c.main!;
   // Wall plate / fascia band over the wall tops so the eaves meet the walls cleanly.
   slab(B, r.w + 0.3, -0.02, 0.12, r.d + 0.3, shade(c.trim!, 0.92), 0, 0, 0.03, FLAT);
   if (r.style === 'hip') {
-    pavilionRoof(B, r.w, r.d, rise, color, ROOF_OVERHANG);
+    pavilionRoof(B, r.w, r.d, rise, color, r.overhang);
     return;
   }
   // Ridge along local Z, like the town's gable roofs; closed gable ends in plaster at both ends.
-  roof(B, { span: r.w, rise, length: r.d + ROOF_OVERHANG * 1.4, color, tiles: 'scallop', courses: Math.max(5, Math.round(r.w * 1.35)), overhang: ROOF_OVERHANG, curve: 0.1 });
+  roof(B, { span: r.w, rise, length: r.d + r.overhang * 1.4, color, tiles: 'scallop', courses: Math.max(5, Math.round(r.w * 1.35)), overhang: r.overhang, curve: 0.1 });
   gableEnds(B, r.w, rise, r.d + 0.14, mixc(CREAM, c.accent!, 0.08));
   // A little round vent in each gable.
   for (const s of [-1, 1]) {

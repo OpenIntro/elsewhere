@@ -37,7 +37,7 @@ import {
   type Material,
 } from 'three';
 import { CONFIG, NO_ENCLOSURE, PIECES, footprintOf, groundHeight, trackEnclosure, type EnclosureTrack, type PieceKind, type PieceRecord } from '@elsewhere/shared';
-import { registerDebugSection } from '../net/index.js';
+import { registerDebugQuery, registerDebugSection } from '../net/index.js';
 import { runtime } from '../state/runtime.js';
 import { makeBillboards } from '../world/billboard.js';
 import { env } from '../world/env.js';
@@ -47,7 +47,7 @@ import { SIGN_FACE, templateFor, templateTriangles, type Bucket } from './meshes
 import { CLOCK_FACE, GLOW_AT, TEXT_FACES } from './meshes2.js';
 import { natureItem, rotateOffset, worldTimeAt } from '@elsewhere/shared';
 import { serverNow, useGameStore } from '../state/gameStore.js';
-import { pickTargets, type PickTarget } from './picking.js';
+import { pickPieceHit, pickTargets, rayPieces, type PickTarget } from './picking.js';
 import { pieces, useBuildStore, variantFor } from './store.js';
 import { renderThumbnails } from './thumbnails.js';
 
@@ -286,6 +286,9 @@ export function BuildLayer() {
       const settled = [...cs.cut].every((id) => (cut[id] ?? 0) >= 0.999) && [...cs.hidden].every((id) => (cut[id] ?? 0) >= 0.999 || (fade[id] ?? 0) >= 0.999);
       return { active: !!e, kind: e?.kind ?? null, rect: e?.rect ?? null, storey: e ? e.storey : null, cutIds: [...cs.cut], hiddenIds: [...cs.hidden], toggles: cs.toggles, settled, cut, fade };
     });
+    // What build picking sees under a screen point, and everything the ray passes through (tests: picking through a cut).
+    registerDebugQuery('pickPiece', (x: number, y: number) => pickPieceHit(x, y));
+    registerDebugQuery('rayPieces', (x: number, y: number) => rayPieces(x, y));
   }, [gl, halos]);
 
   function ensureGroup(key: string, sample: PieceRecord, need: number): GroupEntry {
@@ -497,6 +500,13 @@ export function BuildLayer() {
   function updateFade(dt: number): void {
     const lp = runtime.localPlayer;
     const k = 1 - Math.exp(-dt * 8);
+    // Eased, but never slower than a straight 0.35 s ramp: a transition ends on time even at a few frames per second.
+    const ease = (cur: number, target: number, snapAt: number) => {
+      const d = target - cur;
+      if (Math.abs(d) < snapAt) return target;
+      const step = Math.max(Math.abs(d) * k, dt / 0.35);
+      return Math.abs(d) <= step ? target : cur + Math.sign(d) * step;
+    };
     // Horizontal direction from the focus towards the camera (camera.ts: camera sits at +(sin yaw, cos yaw)).
     const cx = Math.sin(runtime.view.yaw);
     const cz = Math.cos(runtime.view.yaw);
@@ -559,13 +569,13 @@ export function BuildLayer() {
           }
         }
         const cur = g.fade[i]!;
-        const next = Math.abs(target - cur) < 0.01 ? target : cur + (target - cur) * k;
+        const next = ease(cur, target, 0.01);
         if (next !== cur) {
           g.fade[i] = next;
           changed = true;
         }
         const cc = g.cut[i]!;
-        const nc = Math.abs(cutTarget - cc) < 0.005 ? cutTarget : cc + (cutTarget - cc) * k;
+        const nc = ease(cc, cutTarget, 0.005);
         if (nc !== cc) {
           g.cut[i] = nc;
           cutChanged = true;
@@ -685,7 +695,8 @@ export function BuildLayer() {
     }
     const now = performance.now();
     if (now - lastFade.current > 50) {
-      updateFade(Math.min(0.2, (now - lastFade.current) / 1000));
+      // Eased by real time (≈ 0.35 s), also when frames are slow: a slow frame must not stretch the transition.
+      updateFade(Math.min(0.5, (now - lastFade.current) / 1000));
       lastFade.current = now;
     }
     updateGhost();

@@ -126,7 +126,7 @@ function ControlsSection() {
       <div className="row-control row-control--stack">
         <span className="row-control__label">
           <span>Camera buttons</span>
-          <small>Rotate, zoom and recenter on screen. Keys: Q / R to turn, + / − or wheel to zoom.</small>
+          <small>Turn the view: [ / ] (or Q / R; while building R turns the piece), drag with the right or middle mouse button, or twist two fingers; it settles on one of four sides. Zoom: + / −, wheel or pinch. Auto shows the turn buttons on a computer, all buttons on a touch screen.</small>
         </span>
         <Segmented
           label="Camera buttons"

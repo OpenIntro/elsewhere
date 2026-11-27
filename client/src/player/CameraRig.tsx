@@ -15,7 +15,7 @@ import type { OrthographicCamera as ThreeOrtho } from 'three';
 import { WORLD_BOUNDS, clamp, groundHeight } from '@elsewhere/shared';
 import { registerDebugSection } from '../net/index.js';
 import { runtime } from '../state/runtime.js';
-import { ELEVATION, ROTATE_MS, cameraRuntime, easeInOut, freeRectFor, lookAtForShift, runtimeFocus, shiftForFree, useCameraStore, viewportScaleFor, type ScreenRect } from './camera.js';
+import { ELEVATION, cameraRuntime, freeRectFor, tweenYaw, lookAtForShift, runtimeFocus, shiftForFree, useCameraStore, viewportScaleFor, type ScreenRect } from './camera.js';
 
 /** Distance from focus to camera (orthographic: only affects clipping). */
 const DISTANCE = 70;
@@ -105,8 +105,8 @@ export function CameraRig() {
     const f = focus.current;
 
     // Rotation tween.
-    const rt = clamp((now - cameraRuntime.yawStart) / ROTATE_MS, 0, 1);
-    cameraRuntime.yaw = cameraRuntime.yawFrom + (cameraRuntime.yawTo - cameraRuntime.yawFrom) * easeInOut(rt);
+    // A live drag / twist turns the view directly; otherwise the eased 90° tween.
+    cameraRuntime.yaw = cameraRuntime.dragYaw ?? tweenYaw(cameraRuntime.yawFrom, cameraRuntime.yawTo, cameraRuntime.yawStart, cameraRuntime.yawMs, now);
 
     // Zoom: ease in log space so zooming feels uniform at every level.
     const zk = 1 - Math.exp(-dt * 12);

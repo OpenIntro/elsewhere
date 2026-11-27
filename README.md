@@ -188,16 +188,22 @@ The server is a single process on a single port.
 |---|---|
 | `npm run typecheck` | builds shared type declarations, then `tsc --noEmit` per workspace |
 | `npm test` | vitest: `shared/test`, `server/test`, `client/test` |
+| `npm run build && npm run e2e:all` | every production-server browser suite below, strictly one after another (software rendering cannot take two at once), with one summary: a table of suite, checks passed/total and time, the total wall-clock, and `e2e-results/summary.json` (+ each suite's log and result file in `e2e-results/`, gitignored); exit ≠ 0 if anything failed, 2 if the build is older than the sources. `--only build,build2`, `--repeat N` (every run must be green), `--with-player` (adds `e2e-player`), `--with-ui` (adds `e2e-ui`; needs `E2E_ADMIN_TOKEN` and `E2E_URL`), `--list`. Screenshots that a suite would write to `docs/screenshots/` go to `e2e-results/shots/` instead |
+| `npm run build && npm run e2e:doors` | door-walk audit (diagnostic): own production server (port `DOORS_PORT`, default 2643), an emulated Pixel 7 (touch only) walks by tap-to-move hops from each of the 8 spawn points to each of the 7 walk-in doors and back; per route taps, walked / straight metres, time, server corrections, stalls (path active but < 0.2 m progress for 5 s, with snapshot, screenshot and nav-grid dump) and early stops; table to stdout, everything to `e2e-results/doors.json`. `--doors town_hall,cafe`, `--spawns 1,8`, `--no-return`, `--route-timeout S`; exit 0 unless `--strict` |
 | `npm run build && npm run e2e:acceptance` | MVP acceptance: spawns its own production server (port `ACCEPT_PORT`, default 2620, fresh temp data dir, lowered fountain/Gazette thresholds), one desktop (1440x900) and one emulated phone (Pixel 7, touch) browser through the real onboarding; 17 named checks incl. restart persistence, audio and zero console errors; graphics set to "low" for headless speed; screenshots to `docs/screenshots/acceptance/` |
 | `npm run build && npm run e2e:activities` | building activities: own production server (port `ACT_PORT`, default 2633, fresh temp data dir, **lowered** `WORKSHOP_STAGE_CONTRIBUTIONS=2,2 WORKSHOP_STAGE_DISTINCT=2,2`), a desktop and a phone browser through the real UI; 12 named checks — same keeper state on both, hearth, guest book, notice board, town poll (real tally 2), barista drink seen in hand by the other, piano notes received + played by the other's audio graph, the town project finished by both (stage advance + lanterns outside), online count stays 2 with keepers on duty, everything still there after a server restart, zero console errors. Screenshots with `ACT_SHOTS=<dir>` |
 | `npm run build && npm run e2e:interiors` | walk-in interiors: own production server (port `INT_PORT`, default 2631), a desktop and a phone browser; 9 named checks — click-to-move into the Café through its door, keyboard walking in and out, cutaway open inside / closed outside, name tags + speech bubble + interaction prompt indoors, an indoor chair seen seated by the other client, walls hold, zero console errors |
 | `npm run build && npm run e2e:build` | player building: own production server (port `BUILD_PORT`, default 2634, fresh temp data dir), a desktop and a phone (Pixel 7, touch) browser through the real build UI; 11 named checks — palette, a hut built by A (floor, walls, doorway, window, roof, lamp, sign with text) seen identically by B, a protected spot and a spot on another player refused with a visible reason, B cannot remove A's piece and forged remove/place messages are refused by the server, B blocked by A's wall but walking in through A's doorway (server positions), B builds by touch, A removes a piece and B sees it go, everything still there after a server restart, a late joiner receives every piece, zero console errors. Screenshots with `BUILD_SHOTS=<dir>` |
 | `npm run build && npm run e2e:combined` | cross-feature checks (interiors × building × activities): own production server (port `COMB_PORT`, default 2636, fresh temp data dir, `DAY_LENGTH_MINUTES=480` so the keepers stay on duty for the whole run), a desktop and a phone browser; named checks — build mode refuses interiors, door aprons, keeper routes and stations with a visible reason (UI and forged messages; plus a rulebook sweep), a wall line by the Café door does not seal it (click-to-move in and out; no door of any building can be sealed by legal pieces), inside the Café the keeper's KEEPER tag + a player's tag and speech bubble + online count 2, build mode toggled indoors then E on the barista, a drink held through build mode, a server restart with pieces / notice / workshop progress / lit hearth and migrations 1-5 on the fresh DB, phone layouts 390x844 + 844x390 hit-tested (screenshots to `docs/screenshots/combined/`, `COMB_SHOTS=0` disables), HTML in a sign and a notice shown as text, zero console errors. `COMB_LEGACY_DATA_DIR=<dir>` adds a check that a DB made by an older server migrates to 1-5 (with `qa-token.txt`, `qa-profile.txt` and `qa-secret.txt` in that dir it also checks that the saved guest resumes its profile) |
-| `npm run build && npm run e2e:build2` | building round 2: own production server (port `BUILD2_PORT`, default 2634), a desktop and a phone (touch) browser through the real UI; 16 named checks — the "Clear bush" offer and clearing, a two-storey house built with stacking, the run and the storey control (stacking checked at all four camera rotations), one gable roof from the roof tool, a name board over the door, furnishing incl. a table lamp on the table, identical pieces on both, the name prompt on approach, sitting on a built chair seen by the other, tree / protected plant not clearable (UI + forged), a cleared rock walked through (server positions), a hut + roof + stacked wall by touch, restart persistence (pieces and cleared plants), late joiner, zero console errors. Screenshots with `BUILD2_SHOTS=<dir>` |
+| `npm run build && npm run e2e:build2` | building round 2: own production server (port `BUILD2_PORT`, default 2635), a desktop and a phone (touch) browser through the real UI; 16 named checks — the "Clear bush" offer and clearing, a two-storey house built with stacking, the run and the storey control (stacking checked at all four camera rotations), one gable roof from the roof tool, a name board over the door, furnishing incl. a table lamp on the table, identical pieces on both, the name prompt on approach, sitting on a built chair seen by the other, tree / protected plant not clearable (UI + forged), a cleared rock walked through (server positions), a hut + roof + stacked wall by touch, restart persistence (pieces and cleared plants), late joiner, zero console errors. Screenshots with `BUILD2_SHOTS=<dir>` |
+| `npm run build && npm run e2e:roofs` | roofs attach: walls staged through the real server path, then the production server restarts with its DEFAULT settings (port `ROOFS_PORT`, default 2634, fresh temp data dir); a desktop (mouse) and a phone (touch) browser; 13 named checks — 10 ordinary houses roofed in one click / one tap + Place (one and two storeys aimed at the ground floor, doors + windows in every side from inside, an odd 3 m side with its gap with the storey control locked on the wrong storey, a wall left out, an open porch from inside by touch, 2x2 and 2x3, a 6x4 with a neighbour's west wall and a garden wall at a corner, a 2x2 next to House 1 with shortened eaves) at all four camera rotations, the other client sees each roof; the exact reason shown for two sides only, half walls, someone else's walls and too far (nothing placed); zero console errors. Screenshots with `ROOFS_SHOTS=<dir>` |
+| `npm run build && npm run e2e:built-interiors` | built interiors: own production server (port `BINT_PORT`, default 2641, fresh temp data dir), a desktop and a phone (touch) browser; a 4 x 4 hut (doorway, window wall, house roof, bed, rug, table + lamp, a picture on a far wall and one on a camera-facing wall) and a two-storey hut built and furnished through the real UI; 11 named checks — walking in opens the room (camera-side walls cut, roof gone) while the other player outside sees it whole, the cut follows four camera rotations, the camera-side picture hides with its wall while the far picture and the furniture stay, doorway hysteresis (≤ 1 toggle in 3 s on the threshold), everything back within 1 s of walking out, the phone player gets it by tap-to-move, the upper storey of the two-storey hut hidden from its ground floor, a table lamp placed on a table seen through a cut wall, draw calls inside = outside = before the feature (`BINT_BASELINE_DRAWCALLS`, 19), zero console errors. Screenshots with `BINT_SHOTS=<dir>` |
 | `node scripts/build-screenshots2.mjs [devUrl] [serverUrl]` | stages showcase houses through the real server path on a scratch dev server and shoots the round-2 views (houses day/night, sign close-ups, the interior, palette, storey control, clear offer) → `docs/screenshots/build/` |
 | `node scripts/build-screenshots.mjs [devUrl]` | builds a cottage through the real UI (dev client) and shoots palette / valid + refused ghost / the cottage by day and night on desktop and phones → `docs/screenshots/build/` (`SHOTS_ADMIN_TOKEN` clears leftovers of an earlier run) |
 | `npm run build && npx tsx --conditions=source scripts/build-scale.mts [--pieces 2000]` | seeds N pieces through the real server path and measures join, bytes, render cost and server timing (numbers under "Player building") |
 | `node scripts/interior-screenshots.mjs [devUrl]` | every interior day/night on desktop and phone + exteriors at night + the four camera rotations → `docs/screenshots/interiors/` (dev client; uses `?inside=`) |
+| `npm run build && npm run e2e:phone` | phone layout: own production server (port `PHONE_PORT`, default 2642, fresh temp data dir), desktop A + Pixel 7 B rotated to 915x412 (touch); 11 named checks — collapsed landscape build strip coverage (≤ 20% area / ≤ 25% height), a hut built only through the strip (storey control, roof tool, signpost words) seen identically by A, ghost within 0.5 m of a tap with the camera focus shifted (solved independently from the published camera), tap-to-move with the piano peeking, Report from the strip (server list), no overlapping controls at 915x412 / 844x390 / 390x844, portrait piano peek ≤ 40% height with B and the piano uncovered within 1 s, notes heard by A, handle peek ↔ full and the camera easing back, notice board going full on typing, desktop dock / piano rects identical to `docs/screenshots/phone/before.json`, zero console errors. `PHONE_MODE=before` measures an older build; screenshots to `docs/screenshots/phone/` |
+| `npm run build && npm run e2e:camera` | turning the view: own production server (port `CAMERA_PORT`, default 2644), desktop + Pixel 7; 9 named checks — desktop turn buttons with key tooltips; a full circle by button, by `]` and by right / middle drag, each step followed by W going screen-up and click-to-move arriving (server positions); touch button + two-finger twist turn, a pinch zooms without turning; the Café cutaway open and the player on screen at all four sides (desktop + phone); in build mode `]` turns the view, R the piece, and the ghost stays under the still pointer; turning while seated; zero console errors. Screenshots to `docs/screenshots/camera/` |
 | `node scripts/smoke-two-clients.mjs [url]` | two browsers join and see each other move |
 | `npx tsx --conditions=source scripts/server-integration.mjs [url] --save f.json` then restart the server and `... --verify-restart f.json` | multi-client protocol test (chat, seats, bell, fountain, portal, Gazette, persistence); see the script header for the server env it expects |
 | `node scripts/e2e-player.mjs` | movement, camera, click/tap-to-move, collision, remote smoothness, server restart reconnection, touch controls (spawns its own server on `E2E_SERVER_PORT`, default 2604, and a Vite dev client on `E2E_VITE_PORT`, default 5184; `E2E_CLIENT_DIST=client/dist` serves the production build from that server instead of Vite) |
@@ -205,6 +211,28 @@ The server is a single process on a single port.
 | `npx tsx --conditions=source scripts/load-clients.mts --clients 40 --server <url>` | headless protocol clients random-walking (load test tool) |
 
 Browser scripts need Playwright with Chromium available to `require('playwright')`.
+
+Every production-server suite starts its server through `scripts/lib/server.mjs` (fresh temp data
+dir, random `SESSION_SECRET`, waits for `/api/health`, stops it on exit or Ctrl-C). If a suite was
+killed uncleanly and left its server running, the next start on that port stops that stale server
+(it is recorded in `<tmp>/elsewhere-e2e-servers/<port>.json`) and says so; anything else holding the
+port fails at once with a message naming it. With `E2E_RESULT=<file>` any suite also writes
+`{ suite, ok, ms, checks: [{ name, ok, ms, detail }], consoleErrors }` (its console output is unchanged).
+
+| Suite | Port variable | Default port |
+|---|---|---|
+| `e2e:acceptance` | `ACCEPT_PORT` | 2620 |
+| `e2e:interiors` | `INT_PORT` | 2631 |
+| `e2e:activities` | `ACT_PORT` | 2633 |
+| `e2e:build` | `BUILD_PORT` | 2634 |
+| `e2e:build2` | `BUILD2_PORT` | 2635 |
+| `e2e:roofs` | `ROOFS_PORT` | 2634 |
+| `e2e:combined` | `COMB_PORT` | 2636 (+1 for the legacy-data check) |
+| `e2e:built-interiors` | `BINT_PORT` | 2641 |
+| `e2e:phone` | `PHONE_PORT` | 2642 |
+| `e2e:doors` | `DOORS_PORT` | 2643 |
+| `e2e:camera` | `CAMERA_PORT` | 2644 |
+| `e2e-player` | `E2E_SERVER_PORT` / `E2E_VITE_PORT` | 2604 / 5184 |
 
 ## Controls
 
@@ -217,11 +245,12 @@ Browser scripts need Playwright with Chromium available to `require('playwright'
 | Space | contextual: interact, stand up, or wave |
 | Enter | open chat |
 | Esc | close panel, cancel path, recenter camera |
-| Q / R | rotate camera 90 degrees |
+| [ / ] (or Q / R) | turn the view 90 degrees left / right (eased). [ / ] work everywhere; in build mode R turns the piece instead, so use [ / ] or Q there. The ↺ ↻ buttons at the right edge do the same (always shown; on a computer only these two, on a touch screen with zoom) |
+| Right- or middle-button drag on the world | turn the view with the drag; on release it settles on the nearest of the four sides (the browser menu is held back only while dragging on the canvas) |
 | + / -, mouse wheel, pinch | zoom |
 | C | recenter camera |
 | Drag on the world | pan the camera |
-| Touch | virtual joystick, round interact button, on-screen rotate/zoom buttons |
+| Touch | virtual joystick, round interact button, on-screen turn/zoom buttons; pinch to zoom, twist two fingers to turn the view (a gesture is either a pinch or a twist, decided by its larger motion; a twist settles on the nearest side) |
 | Drag the character preview | rotate it (customization screen) |
 | Click / tap a keeper, or E near their counter | talk to the keeper: a short line about the island today + the building's menu (order a drink, today's curiosities, the poll, the town project) |
 | Piano panel | click / tap the keys; on a keyboard the Z…M row plays the low octave and Q…I the high one (movement keys are paused while the piano is open) |
@@ -229,7 +258,8 @@ Browser scripts need Playwright with Chromium available to `require('playwright'
 | B / Build button | enter / leave build mode (the build dock replaces the bottom nav) |
 | Build mode: mouse | hover aims the ghost (green = fits, red + reason = refused), click places; pointing at the top of your wall puts the next storey or a roof there |
 | Build mode: keys | R (Shift+R) turn the piece (house roof: turn the ridge), Enter place the ghost (it does not open the chat while building), PgUp / PgDn storey up / down (locks it), N next segment of the run, X / Delete remove tool, Ctrl/Cmd+Z undo your last piece, Esc cancel a two-corner roof / done, B done; E does nothing; WASD still walks |
-| Build mode: touch | tap the ground to aim, then the Place button; Rotate / Remove / Undo / Done buttons; the joystick still walks (the round action button is hidden: no interacting while building, as E on a keyboard) |
+| Build mode: touch | tap the ground to aim, then the Place button; Rotate / Remove / Undo / Done buttons; the joystick still walks (the round action button is hidden: no interacting while building, as E on a keyboard). **Landscape phone:** a slim strip at the bottom — the chosen piece as a chip (tap it to open the palette over the strip; choosing a piece closes it again), Rotate, Undo, Place, Done, and ··· for the storey control, Next, Remove / Report, Clear and Unstuck; the camera moves the view up so you and your build sit above the strip. Portrait keeps the full dock |
+| Activity sheets on a phone | the piano, keepers, the poll, the curiosity table and the boards open as a short "peek" sheet and the camera frames you and the thing you use above it; drag the handle (or tap it) for the full sheet and back, drag it down from the peek or tap ✕ to close; starting to type (notice, guest book) opens the full sheet |
 | Remove tool | click / tap one of your pieces → Remove (pieces holding others up go last), signs → Edit words; someone else's piece → Report; a bush / small rock → Clear |
 | Clear tool | click / tap a bush or small rock → Clear bush / Clear rock |
 | Built seats | walk up to a built chair / bench / sofa / bed and press E (or the action button), or click it |
@@ -294,14 +324,32 @@ in `client/src/build/`.
   like chat, refused while chat-muted, and the owner can change it later (remove tool → Edit words).
 - **House roof:** one piece covering a whole walled rectangle like the town's houses — scalloped
   tile courses, a continuous ridge, eaves overhanging every side, closed gable ends with a vent.
-  Pick Roofs → House roof and point at your walls: the walled rectangle under the cursor is found
-  (each side at least 70% walled; doors and windows count) and the ghost spans it; if the shape is
-  not a clean rectangle, click / tap two opposite corners instead. Gable or hip, gentle or steep;
-  Rotate turns the ridge. 2-12 m per side; it must rest on your walls/pillars along at least three
-  sides (at least half of each; an open porch side is fine). Two roofs may intersect (L-shaped
-  houses: run the wing's roof on to the main ridge for a cross gable) but not mostly cover each
-  other. The old roof tiles still load and render in existing worlds; the flat tile stays in the
-  palette.
+  Pick Roofs → House roof and point anywhere at a house of yours — a wall (low or high, inside or
+  out), the floor inside, or the space above it — and the ghost spans the house; click (desktop),
+  or tap then **Place** (touch). One action, from inside or outside, at any camera rotation.
+  - *Which rectangle:* the walls of one house (your walls of one storey that touch or nearly touch
+    — a gap of up to 1 m, like the end of an odd 3 m side, keeps them together; separate houses
+    never merge) give the candidate lines; the rectangle around where you point with your walls
+    along at least three sides, each at least half walled, wins (most walled sides, then the most
+    closed, then the most wall, then the smallest). So a wall segment left out, an open porch side,
+    an odd 3 m side, a garden wall or fence touching a corner, or a neighbour's house next door do
+    not stop it. Walls, window walls, doorways and pillars count; **half walls do not** (1.05 m is
+    too low to carry a roof — the roof would sit at waist height).
+  - *Which storey:* always the top storey of the house — pointing at the ground floor of a
+    two-storey house roofs the house; the storey control does not apply to roofs.
+  - *Eaves:* 0.45 m on every side, shortened to 0.25 m or 0 next to a protected zone (a path, a town
+    building, a streetlight…) so the house still gets its roof; the roof between the wall lines never
+    goes over protected land.
+  - *Refusals say why:* "Needs your walls on at least three sides — the south and east sides are
+    open" (the ghost shows the half-built rectangle in red), "Half walls are too low to hold a
+    roof…", "Some of these walls are someone else's — a roof rests on your own walls", "Too far away
+    — walk closer" (a roof's range is measured to its nearest edge, not its centre). The ghost is
+    green only when `validatePlacement` — the same function the server runs — accepts it; only the
+    server's rate limit, caps and blocked-player rule can still refuse a green roof.
+  - Gable or hip, gentle or steep; Rotate turns the ridge. 2-12 m per side. An attic floor at the
+    roof's level may lie under it. Two roofs may intersect (L-shaped houses: point into each wing)
+    but not mostly cover each other. Click / tap two opposite corners for a rectangle the tool does
+    not find. The old roof tiles still load and render; the flat tile stays in the palette.
 - **Building upward:** with a wall-type piece, point at the upper part (or top) of one of your walls
   and the ghost sits right on top of it in the same line, with the wall being extended highlighted.
   The **storey control** (▲ Storey N ▼ in the dock, PgUp / PgDn) locks the ghost to one storey so a
@@ -347,7 +395,15 @@ in `client/src/build/`.
   named house shows "<name> · built by <player>".
 - **Rendering:** one instanced mesh per piece kind + style + material (~110 draw calls for 2,000
   mixed pieces of ~40 kinds), shadows like the world; roofs and upper storeys over or next to you dissolve (dithered,
-  their shadow too), and tall walls between the camera and you thin out.
+  their shadow too), and tall walls between the camera and you thin out. **Built interiors open
+  like the town's:** step 0.3 m into a room of built pieces (under a house roof, roof tiles or an
+  upper floor — an L house with two roofs is one room — or inside walls on at least 3 sides, up to
+  12 x 12 m) and the roof and everything above your storey are gone completely, the walls facing
+  the camera drop to clean 0.95 m stubs with a dark cap (with every picture, shelf, clock, mirror,
+  curtain and name board on them), and the far walls and all furniture stay whole: no dotted veil.
+  It eases in and out over ~0.35 s, follows the camera when you turn it, closes once you are 0.6 m
+  outside again, is drawn for you only (everyone else sees the house whole) and costs no extra
+  draw calls (19 for the e2e scene with and without it). Build picking looks through the cut.
 
 Measured with `scripts/build-scale.mts` (production build, one machine, headless Chromium with
 **software** WebGL — frame times say nothing about real GPUs). Round 2 mix: huts on a grid (half of
@@ -487,6 +543,10 @@ These were not checked, or were checked only in a limited way:
 - Horizontal scaling across processes/machines is not implemented.
 - On a narrow phone screen a world-event toast can briefly overlap the top of the camera buttons
   on the right edge (seen in the acceptance screenshots; toasts are transient and dismissible).
+- **Phone layout:** the collapsed build strip is for landscape phones only; portrait keeps the full build
+  dock (about 28% of a 390x844 screen). The piano's white keys are 44 px wide in the peek sheet on a
+  390 px wide phone; narrower phones get slightly narrower keys. The camera framing above a strip or a
+  peek sheet was checked by Chromium device emulation only, not on physical phones.
 - Server-side movement validation clamps speed to run speed x 1.35 plus a small budget; a
   modified client can still move at that rate, and paths are validated against shared colliders,
   not against a server-side navmesh.
@@ -497,6 +557,12 @@ These were not checked, or were checked only in a limited way:
   walls blocking, click-to-move paths) and screenshots, not by browser walks. Doors are open
   passages: the door leaf swings open when someone is near, and a "closed" door does not block.
   Outdoor trees are not faded by the cutaway and can hide part of a room at some rotations.
+- **Built interiors** open only for the room you stand in: a neighbouring building (built or
+  town) between the camera and that room keeps the old outdoor behaviour (tall walls within 2.6 m
+  thin out with a dither, others stay), so at some camera rotations a tall neighbour can still
+  hide the room. Rooms are found geometrically (any owner's pieces; ≥ 3 sides at least 70% walled
+  for a roofless room, at most 12 x 12 m); upper floors are not walkable yet, so only ground-floor
+  rooms are exercised in the browser.
 - **Keepers and players do not collide**, and the end of the café counter is open: a player can walk
   round behind the counter and stand next to the barista. On a narrow phone a keeper's tag can be cut
   off at the screen edge.

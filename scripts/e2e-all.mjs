@@ -21,9 +21,9 @@
  *   --with-ui       also run e2e-ui against $E2E_URL (an already running server; needs E2E_ADMIN_TOKEN)
  *   --list          print the suite list and exit
  *
- * Screenshots: suites that write to docs/screenshots/ by default (acceptance, combined)
+ * Screenshots: suites that write to docs/screenshots/ by default (acceptance, combined, phone, camera)
  * write to e2e-results/shots/<suite>/ instead under this runner, so a run does not churn
- * the committed images; set ACCEPT_SHOTS / COMB_SHOTS yourself to override. Every other
+ * the committed images; set ACCEPT_SHOTS / COMB_SHOTS / PHONE_SHOTS / CAMERA_SHOTS yourself to override. Every other
  * suite env var (ports, data dirs, *_VERBOSE) passes through.
  */
 import { spawn } from 'node:child_process';
@@ -44,7 +44,8 @@ const SUITES = [
   { name: 'build2', script: 'scripts/e2e-build2.mjs', port: ['BUILD2_PORT', 2635] },
   { name: 'combined', script: 'scripts/e2e-combined.mjs', port: ['COMB_PORT', 2636], shots: 'COMB_SHOTS' },
   { name: 'built-interiors', script: 'scripts/e2e-built-interiors.mjs', port: ['BINT_PORT', 2641], ifExists: true },
-  { name: 'phone', script: 'scripts/e2e-phone.mjs', port: ['PHONE_PORT', 2642], ifExists: true },
+  { name: 'phone', script: 'scripts/e2e-phone.mjs', port: ['PHONE_PORT', 2642], shots: 'PHONE_SHOTS', ifExists: true },
+  { name: 'camera', script: 'scripts/e2e-camera.mjs', port: ['CAMERA_PORT', 2644], shots: 'CAMERA_SHOTS', ifExists: true },
 ];
 const OPTIONAL = {
   player: { name: 'player', script: 'scripts/e2e-player.mjs', port: ['E2E_SERVER_PORT', 2604] },

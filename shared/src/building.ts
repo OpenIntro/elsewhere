@@ -434,10 +434,18 @@ export interface RoofParams {
   style: RoofStyle;
   /** 0 = gentle (≈ 32°), 1 = steep (≈ 42°). */
   pitch: 0 | 1;
+  /** Eave overhang beyond the wall lines on every side (one of ROOF_OVERHANGS; default ROOF_OVERHANG). */
+  overhang: number;
 }
 export const ROOF_STYLES: readonly RoofStyle[] = ['gable', 'hip'];
-/** Eave overhang beyond the wall lines on every side (metres). */
+/** Default eave overhang beyond the wall lines on every side (metres). */
 export const ROOF_OVERHANG = 0.45;
+/**
+ * Allowed overhangs, widest first. The roof tool takes the widest one whose
+ * eaves stay on buildable land, so a house built right up to a protected zone
+ * still gets a roof (with shorter eaves) instead of a refusal.
+ */
+export const ROOF_OVERHANGS: readonly number[] = [0.45, 0.25, 0];
 /** Rise per metre of half-span for each pitch. */
 export const ROOF_PITCH_SLOPE = [0.62, 0.9] as const;
 
@@ -464,10 +472,14 @@ export function parseRoofParams(v: unknown): RoofParams | null {
   if (style !== 'gable' && style !== 'hip') return null;
   const pitch = r.pitch ?? r.p;
   if (pitch !== 0 && pitch !== 1) return null;
-  return { w: r.w, d: r.d, style, pitch };
+  const over = r.overhang ?? r.o ?? ROOF_OVERHANG;
+  if (typeof over !== 'number' || !ROOF_OVERHANGS.includes(over)) return null;
+  return { w: r.w, d: r.d, style, pitch, overhang: over };
 }
-export function roofParamsString(r: RoofParams): string {
-  return JSON.stringify({ w: r.w, d: r.d, s: r.style, p: r.pitch });
+/** Stored form (the default overhang is left out, so roofs stored before it existed read the same). */
+export function roofParamsString(r: Omit<RoofParams, 'overhang'> & { overhang?: number }): string {
+  const o = r.overhang ?? ROOF_OVERHANG;
+  return JSON.stringify({ w: r.w, d: r.d, s: r.style, p: r.pitch, ...(o !== ROOF_OVERHANG ? { o } : {}) });
 }
 
 /** Local frame size (w × d) of a piece: params for parametric pieces, else the catalog's. */
@@ -837,7 +849,7 @@ export function refusalText(reason: BuildRefusal, label?: string): string {
     case 'unsupported':
       return label ?? 'Needs something underneath';
     case 'not_your_support':
-      return 'You can only build on top of your own pieces';
+      return label ?? 'You can only build on top of your own pieces';
     case 'player_in_way':
       return 'Someone is standing there';
     case 'too_far':
@@ -1038,6 +1050,18 @@ export function supportsOf<P extends PieceLike>(index: PieceIndex<P>, p: Pick<Pi
  * many edges are supported.
  */
 export function roofEdgesSupported(fp: Rect, supports: readonly Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot'>[]): number {
+  const c = roofEdgeCoverage(fp, supports);
+  return ROOF_SIDES.filter((k) => c[k] >= ROOF_EDGE_MIN).length;
+}
+
+/** A roof edge counts as walled when at least this fraction of it is. */
+export const ROOF_EDGE_MIN = 0.5;
+/** Sides of a roof rectangle: north = −Z (minZ), south = +Z, west = −X, east = +X (see math.ts). */
+export type RoofSide = 'north' | 'south' | 'west' | 'east';
+export const ROOF_SIDES: readonly RoofSide[] = ['north', 'south', 'west', 'east'];
+
+/** How much of each edge of a roof rectangle is walled by `supports` (0..1 per side). */
+export function roofEdgeCoverage(fp: Rect, supports: readonly Pick<PieceLike, 'kind' | 'x' | 'z' | 'rot'>[]): Record<RoofSide, number> {
   const m = 0.2;
   const along = (horizontal: boolean, line: number, a: number, b: number) => {
     const spans: [number, number][] = [];
@@ -1061,8 +1085,25 @@ export function roofEdgesSupported(fp: Rect, supports: readonly Pick<PieceLike, 
     }
     return covered / (b - a);
   };
-  const edges = [along(true, fp.minZ, fp.minX, fp.maxX), along(true, fp.maxZ, fp.minX, fp.maxX), along(false, fp.minX, fp.minZ, fp.maxZ), along(false, fp.maxX, fp.minZ, fp.maxZ)];
-  return edges.filter((c) => c >= 0.5).length;
+  return { north: along(true, fp.minZ, fp.minX, fp.maxX), south: along(true, fp.maxZ, fp.minX, fp.maxX), west: along(false, fp.minX, fp.minZ, fp.maxZ), east: along(false, fp.maxX, fp.minZ, fp.maxZ) };
+}
+
+/** The specific refusal for a roof without enough of your walls under its edges. */
+function roofSupportRefusal<P extends PieceLike>(index: PieceIndex<P>, fp: Rect, level: number, all: readonly P[], own: readonly P[]): PlacementResult {
+  if (roofEdgesSupported(fp, all) >= 3) return { ok: false, reason: 'not_your_support', label: 'Some of these walls are someone else’s — a roof rests on your own walls' };
+  const c = roofEdgeCoverage(fp, own);
+  const open = ROOF_SIDES.filter((k) => c[k] < ROOF_EDGE_MIN);
+  // Half walls along an open edge: say why they don't count.
+  const half = index.query(expand(fp, 0.3)).some((q) => q.kind === 'half_wall' && q.level === level - 1 && rectsOverlap(expand(fp, 0.2), footprintOf(q), 0) && !rectsOverlap(expand(fp, -0.2), footprintOf(q), 0));
+  if (half) return { ok: false, reason: 'unsupported', label: 'Half walls are too low to hold a roof — use walls, windows or doorways' };
+  const names = open.length > 2 ? `${open.slice(0, -1).join(', ')} and ${open[open.length - 1]}` : open.join(' and ');
+  return { ok: false, reason: 'unsupported', label: `Needs your walls on at least three sides — the ${names} ${open.length > 1 ? 'sides are' : 'side is'} open` };
+}
+
+function distanceToRect(p: Vec2, r: Rect): number {
+  const dx = Math.max(r.minX - p.x, 0, p.x - r.maxX);
+  const dz = Math.max(r.minZ - p.z, 0, p.z - r.maxZ);
+  return Math.hypot(dx, dz);
 }
 
 /** Base height for a piece at a level, given its supports (server stores the result). */
@@ -1113,14 +1154,16 @@ export function validatePlacement<P extends PieceLike>(req: PlaceRequest, ctx: P
   }
   const probe = { kind, x, z, rot, level, ...(params ? { params } : {}) };
 
+  const fp = footprintOf(probe);
   if (ctx.builderPos) {
     const range = ctx.range ?? CONFIG.building.range;
-    if (Math.hypot(ctx.builderPos.x - x, ctx.builderPos.z - z) > range) return { ok: false, reason: 'too_far' };
+    // A house roof is reached from anywhere around or inside the house: measure to its nearest point.
+    const far = d.param === 'roof' ? distanceToRect(ctx.builderPos, fp) : Math.hypot(ctx.builderPos.x - x, ctx.builderPos.z - z);
+    if (far > range) return { ok: false, reason: 'too_far' };
   }
 
-  const fp = footprintOf(probe);
   // Where: every sample point of the footprint (a roof: including its eaves) must be buildable land.
-  const whereFp = d.param === 'roof' ? expand(fp, ROOF_OVERHANG) : fp;
+  const whereFp = d.param === 'roof' ? expand(fp, parseRoofParams(params)!.overhang) : fp;
   let minH = Infinity;
   let maxH = -Infinity;
   for (const s of footprintSamples(whereFp)) {
@@ -1151,6 +1194,8 @@ export function validatePlacement<P extends PieceLike>(req: PlaceRequest, ctx: P
       if (d.mount && qd.mount && q.x === x && q.z === z && q.rot === rot && d.mount.y0 < qd.mount.y1 - 0.01 && qd.mount.y0 < d.mount.y1 - 0.01) return { ok: false, reason: 'overlap' };
       continue;
     }
+    // An attic floor at the roof's level lies under the roof (both directions).
+    if ((d.param === 'roof' && qd.layer === 'base') || (d.layer === 'base' && qd.param === 'roof')) continue;
     if (d.param === 'roof' && qd.param === 'roof') {
       const qfp = footprintOf(q);
       if (overlapArea(fp, qfp) > ROOF_MAX_SHARED * Math.min(area(fp), area(qfp))) return { ok: false, reason: 'overlap' };
@@ -1184,7 +1229,7 @@ export function validatePlacement<P extends PieceLike>(req: PlaceRequest, ctx: P
     supports = supportsOf(ctx.index, probe);
     if (d.param === 'roof') {
       const own = supports.filter((q) => q.ownerId === ctx.builderId);
-      if (roofEdgesSupported(fp, own) < 3) return supports.length > own.length ? { ok: false, reason: 'not_your_support' } : { ok: false, reason: 'unsupported', label: 'A roof needs walls along at least three sides' };
+      if (roofEdgesSupported(fp, own) < 3) return roofSupportRefusal(ctx.index, fp, level, supports, own);
       supports = own;
     } else {
       if (!supports.length) return { ok: false, reason: 'unsupported' };
@@ -1495,63 +1540,140 @@ export interface RoofSpan {
 }
 
 /** Roof params for a span and a ridge choice (rot 0: ridge along world Z, rot 1: along world X). */
-export function roofParamsFor(span: Pick<RoofSpan, 'sx' | 'sz'>, rot: number, style: RoofStyle, pitch: 0 | 1): RoofParams {
-  return rot % 2 === 0 ? { w: span.sx, d: span.sz, style, pitch } : { w: span.sz, d: span.sx, style, pitch };
+export function roofParamsFor(span: Pick<RoofSpan, 'sx' | 'sz'>, rot: number, style: RoofStyle, pitch: 0 | 1, overhang = ROOF_OVERHANG): RoofParams {
+  return rot % 2 === 0 ? { w: span.sx, d: span.sz, style, pitch, overhang } : { w: span.sz, d: span.sx, style, pitch, overhang };
+}
+
+/** How far outside a rectangle's wall lines a probe may be and still count as "this house" (the outer face and just beyond). */
+const ROOF_PROBE_SLACK = 0.75;
+
+/**
+ * The roof rectangle around a point: among the rectangles whose sides lie on
+ * the wall lines of one house — `ownerId`'s walls of storey `wallLevel` that
+ * touch or nearly touch each other (walls, window walls, doorways, pillars; the ends of walls
+ * give lines too, so an open porch side still has one),
+ * the ones containing `p` that the placement rule would accept (your walls
+ * along at least three sides, each at least half walled — exactly
+ * `roofEdgeCoverage` over the same supports `validatePlacement` uses). The
+ * best one wins: most walled sides, then the most completely walled, then
+ * the most metres of wall along its edges, then the smallest (so a garden wall touching a corner, a wall left out, an odd
+ * 3 m side with a gap or a neighbouring house never confuse it). Null when
+ * nothing qualifies. `minSides` 2 also finds a half-built house (for the
+ * "which sides are open" message; the placement rule still needs 3).
+ */
+export function findRoofSpan<P extends PieceLike>(index: PieceIndex<P>, ownerId: string, p: Vec2, wallLevel: number, minSides = 3): RoofSpan | null {
+  const { minSpan, maxSpan } = CONFIG.building.roof;
+  const R = maxSpan + 1;
+  const near = index.query({ minX: p.x - R, maxX: p.x + R, minZ: p.z - R, maxZ: p.z + R }).filter((q) => q.ownerId === ownerId && q.level === wallLevel && PIECES[q.kind].structural);
+  if (!near.length) return null;
+  // One house = walls that touch or nearly touch (a gap of up to a metre, e.g. an odd 3 m side). Separate
+  // houses never combine into one false rectangle.
+  const groups: P[][] = [];
+  const seen = new Set<string>();
+  for (const q0 of near) {
+    if (seen.has(q0.id)) continue;
+    const g: P[] = [];
+    const queue = [q0];
+    seen.add(q0.id);
+    while (queue.length) {
+      const q = queue.pop()!;
+      g.push(q);
+      const f = expand(footprintOf(q), 1.05);
+      for (const n of near) if (!seen.has(n.id) && rectsOverlap(f, footprintOf(n), 0)) {
+        seen.add(n.id);
+        queue.push(n);
+      }
+    }
+    groups.push(g);
+  }
+  const half = (v: number) => Math.round(v * 2) / 2;
+  const pairs = (vals: Set<number>, c: number): [number, number][] => {
+    const v = [...vals].sort((a, b) => a - b);
+    const out: [number, number][] = [];
+    for (const a of v) for (const b of v) if (b - a >= minSpan && b - a <= maxSpan && Number.isInteger(b - a) && a <= c + ROOF_PROBE_SLACK && b >= c - ROOF_PROBE_SLACK) out.push([a, b]);
+    return out;
+  };
+  const isSupport = (fp: Rect, q: P) => {
+    const qfp = footprintOf(q);
+    return rectsOverlap(expand(fp, 0.2), qfp, 0) && !rectsOverlap(expand(fp, -0.2), qfp, 0);
+  };
+  const better = (a: number[], b: number[]) => {
+    for (let i = 0; i < a.length; i++) if (Math.abs(a[i]! - b[i]!) > 1e-6) return a[i]! > b[i]!;
+    return false;
+  };
+  let best: { span: RoofSpan; key: number[] } | null = null;
+  for (const group of groups) {
+    const xs = new Set<number>();
+    const zs = new Set<number>();
+    for (const q of group) {
+      const f = footprintOf(q);
+      if (q.kind === 'pillar') {
+        xs.add(half(q.x));
+        zs.add(half(q.z));
+      } else if (q.rot % 2 === 1) {
+        xs.add(half(q.x));
+        zs.add(half(f.minZ));
+        zs.add(half(f.maxZ));
+      } else {
+        zs.add(half(q.z));
+        xs.add(half(f.minX));
+        xs.add(half(f.maxX));
+      }
+    }
+    for (const [x0, x1] of pairs(xs, p.x))
+      for (const [z0, z1] of pairs(zs, p.z)) {
+        const fp: Rect = { minX: x0, maxX: x1, minZ: z0, maxZ: z1 };
+        const cov = roofEdgeCoverage(fp, group.filter((q) => isSupport(fp, q)));
+        const sides = ROOF_SIDES.filter((k) => cov[k] >= ROOF_EDGE_MIN).length;
+        if (sides < minSides) continue;
+        // Most walled sides; then the most closed (fractions: no roof running on over open ground);
+        // then the most metres of wall (an open porch keeps the whole house, not half of it); then the smallest.
+        // A half-built house (minSides < 3, red ghost only): the outline of the walls you have, i.e. metres first.
+        const frac = ROOF_SIDES.reduce((a, k) => a + Math.min(1, cov[k]), 0);
+        const metres = (cov.north + cov.south) * (x1 - x0) + (cov.west + cov.east) * (z1 - z0);
+        const area = (x1 - x0) * (z1 - z0);
+        const key = minSides >= 3 ? [sides, frac, metres, -area] : [sides, metres, frac, -area];
+        if (!best || better(key, best.key)) best = { span: { x: (x0 + x1) / 2, z: (z0 + z1) / 2, sx: x1 - x0, sz: z1 - z0, level: wallLevel + 1 }, key };
+      }
+  }
+  return best?.span ?? null;
 }
 
 /**
- * The walled rectangle under `seed`: the connected top-storey walls/pillars
- * (same owner, same level), their bounding box measured between wall centre
- * lines. Null when the shape is not a clean rectangle (each side must be at
- * least 70% walled — doorways and windows count) so the UI falls back to a
- * two-corner span.
+ * The roof for a set of probe points (where the cursor points: the wall it
+ * hit, the cursor ray at each storey's wall-top height, the ground): the
+ * TOP storey of your walls that forms a roof rectangle around one of them.
+ * Roofs go on top — pointing at the ground floor of a two-storey house roofs
+ * the house, not the first floor.
  */
-export function detectRoofSpan<P extends PieceLike>(index: PieceIndex<P>, seed: P): RoofSpan | null {
-  if (!PIECES[seed.kind].structural) return null;
-  const comp = new Map<string, P>();
-  const queue = [seed];
-  while (queue.length && comp.size < 200) {
-    const q = queue.pop()!;
-    if (comp.has(q.id)) continue;
-    comp.set(q.id, q);
-    for (const n of index.query(footprintOf(q), 0.2)) if (!comp.has(n.id) && n.level === seed.level && n.ownerId === seed.ownerId && PIECES[n.kind].structural) queue.push(n);
-  }
-  let box: Rect = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
-  for (const q of comp.values()) {
-    const f = footprintOf(q);
-    box = { minX: Math.min(box.minX, f.minX), maxX: Math.max(box.maxX, f.maxX), minZ: Math.min(box.minZ, f.minZ), maxZ: Math.max(box.maxZ, f.maxZ) };
-  }
-  const x0 = Math.round(box.minX + WALL_HALF);
-  const x1 = Math.round(box.maxX - WALL_HALF);
-  const z0 = Math.round(box.minZ + WALL_HALF);
-  const z1 = Math.round(box.maxZ - WALL_HALF);
-  const sx = x1 - x0;
-  const sz = z1 - z0;
-  const { minSpan, maxSpan } = CONFIG.building.roof;
-  if (sx < minSpan || sz < minSpan || sx > maxSpan || sz > maxSpan) return null;
-  // Coverage of each side by the component's pieces.
-  const cover = (horizontal: boolean, line: number, a: number, b: number) => {
-    const spans: [number, number][] = [];
-    for (const q of comp.values()) {
-      const f = footprintOf(q);
-      if (horizontal ? f.minZ - 0.15 <= line && f.maxZ + 0.15 >= line : f.minX - 0.15 <= line && f.maxX + 0.15 >= line) spans.push(horizontal ? [f.minX, f.maxX] : [f.minZ, f.maxZ]);
+export function roofSpanAt<P extends PieceLike>(index: PieceIndex<P>, ownerId: string, probes: readonly Vec2[], minSides = 3): RoofSpan | null {
+  for (let level = CONFIG.building.maxLevel - 1; level >= 0; level--) {
+    for (const p of probes) {
+      const s = findRoofSpan(index, ownerId, p, level, minSides);
+      if (s) return s;
     }
-    spans.sort((p, q) => p[0] - q[0]);
-    let covered = 0;
-    let at = a;
-    for (const [s0, s1] of spans) {
-      const lo = Math.max(at, s0);
-      const hi = Math.min(b, s1);
-      if (hi > lo) {
-        covered += hi - lo;
-        at = hi;
-      }
-    }
-    return covered / (b - a);
-  };
-  const ok = [cover(true, z0, x0, x1), cover(true, z1, x0, x1), cover(false, x0, z0, z1), cover(false, x1, z0, z1)].every((c) => c >= 0.7);
-  if (!ok) return null;
-  return { x: (x0 + x1) / 2, z: (z0 + z1) / 2, sx, sz, level: seed.level + 1 };
+  }
+  return null;
+}
+
+/**
+ * The placement the roof tool offers for a span: the widest eaves that stay
+ * on buildable land, validated by `validatePlacement` — the same predicate the
+ * server runs, so a green ghost is a roof the server accepts (barring
+ * server-only checks: rate limit, caps, blocked players). When no overhang
+ * works the result is the refusal with the default eaves.
+ */
+export function fitRoof<P extends PieceLike>(span: RoofSpan, rot: number, style: RoofStyle, pitch: 0 | 1, variant: string, ctx: PlacementContext<P>): PlacementResult {
+  let first: PlacementResult | null = null;
+  for (const o of ROOF_OVERHANGS) {
+    const r = roofParamsFor(span, rot, style, pitch, o);
+    const res = validatePlacement({ kind: 'house_roof', variant, x: span.x, z: span.z, rot: rot % 2, level: span.level, params: { w: r.w, d: r.d, style: r.style, pitch: r.pitch, overhang: o } }, ctx);
+    if (res.ok) return res;
+    first ??= res;
+    // Only the eaves can be shortened: anything else is not about where the eaves reach.
+    if (res.reason !== 'protected' && res.reason !== 'out_of_bounds' && res.reason !== 'water') break;
+  }
+  return first!;
 }
 
 /** Two-corner span (fallback): corners on wall centre lines (whole metres). */

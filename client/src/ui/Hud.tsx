@@ -322,6 +322,9 @@ function ControlsHint() {
             <li>
               <span className="hint__key">Pinch</span> to zoom
             </li>
+            <li>
+              <span className="hint__key">Twist two fingers</span> or the ↺ ↻ buttons to turn the view
+            </li>
           </>
         ) : (
           <>
@@ -335,8 +338,9 @@ function ControlsHint() {
               <kbd>E</kbd> interact
             </li>
             <li>
-              <kbd>Q</kbd>
-              <kbd>R</kbd> turn view
+              <kbd>[</kbd>
+              <kbd>]</kbd> or <kbd>Q</kbd>
+              <kbd>R</kbd> turn view (or right-drag)
             </li>
             <li>
               <kbd>Enter</kbd> chat
@@ -380,21 +384,27 @@ function CameraButtons() {
   const touch = useIsTouch();
   const free = useCameraStore((s) => s.free);
   const panelOpen = useUiStore((s) => s.panel !== null);
-  if (pref === 'off' || (pref === 'auto' && !touch) || panelOpen) return null;
+  if (pref === 'off' || panelOpen) return null;
+  // Desktop "auto": just the two turn buttons (zoom is the wheel); touch or "on": the full column.
+  const full = pref === 'on' || touch;
   return (
-    <div className="camctl" role="group" aria-label="Camera">
-      <button type="button" className="icon-btn icon-btn--glass" aria-label="Turn view left" onClick={() => cameraControls.rotateLeft()}>
+    <div className={`camctl${full ? '' : ' camctl--turn'}`} role="group" aria-label="Camera" data-testid="camera-buttons">
+      <button type="button" className="icon-btn icon-btn--glass" aria-label="Turn view left" title={touch ? 'Turn view left' : 'Turn view left ( [ or Q · or drag with the right mouse button)'} onClick={() => cameraControls.rotateLeft()} data-testid="cam-rotate-left">
         <Icon name="rotateL" size={20} />
       </button>
-      <button type="button" className="icon-btn icon-btn--glass" aria-label="Turn view right" onClick={() => cameraControls.rotateRight()}>
+      <button type="button" className="icon-btn icon-btn--glass" aria-label="Turn view right" title={touch ? 'Turn view right' : 'Turn view right ( ] or R · or drag with the right mouse button)'} onClick={() => cameraControls.rotateRight()} data-testid="cam-rotate-right">
         <Icon name="rotateR" size={20} />
       </button>
-      <button type="button" className="icon-btn icon-btn--glass" aria-label="Zoom in" onClick={() => cameraControls.zoomIn()}>
-        <Icon name="zoomIn" size={20} />
-      </button>
-      <button type="button" className="icon-btn icon-btn--glass" aria-label="Zoom out" onClick={() => cameraControls.zoomOut()}>
-        <Icon name="zoomOut" size={20} />
-      </button>
+      {full ? (
+        <>
+          <button type="button" className="icon-btn icon-btn--glass" aria-label="Zoom in" onClick={() => cameraControls.zoomIn()}>
+            <Icon name="zoomIn" size={20} />
+          </button>
+          <button type="button" className="icon-btn icon-btn--glass" aria-label="Zoom out" onClick={() => cameraControls.zoomOut()}>
+            <Icon name="zoomOut" size={20} />
+          </button>
+        </>
+      ) : null}
       {free ? (
         <button type="button" className="icon-btn icon-btn--glass is-on" aria-label="Recenter on me" onClick={() => cameraControls.recenter()}>
           <Icon name="target" size={20} />

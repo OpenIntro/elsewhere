@@ -22,7 +22,7 @@ import {
   PIECES,
   autoLevel,
   clearableNature,
-  detectRoofSpan,
+  fitRoof,
   groundHeight,
   isWallKind,
   nextInRun,
@@ -30,6 +30,7 @@ import {
   refusalText,
   roofParamsFor,
   roofParamsString,
+  roofSpanAt,
   roofSpanFromCorners,
   snapToGrid,
   stackOnto,
@@ -177,7 +178,7 @@ export function aimAt(p: Vec2, level?: number, rot?: number): void {
   const st = useBuildStore.getState();
   if (st.mode !== 'place') return;
   const def = PIECES[st.kind];
-  if (def.param === 'roof') return aimRoofAt(p, level);
+  if (def.param === 'roof') return aimRoofAt(p);
   const r = rot ?? st.rot;
   const snapped = snapToGrid(st.kind, p, r);
   const lv = st.lockLevel ?? level;
@@ -200,48 +201,60 @@ export function reaim(): void {
 // House roof tool
 // ---------------------------------------------------------------------------
 
-/** Own top-storey structural pieces near a ground point (the highest storey wins). */
-function wallSeedNear(p: Vec2): PieceRecord | null {
+/** Any of your walls / pillars near a ground point? */
+function ownWallsNear(p: Vec2): boolean {
   const me = myId();
-  let best: PieceRecord | null = null;
-  let bestD = Infinity;
-  for (const q of pieces.index.query({ minX: p.x - 7, maxX: p.x + 7, minZ: p.z - 7, maxZ: p.z + 7 })) {
-    if (q.ownerId !== me || !PIECES[q.kind].structural) continue;
-    const d = Math.hypot(q.x - p.x, q.z - p.z) - q.level * 4;
-    if (d < bestD) {
-      bestD = d;
-      best = q;
-    }
-  }
-  return best;
+  return pieces.index.query({ minX: p.x - 7, maxX: p.x + 7, minZ: p.z - 7, maxZ: p.z + 7 }).some((q) => q.ownerId === me && PIECES[q.kind].structural);
 }
 
+/** Wall-top heights of your storeys near a ground point, highest first (where the cursor ray meets a roof's base). */
+function wallTopHeights(g: Vec2): number[] {
+  const me = myId();
+  const hs = new Set<number>();
+  for (const q of pieces.index.query({ minX: g.x - 14, maxX: g.x + 14, minZ: g.z - 14, maxZ: g.z + 14 })) if (q.ownerId === me && PIECES[q.kind].structural) hs.add(Math.round(pieceTop(q) * 20) / 20);
+  return [...hs].sort((a, b) => b - a);
+}
+
+/** The roof ghost for a span: the widest eaves that fit, validated exactly as the server will (fitRoof → validatePlacement). */
 function roofGhostFor(span: RoofSpan, anchor?: { x: number; z: number }): void {
   const st = useBuildStore.getState();
+  const res = fitRoof(span, st.rot, st.roofStyle, st.roofPitch, variantFor(st.kind), placementContext());
   const params = roofParamsString(roofParamsFor(span, st.rot, st.roofStyle, st.roofPitch));
-  aimExact(span.x, span.z, st.rot % 2, span.level, anchor ? { anchor } : {}, params);
+  setGhost(res, { x: span.x, z: span.z, level: span.level, rot: st.rot % 2 }, { ...(anchor ? { anchor } : {}), ...(!res.ok ? { params } : {}) });
 }
 
 let roofAnchor: { x: number; z: number; level: number } | null = null;
-function aimRoofAt(p: Vec2, levelHint?: number, seed?: PieceRecord | null): void {
+/** Extra probe points from the last screen aim (wall hit, cursor ray at wall-top heights), reused by re-aims. */
+let roofProbes: Vec2[] = [];
+/** For the debug snapshot / tests: where the roof tool last looked. */
+export function roofToolProbes(): readonly Vec2[] {
+  return lastRoofProbes;
+}
+let lastRoofProbes: Vec2[] = [];
+function aimRoofAt(p: Vec2, probes: readonly Vec2[] = roofProbes): void {
   const st = useBuildStore.getState();
   if (roofAnchor) {
     const span = roofSpanFromCorners(roofAnchor, p, roofAnchor.level);
     if (span) return roofGhostFor(span, { x: roofAnchor.x, z: roofAnchor.z });
     return void st.set({ ghost: { x: Math.round(p.x), z: Math.round(p.z), level: roofAnchor.level, rot: st.rot % 2, y: NaN, ok: false, message: 'Pick the opposite corner of the roof', anchor: { x: roofAnchor.x, z: roofAnchor.z } } });
   }
-  const s = seed ?? wallSeedNear(p);
-  const span = s ? detectRoofSpan(pieces.index, s) : null;
-  if (span && (st.lockLevel === null || st.lockLevel === span.level)) return roofGhostFor(span);
+  // The storey lock does not apply: a roof always goes on the top storey of the house it covers.
+  const all = [...probes, p];
+  lastRoofProbes = all;
+  const span = roofSpanAt(pieces.index, myId(), all);
+  if (span) return roofGhostFor(span);
+  // Half-built (two sides): show that rectangle in red with the sides still open.
+  const partial = roofSpanAt(pieces.index, myId(), all, 2);
+  if (partial) return roofGhostFor(partial);
   st.set({
     ghost: {
       x: Math.round(p.x),
       z: Math.round(p.z),
-      level: s ? s.level + 1 : (levelHint ?? 1),
+      level: 1,
       rot: st.rot % 2,
       y: NaN,
       ok: false,
-      message: s ? 'Not a simple rectangle — click two opposite corners' : 'Point at a walled house of yours',
+      message: ownWallsNear(p) ? 'No walled rectangle here — point inside the house, or click two opposite corners' : 'Point at a house you built (walls on at least three sides)',
     },
   });
 }
@@ -313,14 +326,21 @@ export function aimFromScreen(clientX: number, clientY: number): void {
     return;
   }
 
-  // House roof: the walled rectangle under the cursor (or a two-corner span).
+  // House roof: the walled rectangle around where the cursor points (or a two-corner span).
   if (def.param === 'roof') {
-    const seed = q && PIECES[q.kind].structural ? q : null;
     let p = g;
     if (roofAnchor && r) p = rayAtHeight(r, roofAnchorHeight()) ?? g;
     if (!p) return;
     lastAim = { x: p.x, z: p.z };
-    aimRoofAt(p, undefined, seed);
+    const probes: Vec2[] = [];
+    if (hit) probes.push({ x: hit.point.x, z: hit.point.z });
+    // The cursor ray at each storey's wall-top and mid-wall height: pointing at a wall (even one cut away
+    // or faded while you stand next to it) or at the roof ghost above the house lands on that house.
+    if (r && !roofAnchor)
+      for (const h of wallTopHeights(p))
+        for (const at of [rayAtHeight(r, h), rayAtHeight(r, h - CONFIG.building.storeyHeight * 0.55)]) if (at) probes.push(at);
+    roofProbes = probes;
+    aimRoofAt(p, probes);
     return;
   }
 
@@ -435,7 +455,7 @@ export function placeGhost(): boolean {
     st.set({ refusal: { text: refusalText('text_required'), at: Date.now() } });
     return false;
   }
-  const params = g.params ? (JSON.parse(g.params) as { w: number; d: number; s: string; p: number }) : null;
+  const params = g.params ? (JSON.parse(g.params) as { w: number; d: number; s: string; p: number; o?: number }) : null;
   const payload = {
     reqId: ++reqSeq,
     kind: st.kind,
@@ -445,7 +465,7 @@ export function placeGhost(): boolean {
     rot: g.rot,
     level: g.level,
     ...(def.text ? { text } : {}),
-    ...(params ? { params: { w: params.w, d: params.d, style: params.s, pitch: params.p } } : {}),
+    ...(params ? { params: { w: params.w, d: params.d, style: params.s, pitch: params.p, ...(params.o !== undefined ? { overhang: params.o } : {}) } } : {}),
   };
   if (!net.send(C2S.buildPlace, payload)) return false;
   pendingPlaces.set(payload.reqId, { kind: st.kind, x: g.x, z: g.z, rot: g.rot, level: g.level });
