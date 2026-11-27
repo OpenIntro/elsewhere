@@ -40,7 +40,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './lib/server.mjs';
-import { resultFile } from './lib/report.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
 import { Client } from '@colyseus/sdk';
 import { CONFIG, PIECES, ROOM_NAME, TREES, clearableNature, defaultCollisionWorld, natureItem, pieceColliders } from '@elsewhere/shared';
 import { BUSH_WALL, HOUSE, twoStoreyHouse } from './lib/plans2.mjs';
@@ -52,7 +52,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.BUILD2_PORT ?? 2635);
 const BASE = `http://localhost:${PORT}`;
 const DATA_DIR = process.env.BUILD2_DATA_DIR ?? mkdtempSync(path.join(tmpdir(), 'elsewhere-build2-'));
-const SHOTS = process.env.BUILD2_SHOTS ? path.resolve(ROOT, process.env.BUILD2_SHOTS) : null;
+const SHOTS = shotsDir(process.env.BUILD2_SHOTS, null, ROOT);
 const NAME = 'Fern Cottage';
 
 const log = (...a) => console.log('[build2]', ...a);
@@ -425,7 +425,10 @@ try {
     await b.touchscreen.tap(pt.x, pt.y);
     const sa = await waitSnap(a, (s) => posOf(s, idB)?.seat === ref, 'A sees B seated', 90_000);
     await shot(a, 'r2-08-B-seated');
-    // Stand up (moving stands you up); the seat frees.
+    // Stand up (moving stands you up); the seat frees. Wait until B's own client shows it seated, as a
+    // person would: A can see the seat a few frames before B's software-rendered client has applied it,
+    // and moves sent in that window are refused by the server ("seated") without standing B up.
+    await waitSnap(b, (s) => s.motion?.seat === ref, 'B sees itself seated', 30_000);
     await b.keyboard.down('KeyS');
     await sleep(700);
     await b.keyboard.up('KeyS');

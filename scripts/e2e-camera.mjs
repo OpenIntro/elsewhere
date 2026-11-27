@@ -33,12 +33,12 @@ import { getInteractable, getInterior, interiorAnchor, interiorAt } from '@elsew
 import { assert, choosePiece, hopToward, openBuild, press, query, sleep, snap, waitSnap } from './lib/browser.mjs';
 import { closePanel, groundUnder, hopInto, twoFinger } from './lib/phone.mjs';
 import { ROOT, createServer } from './lib/server.mjs';
-import { resultFile } from './lib/report.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
 
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
 
 const PORT = Number(process.env.CAMERA_PORT ?? 2644);
-const SHOTS = process.env.CAMERA_SHOTS === '0' ? null : path.resolve(ROOT, process.env.CAMERA_SHOTS ?? 'docs/screenshots/camera');
+const SHOTS = shotsDir(process.env.CAMERA_SHOTS, 'docs/screenshots/camera', ROOT);
 const BASE_YAW = Math.PI / 4;
 const Q = Math.PI / 2;
 /** Open, walkable ground (nothing solid within 3.5 m) for the movement checks. */

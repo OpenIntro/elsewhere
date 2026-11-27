@@ -101,11 +101,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) await main();
 
 async function main() {
   const { createServer } = await import('./lib/server.mjs');
-  const { resultFile } = await import('./lib/report.mjs');
+  const { resultFile, shotsDir } = await import('./lib/report.mjs');
   const { chromium, devices } = createRequire(import.meta.url)('playwright');
   const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const PORT = Number(process.env.BINT_PORT ?? 2641);
-  const SHOTS = process.env.BINT_SHOTS ? path.resolve(ROOT, process.env.BINT_SHOTS) : null;
+  const SHOTS = shotsDir(process.env.BINT_SHOTS, null, ROOT);
   // Measured with this scene on the production build before built interiors (draw calls depend only on the piece set).
   const BASELINE = Number(process.env.BINT_BASELINE_DRAWCALLS ?? 19);
   const server = createServer({ port: PORT, label: 'bint', verbose: !!process.env.BINT_VERBOSE, tmpPrefix: 'elsewhere-bint-', ...(process.env.BINT_DATA_DIR ? { dataDir: process.env.BINT_DATA_DIR } : {}) });
@@ -191,10 +191,10 @@ async function main() {
     const n = item.rot % 2 === 0 ? { x: 0, z: item.rot === 0 ? 1 : -1 } : { x: item.rot === 1 ? 1 : -1, z: 0 };
     return build(page, item, { y: wall.y + 1.5, aim: { x: item.x + n.x * 0.14, z: item.z + n.z * 0.14 } });
   }
-  /** Q: the camera turns a quarter; resolves with the new yaw once it has stopped turning. */
-  async function turn(page) {
+  /** Q (or [, the same turn): the camera turns a quarter; resolves with the new yaw once it has stopped turning. */
+  async function turn(page, key = 'KeyQ') {
     const y0 = (await snap(page)).view.yaw;
-    await page.keyboard.press('KeyQ');
+    await page.keyboard.press(key);
     await waitSnap(page, (x) => Math.abs(x.view.yaw - y0) > 1.2, 'camera turned', 15_000);
     let last = (await snap(page)).view.yaw;
     for (let i = 0; i < 60; i++) {
@@ -337,10 +337,10 @@ async function main() {
       return `B at (${sb.local.x.toFixed(1)}, ${sb.local.z.toFixed(1)}): inactive, 0 of ${ids.hut.length} house pieces cut or faded (A: ${cutOf(sa).cutIds.length} cut)`;
     });
 
-    await check('3. A turns the camera four times (Q): the cut walls follow the camera-facing faces each time', async () => {
+    await check('3. A turns the camera four times (Q, [, Q, [): the cut walls follow the camera-facing faces each time', async () => {
       const outL = [];
       for (let k = 0; k < 4; k++) {
-        const yaw = await turn(a);
+        const yaw = await turn(a, k % 2 ? 'BracketLeft' : 'KeyQ');
         const want = expectedCut(yaw);
         const s = await waitCut(a, `rotation ${k + 1}`, (c) => c.active && sameIds(c.cutIds, want) && c.settled);
         const c = cutOf(s);

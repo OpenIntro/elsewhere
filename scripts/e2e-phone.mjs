@@ -41,13 +41,13 @@ import { CONFIG, PIECES, getInteractable, getInterior, groundHeight, interiorAnc
 import { aimGhost, assert, buildState, choosePiece, hopToward, openBuild, placeHere, press, query, rotateTo, screenOf, sleep, snap, waitSnap, zoomOut } from './lib/browser.mjs';
 import { closePanel, coverage, groundUnder, hopInto, pct, rectOf, screenOfView, touchDrag, useThing } from './lib/phone.mjs';
 import { ROOT, createServer } from './lib/server.mjs';
-import { resultFile } from './lib/report.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
 
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
 
 const MODE = process.env.PHONE_MODE === 'before' ? 'before' : 'after';
 const PORT = Number(process.env.PHONE_PORT ?? 2642);
-const SHOTS = process.env.PHONE_SHOTS === '0' ? null : path.resolve(ROOT, process.env.PHONE_SHOTS ?? 'docs/screenshots/phone');
+const SHOTS = shotsDir(process.env.PHONE_SHOTS, 'docs/screenshots/phone', ROOT);
 const BEFORE_FILE = path.join(ROOT, 'docs/screenshots/phone/before.json');
 const ADMIN_TOKEN = `phone-admin-${Math.random().toString(36).slice(2, 14)}`;
 const LAND = { width: 915, height: 412 };
@@ -602,7 +602,7 @@ try {
     });
 
     await check('9. B opens the notice board in peek, starts writing: the sheet goes full; the pinned notice shows on A', async () => {
-      await useThing(b, 'station_hall_notices', { panel: 'panel-notices', approach: interiorAnchor('town_hall', 'notice_board').position, near: 2.2, timeout: 120_000 });
+      await useThing(b, 'station_hall_notices', { panel: 'panel-notices', approach: interiorAnchor('town_hall', 'notice_board').position, timeout: 120_000 });
       await b.waitForSelector('[data-testid=panel-notices][data-view=peek]', { timeout: 10_000 });
       await sleep(900);
       const c = await coverage(b, '[data-testid=panel-notices]');

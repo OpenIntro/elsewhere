@@ -84,7 +84,7 @@ export async function hop(page, target, near = 1.2, timeout = 180_000, reached =
   let prev = null;
   while (Date.now() - t0 < timeout) {
     const s = await snap(page);
-    if (Math.hypot(s.local.x - target.x, s.local.z - target.z) < near || (reached && reached(s))) return s;
+    if (Math.hypot(s.local.x - target.x, s.local.z - target.z) < near || (reached && (await reached(s)))) return s;
     if (s.ui?.panel) await closePanel(page);
     if (prev && Math.hypot(s.local.x - prev.x, s.local.z - prev.z) < 0.2) stuck++;
     else stuck = 0;
@@ -122,17 +122,18 @@ export async function hop(page, target, near = 1.2, timeout = 180_000, reached =
 }
 
 /** Walk like a person: into the target's building through its door first, then to the spot. */
-export async function hopInto(page, target, near = 1.2, timeout = 300_000) {
+export async function hopInto(page, target, near = 1.2, timeout = 300_000, panel = null) {
   const it = interiorAt(target);
   const s = await snap(page);
   if (it && interiorAt(s.local)?.id !== it.id) {
     const door = it.doors[0];
     const inside = (q) => interiorAt(q.local)?.id === it.id;
     const front = [3, 2, 1.2, 0].map((d) => ({ x: door.outside.x + Math.sin(door.yaw) * d, z: door.outside.z + Math.cos(door.yaw) * d })).find((p) => isWalkable(p, 0.5)) ?? door.outside;
-    await hop(page, front, 2.5, timeout / 2, inside);
+    await hop(page, front, 2.5, timeout, inside);
     if (!inside(await snap(page))) await keyboardRoute(page, [door.outside, door.inside], { timeout: 90_000 }).catch(() => undefined);
   }
-  return hop(page, target, near, timeout);
+  // A hop tap on the thing we came to use opens its panel: that is arriving, not a stray tap to close.
+  return hop(page, target, near, timeout, panel ? async () => !!(await page.$(`[data-testid=${panel}]`)) : null);
 }
 
 /** Walk next to an interactable (inside its building) and click / tap it; wait for its panel. */
@@ -141,7 +142,7 @@ export async function useThing(page, id, { panel, approach = null, near = 1.3, t
   assert(it, `no interactable ${id}`);
   const interior = it.interiorId ? getInterior(it.interiorId) : null;
   // close enough to tap it (a tap on it walks the rest of the way, as a player's would)
-  await hopInto(page, approach ?? it.position, near);
+  await hopInto(page, approach ?? it.position, near, 300_000, panel);
   const t0 = Date.now();
   let lastErr = '';
   while (Date.now() - t0 < timeout) {

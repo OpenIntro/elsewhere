@@ -85,7 +85,7 @@ import {
 } from '@elsewhere/shared';
 import { keyboardRoute, route } from './lib/browser.mjs';
 import { createServer } from './lib/server.mjs';
-import { resultFile } from './lib/report.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright');
@@ -94,7 +94,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.COMB_PORT ?? 2636);
 const BASE = `http://localhost:${PORT}`;
 const DATA_DIR = process.env.COMB_DATA_DIR ?? mkdtempSync(path.join(tmpdir(), 'elsewhere-combined-'));
-const SHOTS = process.env.COMB_SHOTS === '0' ? null : path.resolve(ROOT, process.env.COMB_SHOTS ?? 'docs/screenshots/combined');
+const SHOTS = shotsDir(process.env.COMB_SHOTS, 'docs/screenshots/combined', ROOT);
 const SECRET = randomBytes(32).toString('hex');
 const SERVER_ENV = { NODE_ENV: 'production', DATA_DIR, SESSION_SECRET: SECRET, DAY_LENGTH_MINUTES: '480' };
 const T = 90_000;

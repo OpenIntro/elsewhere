@@ -12,7 +12,8 @@
  *      share a wall stay two), or
  *  (b) "walled": with nothing over the point, the rectangle of walls around it
  *      (rays to the nearest wall line on each side, ≥ 3 sides at least 70%
- *      walled, like the roof tool's `detectRoofSpan`).
+ *      walled; walls of any owner — stricter than, and independent of, the
+ *      roof tool's owner-only `findRoofSpan` in building.ts).
  * Either way at most 12 × 12 m (the largest house roof).
  */
 import { CONFIG } from './config.js';

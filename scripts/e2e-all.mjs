@@ -42,6 +42,7 @@ const SUITES = [
   { name: 'activities', script: 'scripts/e2e-activities.mjs', port: ['ACT_PORT', 2633] },
   { name: 'build', script: 'scripts/e2e-build.mjs', port: ['BUILD_PORT', 2634] },
   { name: 'build2', script: 'scripts/e2e-build2.mjs', port: ['BUILD2_PORT', 2635] },
+  { name: 'roofs', script: 'scripts/e2e-roofs.mjs', port: ['ROOFS_PORT', 2674], ifExists: true },
   { name: 'combined', script: 'scripts/e2e-combined.mjs', port: ['COMB_PORT', 2636], shots: 'COMB_SHOTS' },
   { name: 'built-interiors', script: 'scripts/e2e-built-interiors.mjs', port: ['BINT_PORT', 2641], ifExists: true },
   { name: 'phone', script: 'scripts/e2e-phone.mjs', port: ['PHONE_PORT', 2642], shots: 'PHONE_SHOTS', ifExists: true },
@@ -187,9 +188,12 @@ mkdirSync(OUT, { recursive: true });
 const startedAt = new Date().toISOString();
 const rows = [];
 let current = null;
+let stopping = false;
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     // The suite's own handlers stop its server; give it a moment, then write what we have.
+    // No further suite starts (it would be orphaned when this process exits).
+    stopping = true;
     if (current) current.kill(sig);
     setTimeout(() => finish(sig === 'SIGINT' ? 130 : 143), 6000);
   });
@@ -248,7 +252,10 @@ function finish(code) {
 }
 
 console.log(`[e2e:all] ${suites.map((s) => s.name).join(', ')}${opts.repeat > 1 ? ` × ${opts.repeat} runs` : ''}; results in ${path.relative(ROOT, OUT)}/`);
-for (let run = 1; run <= opts.repeat; run++) {
-  for (const s of suites) rows.push(await runSuite(s, run));
+run: for (let run = 1; run <= opts.repeat; run++) {
+  for (const s of suites) {
+    if (stopping) break run;
+    rows.push(await runSuite(s, run));
+  }
 }
-finish();
+if (!stopping) finish();

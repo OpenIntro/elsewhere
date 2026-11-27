@@ -39,7 +39,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './lib/server.mjs';
-import { resultFile } from './lib/report.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
 import { Client } from '@colyseus/sdk';
 import { CONFIG, PIECES, PIECE_CATEGORIES, PIECE_KINDS, ROOM_NAME, buildableAt, defaultCollisionWorld, pieceColliders } from '@elsewhere/shared';
 import { SITE, hutPlan } from './lib/cottage.mjs';
@@ -51,7 +51,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.BUILD_PORT ?? 2634);
 const BASE = `http://localhost:${PORT}`;
 const DATA_DIR = process.env.BUILD_DATA_DIR ?? mkdtempSync(path.join(tmpdir(), 'elsewhere-build-'));
-const SHOTS = process.env.BUILD_SHOTS ? path.resolve(ROOT, process.env.BUILD_SHOTS) : null;
+const SHOTS = shotsDir(process.env.BUILD_SHOTS, null, ROOT);
 
 const log = (...a) => console.log('[build]', ...a);
 const results = [];

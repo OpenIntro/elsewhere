@@ -31,7 +31,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './lib/server.mjs';
-import { resultFile } from './lib/report.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
 import { CONFIG, getInteractable, getInterior, interiorAnchor, interiorAt, isWalkable, rotateOffset } from '@elsewhere/shared';
 
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
@@ -40,7 +40,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.INT_PORT ?? 2631);
 const BASE = `http://localhost:${PORT}`;
 const DATA_DIR = process.env.INT_DATA_DIR ?? mkdtempSync(path.join(tmpdir(), 'elsewhere-interiors-'));
-const SHOTS = process.env.INT_SHOTS ? path.resolve(ROOT, process.env.INT_SHOTS) : null;
+const SHOTS = shotsDir(process.env.INT_SHOTS, null, ROOT);
 const T = 90_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -357,11 +357,17 @@ try {
     assert(viaDoor, `planned path does not use the door: ${JSON.stringify(path.points)}`);
     const sa = await waitSnap(a, (x) => !x.motion?.path && where(x.local) === 'cafe', 'A inside the café', 60_000);
     await sleep(600);
-    const sb = await waitSnap(b, (x) => posOf(x, idA) && where(posOf(x, idA)) === 'cafe', "B's room state has A inside", 10_000);
+    // Compare the two clients' synced copies of A once A has stopped on both: `sa` is taken the moment
+    // A's local path ends, when its synced copy (server state) can still be a few frames behind and
+    // walking (seen: 0.75 m back, anim "walk" vs B's later "idle" — a sampling-time difference, not a
+    // disagreement).
+    const settled = (x) => posOf(x, idA) && where(posOf(x, idA)) === 'cafe' && posOf(x, idA).anim === 'idle';
+    const sa2 = await waitSnap(a, settled, "A's synced copy of itself has stopped inside", 10_000);
+    const sb = await waitSnap(b, settled, "B's room state has A inside, stopped", 10_000);
     const sbSelf = sb.local;
     assert(where(sbSelf) === 'outdoors', `B should be outside, is ${where(sbSelf)}`);
     const pa = posOf(sb, idA);
-    const auth = posOf(sa, idA);
+    const auth = posOf(sa2, idA);
     assert(Math.hypot(pa.x - auth.x, pa.z - auth.z) < 0.5, `A's position differs between clients: ${JSON.stringify(pa)} vs ${JSON.stringify(auth)}`);
     await shot(a, 'e2e-1-A-inside-cafe');
     return `A at (${sa.local.x.toFixed(2)}, ${sa.local.z.toFixed(2)}) in ${where(sa.local)}; B sees A at (${pa.x.toFixed(2)}, ${pa.z.toFixed(2)}); B is outdoors`;

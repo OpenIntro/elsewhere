@@ -41,7 +41,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './lib/server.mjs';
-import { resultFile } from './lib/report.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
 import { CONFIG, KEEPERS, getInteractable, getInterior, interiorAnchor, interiorAt, isWalkable } from '@elsewhere/shared';
 
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
@@ -50,7 +50,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.ACT_PORT ?? 2633);
 const BASE = `http://localhost:${PORT}`;
 const DATA_DIR = process.env.ACT_DATA_DIR ?? mkdtempSync(path.join(tmpdir(), 'elsewhere-activities-'));
-const SHOTS = process.env.ACT_SHOTS ? path.resolve(ROOT, process.env.ACT_SHOTS) : null;
+const SHOTS = shotsDir(process.env.ACT_SHOTS, null, ROOT);
 const SECRET = randomBytes(32).toString('hex');
 const SERVER_ENV = { NODE_ENV: 'production', PORT: String(PORT), DATA_DIR, SESSION_SECRET: SECRET, WORKSHOP_STAGE_CONTRIBUTIONS: '2,2', WORKSHOP_STAGE_DISTINCT: '2,2' };
 const T = 90_000;
@@ -292,8 +292,14 @@ async function keyboardWalk(page, waypoints, { reach = 0.45, timeout = 40_000 } 
   }
 }
 
-/** Walk like a person: into the building through its door first, then to the spot (each leg by click/tap hops). */
-async function hopToward(page, target, near = 1.2, timeout = 240_000) {
+/**
+ * Walk like a person: into the building through its door first, then to the spot (each leg by click/tap hops).
+ * Each leg gets the whole `timeout`: on a portrait phone a hop is only ~2 m when the way runs across the
+ * screen, so House 1 → Town Hall door alone takes ~19 hops / ~120 s (it used to get half of 240 s).
+ * `panel`: the panel we are walking up to use — a hop tap that lands on that thing and opens it is
+ * arriving, not a stray tap to close.
+ */
+async function hopToward(page, target, near = 1.2, timeout = 240_000, panel = null) {
   const it = interiorAt(target);
   const s = await snap(page);
   if (it && interiorAt(s.local)?.id !== it.id) {
@@ -301,13 +307,13 @@ async function hopToward(page, target, near = 1.2, timeout = 240_000) {
     const inside = (q) => interiorAt(q.local)?.id === it.id;
     // a few metres out in front of the door (clear of signs and steps), then through the doorway by keys
     const front = [3, 2, 1.2, 0].map((d) => ({ x: door.outside.x + Math.sin(door.yaw) * d, z: door.outside.z + Math.cos(door.yaw) * d })).find((p) => isWalkable(p, 0.5)) ?? door.outside;
-    await hop(page, front, 2.5, timeout / 2, inside);
+    await hop(page, front, 2.5, timeout, inside);
     if (!inside(await snap(page))) await keyboardRoute(page, [door.outside, door.inside], { timeout: 90_000 }).catch(() => undefined);
   }
-  return hop(page, target, near, timeout);
+  return hop(page, target, near, timeout, panel ? async () => !!(await page.$(`[data-testid=${panel}]`)) : null);
 }
 
-/** Click/tap-to-move in hops towards a target (the camera follows), until close. */
+/** Click/tap-to-move in hops towards a target (the camera follows), until close (or `reached(snapshot)`). */
 async function hop(page, target, near = 1.2, timeout = 180_000, reached = null) {
   const vp = page.viewportSize();
   const t0 = Date.now();
@@ -315,7 +321,7 @@ async function hop(page, target, near = 1.2, timeout = 180_000, reached = null) 
   let prev = null;
   while (Date.now() - t0 < timeout) {
     const s = await snap(page);
-    if (Math.hypot(s.local.x - target.x, s.local.z - target.z) < near || (reached && reached(s))) return s;
+    if (Math.hypot(s.local.x - target.x, s.local.z - target.z) < near || (reached && (await reached(s)))) return s;
     // A hop click that landed on something usable opened its panel: put it away and keep walking.
     if (await page.$('[data-testid=sheet-close]')) await closePanel(page);
     if (prev && Math.hypot(s.local.x - prev.x, s.local.z - prev.z) < 0.2) stuck++;
@@ -361,7 +367,7 @@ async function useThing(page, id, { panel = null, approach = null, done = null, 
   assert(it, `no interactable ${id}`);
   const interior = it.interiorId ? getInterior(it.interiorId) : null;
   const goal = approach ?? it.position;
-  await hopToward(page, goal, 1.3);
+  await hopToward(page, goal, 1.3, 240_000, panel);
   const t0 = Date.now();
   let lastErr = '';
   while (Date.now() - t0 < timeout) {

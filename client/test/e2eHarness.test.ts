@@ -3,7 +3,7 @@
  * recorder, the e2e:all summary rows / merge / table, and the door-walk stall detector.
  */
 import { describe, expect, it } from 'vitest';
-import { createRecorder, detectStalls, fmtMs, formatSummary, mergeSummary, polylineLength, suiteResult, summaryRow } from '../../scripts/lib/report.mjs';
+import { createRecorder, detectStalls, fmtMs, formatSummary, mergeSummary, polylineLength, shotsDir, suiteResult, summaryRow } from '../../scripts/lib/report.mjs';
 
 type Sample = { t: number; x: number; z: number; path: boolean };
 
@@ -153,5 +153,16 @@ describe('polylineLength', () => {
   it('sums segment lengths', () => {
     expect(polylineLength([{ x: 0, z: 0 }, { x: 3, z: 4 }, { x: 3, z: 0 }])).toBe(9);
     expect(polylineLength([])).toBe(0);
+  });
+});
+
+describe('shotsDir', () => {
+  it('"0" / "false" / "off" mean no screenshots; unset or empty falls back; anything else is a directory', () => {
+    for (const v of ['0', 'false', 'FALSE', 'no', 'off', ' 0 ']) expect(shotsDir(v, 'docs/screenshots/x', '/repo')).toBeNull();
+    expect(shotsDir(undefined, 'docs/screenshots/x', '/repo')).toBe('/repo/docs/screenshots/x');
+    expect(shotsDir('', 'docs/screenshots/x', '/repo')).toBe('/repo/docs/screenshots/x');
+    expect(shotsDir(undefined, null, '/repo')).toBeNull();
+    expect(shotsDir('out/shots', null, '/repo')).toBe('/repo/out/shots');
+    expect(shotsDir('/abs/dir', 'docs/x', '/repo')).toBe('/abs/dir');
   });
 });

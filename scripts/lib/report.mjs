@@ -38,6 +38,18 @@ export function suiteResult({ suite, checks, ms, exitCode, consoleErrors = [] })
 }
 
 /**
+ * Screenshot directory from a suite's `*_SHOTS` variable: unset or empty → `fallback`
+ * (resolved against `root`, or null for "no screenshots by default"); "0", "false", "no",
+ * "off" → null (no screenshots); anything else → that directory, resolved against `root`.
+ */
+export function shotsDir(value, fallback, root) {
+  const v = value === undefined || value === null ? '' : String(value).trim();
+  if (v === '') return fallback ? path.resolve(root, fallback) : null;
+  if (/^(0|false|no|off)$/i.test(v)) return null;
+  return path.resolve(root, v);
+}
+
+/**
  * Adapter used by every suite: `const rec = resultFile('build', () => pageErrors)`, then
  * `rec.add(name, ok, detail)` inside the suite's own record(). Writes the file named by
  * $E2E_RESULT synchronously on process exit (whatever the exit path); does nothing and

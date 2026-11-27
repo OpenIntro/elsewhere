@@ -245,6 +245,23 @@ const TAP_SLOP_MOUSE = 6;
 const TAP_SLOP_TOUCH = 12;
 const TAP_MAX_MS = 650;
 
+/**
+ * When a pointer event happened, in the performance.now() time base: the event's own timeStamp
+ * (when the input arrived), not when our handler got to run. On a janky frame the down and up
+ * handlers can run hundreds of ms apart for a quick tap (measured up to ~360 ms under headless
+ * software rendering with a 0 ms real gap); timing the handlers turned such taps into long presses
+ * that did nothing. Falls back to `now` if the timeStamp is missing or not in that time base.
+ */
+export function pointerEventTime(e: { timeStamp?: number }, now: number): number {
+  const t = e.timeStamp;
+  return typeof t === 'number' && Number.isFinite(t) && t > 0 && t <= now + 1 ? t : now;
+}
+
+/** A press that ended within TAP_MAX_MS of starting (event times, see pointerEventTime). */
+export function isTapDuration(downAt: number, upAt: number): boolean {
+  return upAt - downAt < TAP_MAX_MS;
+}
+
 export function installPointer(el: HTMLElement, h: PointerHandlers): () => void {
   const pointers = new Map<number, TrackedPointer>();
   let dragging = false;
@@ -283,12 +300,12 @@ export function installPointer(el: HTMLElement, h: PointerHandlers): () => void 
       e.preventDefault();
       el.setPointerCapture?.(e.pointerId);
       rotPointer = e.pointerId;
-      pointers.set(e.pointerId, { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() });
+      pointers.set(e.pointerId, { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: pointerEventTime(e, performance.now()) });
       return;
     }
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     el.setPointerCapture?.(e.pointerId);
-    pointers.set(e.pointerId, { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() });
+    pointers.set(e.pointerId, { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: pointerEventTime(e, performance.now()) });
     if (pointers.size === 1) {
       dragging = false;
       multi = false;
@@ -366,7 +383,7 @@ export function installPointer(el: HTMLElement, h: PointerHandlers): () => void 
       return;
     }
     if (pointers.size < 2) endTwist();
-    if (e.type === 'pointerup' && !dragging && !multi && pointers.size === 0 && performance.now() - p.t < TAP_MAX_MS && !(p.type === 'mouse' && e.button === 2)) {
+    if (e.type === 'pointerup' && !dragging && !multi && pointers.size === 0 && isTapDuration(p.t, pointerEventTime(e, performance.now())) && !(p.type === 'mouse' && e.button === 2)) {
       h.tap(e.clientX, e.clientY, p.type);
     }
     if (pointers.size === 0) {

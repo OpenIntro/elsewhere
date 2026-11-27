@@ -26,11 +26,10 @@
  *      clicking places nothing
  *  13. zero console / page errors in both clients
  *
- * Env: ROOFS_PORT (default 2634), ROOFS_DATA_DIR, ROOFS_SHOTS (screenshot dir), ROOFS_VERBOSE=1.
+ * Env: ROOFS_PORT (default 2674), ROOFS_DATA_DIR, ROOFS_SHOTS (screenshot dir), ROOFS_VERBOSE=1.
  */
-import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -38,13 +37,15 @@ import { fileURLToPath } from 'node:url';
 import { assert, buildState, choosePiece, closeBuild, hopToward, onCanvas, openBuild, press, query, sleep, snap, waitSnap, zoomOut } from './lib/browser.mjs';
 import { builderClient } from './lib/seed.mjs';
 import { ROOF_HOUSES, ROOF_REFUSALS } from './lib/roofPlans.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
+import { createServer } from './lib/server.mjs';
 
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PORT = Number(process.env.ROOFS_PORT ?? 2634);
+const PORT = Number(process.env.ROOFS_PORT ?? 2674);
 const BASE = `http://localhost:${PORT}`;
 const DATA_DIR = process.env.ROOFS_DATA_DIR ?? mkdtempSync(path.join(tmpdir(), 'elsewhere-roofs-'));
-const SHOTS = process.env.ROOFS_SHOTS ? path.resolve(ROOT, process.env.ROOFS_SHOTS) : null;
+const SHOTS = shotsDir(process.env.ROOFS_SHOTS, null, ROOT);
 const VERBOSE = process.env.ROOFS_VERBOSE === '1';
 const SECRET = randomBytes(32).toString('hex');
 const STOREY = 2.6;
@@ -53,14 +54,17 @@ const vlog = (...a) => VERBOSE && log(...a);
 
 // --- checks -------------------------------------------------------------------
 const results = [];
+const resultOut = resultFile('roofs', () => pageErrors);
 async function check(name, fn) {
   const t0 = Date.now();
   try {
     const detail = await fn();
     results.push({ name, ok: true });
+    resultOut.add(name, true, detail ?? '');
     console.log(`[roofs] PASS ${name}${detail ? ` — ${detail}` : ''} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   } catch (err) {
     results.push({ name, ok: false });
+    resultOut.add(name, false, String(err?.message ?? err));
     console.log(`[roofs] FAIL ${name} — ${String(err?.message ?? err)}`);
     const tag = name.split('.')[0];
     for (const [label, page] of [['A', a], ['B', b]]) if (page) await shot(page, `fail-${tag}-${label}`);
@@ -70,32 +74,21 @@ async function check(name, fn) {
 }
 
 // --- server -------------------------------------------------------------------
+// The real run uses the server's own defaults for these (the staging run overrides them).
+for (const k of ['BUILD_RANGE', 'BUILD_RATE_CAPACITY', 'BUILD_RATE_PER_SECOND', 'BUILD_MAX_PER_PLAYER']) delete process.env[k];
+const serverOpts = { port: PORT, dataDir: DATA_DIR, label: 'roofs', verbose: VERBOSE, logPrefix: '[roofs] server: ' };
+const stagingServer = createServer({ ...serverOpts, env: { SESSION_SECRET: SECRET, BUILD_RANGE: '400', BUILD_RATE_CAPACITY: '1000', BUILD_RATE_PER_SECOND: '1000' } });
+const realServer = createServer({ ...serverOpts, env: { SESSION_SECRET: SECRET } });
 let server = null;
-async function startServer(extraEnv = {}) {
-  assert(existsSync(path.join(ROOT, 'server/dist/index.js')) && existsSync(path.join(ROOT, 'client/dist/index.html')), 'production build missing: run `npm run build` first');
-  const env = { ...process.env, NODE_ENV: 'production', PORT: String(PORT), DATA_DIR, SESSION_SECRET: SECRET };
-  // The real run uses the server's own defaults for these.
-  for (const k of ['BUILD_RANGE', 'BUILD_RATE_CAPACITY', 'BUILD_RATE_PER_SECOND', 'BUILD_MAX_PER_PLAYER']) delete env[k];
-  server = spawn(process.execPath, ['server/dist/index.js'], { cwd: ROOT, env: { ...env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
-  server.stdout.on('data', (d) => vlog('server:', String(d).trim()));
-  server.stderr.on('data', (d) => vlog('server!', String(d).trim()));
-  for (let i = 0; i < 240; i++) {
-    try {
-      if ((await fetch(`${BASE}/api/health`)).ok) return;
-    } catch {
-      /* not up yet */
-    }
-    await sleep(250);
-  }
-  throw new Error('server did not come up');
+async function startServer(handle) {
+  server = handle;
+  await handle.start();
 }
 async function stopServer() {
   if (!server) return;
   const s = server;
   server = null;
-  const gone = new Promise((r) => s.once('exit', r));
-  s.kill('SIGTERM');
-  await Promise.race([gone, sleep(10_000)]);
+  await s.stop();
 }
 
 // --- browsers -------------------------------------------------------------------
@@ -206,7 +199,7 @@ try {
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
   log(`data dir ${DATA_DIR}; server ${BASE}`);
   // Stage: a server with a long build range so protocol clients can reach every site.
-  await startServer({ BUILD_RANGE: '400', BUILD_RATE_CAPACITY: '1000', BUILD_RATE_PER_SECOND: '1000' });
+  await startServer(stagingServer);
   const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await ctxA.addInitScript(LOW_GFX);
   a = await ctxA.newPage();
@@ -240,7 +233,7 @@ try {
   // The real run: default server settings (range, rate limits) on the same data.
   restarting = true;
   await stopServer();
-  await startServer();
+  await startServer(realServer);
   for (const p of [a, b]) await p.reload();
   for (const p of [a, b]) await waitSnap(p, (s) => s.local?.ready && s.navReady && s.build?.synced && s.connection === 'connected', 'rejoined', 120_000);
   restarting = false;
@@ -348,6 +341,7 @@ try {
   });
 } catch (err) {
   results.push({ name: 'script', ok: false });
+  resultOut.add('script', false, String(err?.message ?? err));
   console.log(`[roofs] FAIL script — ${String(err?.stack ?? err)}`);
 } finally {
   await browser.close().catch(() => undefined);

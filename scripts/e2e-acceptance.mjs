@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './lib/server.mjs';
-import { resultFile } from './lib/report.mjs';
+import { resultFile, shotsDir } from './lib/report.mjs';
 
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
 
@@ -38,7 +38,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.ACCEPT_PORT ?? 2620);
 const BASE = `http://localhost:${PORT}`;
 const DATA_DIR = process.env.ACCEPT_DATA_DIR ?? mkdtempSync(path.join(tmpdir(), 'elsewhere-accept-'));
-const SHOTS = process.env.ACCEPT_SHOTS === '0' ? null : path.resolve(ROOT, process.env.ACCEPT_SHOTS ?? 'docs/screenshots/acceptance');
+const SHOTS = shotsDir(process.env.ACCEPT_SHOTS, 'docs/screenshots/acceptance', ROOT);
 const PHONE = 'Pixel 7';
 const SERVER_ENV = {
   NODE_ENV: 'production',
