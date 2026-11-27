@@ -7,12 +7,17 @@
  *
  * Mouse: hover aims the ghost, click places, R rotates, B or Esc finishes.
  * Touch: tap aims the ghost, then the explicit Place button; Rotate / Done buttons.
+ *
+ * Landscape phones get a slim strip instead (StripDock): the chosen piece as a chip
+ * (tap → the palette opens over the strip; choosing a piece closes it), Rotate, Undo,
+ * Place, Done, and ··· for Remove / Clear / the storey control / Next / Unstuck. The
+ * strip is a camera cover: the rig frames the player in the world above it.
  */
 import { useEffect, useRef, useState } from 'react';
 import { CONFIG, PALETTE_ORDER, PIECE_CATEGORIES, PIECES, natureItem, type PieceKind } from '@elsewhere/shared';
 import { runtime } from '../state/runtime.js';
 import { useGameStore } from '../state/gameStore.js';
-import { useIsTouch } from '../ui/hooks.js';
+import { useIsTouch, useMediaQuery } from '../ui/hooks.js';
 import { Icon } from '../ui/icons.js';
 import {
   canRepeat,
@@ -36,7 +41,7 @@ import {
   undo,
   unstuck,
 } from './actions.js';
-import { pieces, useBuildStore, variantFor } from './store.js';
+import { STRIP_QUERY, dockEvent, pieces, useBuildStore, variantFor } from './store.js';
 import './build.css';
 
 function Glyph({ d, size = 20 }: { d: string; size?: number }) {
@@ -113,7 +118,7 @@ function StatusLine({ touch }: { touch: boolean }) {
   );
 }
 
-function Palette() {
+function Palette({ onPick }: { onPick?: () => void }) {
   const kind = useBuildStore((s) => s.kind);
   const category = useBuildStore((s) => s.category);
   const query = useBuildStore((s) => s.query);
@@ -150,7 +155,11 @@ function Palette() {
         {kinds.map((k) => {
           const on = mode === 'place' && k === kind;
           return (
-            <button key={k} type="button" role="option" aria-selected={on} className={`build-tile${on ? ' is-on' : ''}${PIECES[k].legacy ? ' is-legacy' : ''}`} onClick={() => selectKind(k)} title={PIECES[k].hint} data-testid={`build-piece-${k}`}>
+            <button key={k} type="button" role="option" aria-selected={on} className={`build-tile${on ? ' is-on' : ''}${PIECES[k].legacy ? ' is-legacy' : ''}`} onClick={() => {
+                selectKind(k);
+                onPick?.();
+              }}
+              title={PIECES[k].hint} data-testid={`build-piece-${k}`}>
               <span className="build-tile__img">{thumbs[k] ? <img src={thumbs[k]} alt="" draggable={false} /> : <span className="build-tile__ph" />}</span>
               <span className="build-tile__name">{PIECES[k].name}</span>
             </button>
@@ -333,22 +342,12 @@ function NatureCard() {
   );
 }
 
-function Dock() {
-  const touch = useIsTouch();
-  const mode = useBuildStore((s) => s.mode);
-  const kind = useBuildStore((s) => s.kind);
-  const ghostOk = useBuildStore((s) => !!s.ghost?.ok);
-  const cornerPick = useBuildStore((s) => !!s.ghost && !s.ghost.ok && /corner/.test(s.ghost.message));
-  const isRoof = PIECES[kind].param === 'roof';
-  useBuildStore((s) => s.version);
-  const repeat = canRepeat();
-  const canUndo = useBuildStore((s) => s.undo.some((id) => pieces.index.get(id)));
-  const ref = useRef<HTMLDivElement>(null);
-  const [more, setMore] = useState(false);
-
-  // Keep the touch joystick / action button clear of the dock: lift them above it — unless the dock sits
-  // between them (phone landscape: the dock leaves both sides free), where lifting would only push the
-  // action button into the camera buttons.
+/**
+ * Keep the touch joystick / action button clear of the dock: lift them above it — unless the dock sits
+ * between them (phone landscape: the dock leaves both sides free), where lifting would only push the
+ * action button into the camera buttons.
+ */
+function useTouchClearance(ref: React.RefObject<HTMLDivElement | null>, layout: string) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -366,15 +365,40 @@ function Dock() {
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
+    window.addEventListener('resize', apply);
     return () => {
       ro.disconnect();
+      window.removeEventListener('resize', apply);
       if (prev) root.style.setProperty('--ew-touch-bottom', prev);
       else root.style.removeProperty('--ew-touch-bottom');
     };
-  }, []);
+  }, [ref, layout]);
+}
+
+function Dock() {
+  const touch = useIsTouch();
+  const ref = useRef<HTMLDivElement>(null);
+  // Every entry into build mode (and every orientation change) starts with the strip collapsed.
+  const strip = useMediaQuery(STRIP_QUERY);
+  useEffect(() => dockEvent({ type: 'enter' }), []);
+  useEffect(() => dockEvent({ type: 'orient' }), [strip]);
+  useTouchClearance(ref, strip ? 'strip' : 'dock');
+  return strip ? <StripDock touch={touch} dockRef={ref} /> : <FullDock touch={touch} dockRef={ref} />;
+}
+
+function FullDock({ touch, dockRef }: { touch: boolean; dockRef: React.RefObject<HTMLDivElement | null> }) {
+  const mode = useBuildStore((s) => s.mode);
+  const kind = useBuildStore((s) => s.kind);
+  const ghostOk = useBuildStore((s) => !!s.ghost?.ok);
+  const cornerPick = useBuildStore((s) => !!s.ghost && !s.ghost.ok && /corner/.test(s.ghost.message));
+  const isRoof = PIECES[kind].param === 'roof';
+  useBuildStore((s) => s.version);
+  const repeat = canRepeat();
+  const canUndo = useBuildStore((s) => s.undo.some((id) => pieces.index.get(id)));
+  const [more, setMore] = useState(false);
 
   return (
-    <div className={`build-dock${touch ? ' is-touch' : ''}`} ref={ref} data-testid="build-dock" data-mode={mode}>
+    <div className={`build-dock${touch ? ' is-touch' : ''}`} ref={dockRef} data-testid="build-dock" data-mode={mode}>
       <StatusLine touch={touch} />
       {mode === 'remove' ? <SelectionCard /> : null}
       {mode === 'remove' || mode === 'clear' ? <NatureCard /> : null}
@@ -448,6 +472,134 @@ function Dock() {
               Done
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Landscape phones: the slim build strip. One row of 44 px targets — chosen-piece chip (opens the palette
+ * over the strip), Rotate, Undo, ···, Place, Done — plus the sign words row for pieces with text. The ···
+ * menu holds the storey control, Next, the Remove / Clear tools and Unstuck. Every test id of the full
+ * dock is kept (only one of the two is ever mounted).
+ */
+function StripDock({ touch, dockRef }: { touch: boolean; dockRef: React.RefObject<HTMLDivElement | null> }) {
+  const mode = useBuildStore((s) => s.mode);
+  const kind = useBuildStore((s) => s.kind);
+  const thumb = useBuildStore((s) => s.thumbs[s.kind]);
+  const palette = useBuildStore((s) => s.paletteOpen && s.mode === 'place');
+  const ghostOk = useBuildStore((s) => !!s.ghost?.ok);
+  const cornerPick = useBuildStore((s) => !!s.ghost && !s.ghost.ok && /corner/.test(s.ghost.message));
+  const lock = useBuildStore((s) => s.lockLevel);
+  const isRoof = PIECES[kind].param === 'roof';
+  useBuildStore((s) => s.version);
+  const repeat = canRepeat();
+  const canUndo = useBuildStore((s) => s.undo.some((id) => pieces.index.get(id)));
+  const [more, setMore] = useState(false);
+  const place = mode === 'place';
+  useEffect(() => {
+    if (!place) setMore(false);
+  }, [place]);
+  const tool = (next: 'remove' | 'clear') => {
+    setMore(false);
+    setTool(next);
+  };
+
+  return (
+    <div className="build-dock build-dock--strip is-touch" ref={dockRef} data-testid="build-dock" data-mode={mode} data-layout={palette ? 'strip-palette' : 'strip'} data-camera-cover="">
+      <StatusLine touch={touch} />
+      {mode === 'remove' ? <SelectionCard /> : null}
+      {mode === 'remove' || mode === 'clear' ? <NatureCard /> : null}
+      {palette ? (
+        <div className="build-panel build-overlay" data-testid="build-palette-overlay">
+          <Palette onPick={() => dockEvent({ type: 'pick', kind: useBuildStore.getState().kind })} />
+          {isRoof ? <RoofOptions /> : null}
+          <div className="build-bar">
+            <Variants kind={kind} />
+            <button type="button" className="btn btn--ghost btn--sm build-overlay__close" onClick={() => dockEvent({ type: 'collapse' })} data-testid="build-palette-close">
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <div className="build-panel build-strip" data-testid="build-strip">
+        {place && PIECES[kind].text ? <SignInput /> : null}
+        <div className="build-strip__row">
+          {place ? (
+            <button type="button" className={`build-chip${palette ? ' is-on' : ''}`} onClick={() => dockEvent({ type: 'chip' })} aria-expanded={palette} aria-label={`${PIECES[kind].name} — choose a piece`} data-testid="build-chip" data-kind={kind}>
+              <span className="build-chip__img">{thumb ? <img src={thumb} alt="" draggable={false} /> : <span className="build-tile__ph" />}</span>
+              <span className="build-chip__name">{PIECES[kind].name}</span>
+              {lock !== null ? <span className="build-chip__lvl">{lock === 0 ? 'G' : lock + 1}</span> : null}
+            </button>
+          ) : (
+            <button type="button" className="build-act build-act--wide is-on" onClick={() => setTool('place')} aria-pressed="true" data-testid={mode === 'remove' ? 'build-tool-remove' : 'build-tool-clear'}>
+              <Glyph d={mode === 'remove' ? ERASE : LEAF_ICON} />
+              <span className="build-act__label">Back to building</span>
+            </button>
+          )}
+          {place ? (
+            <button type="button" className="build-act" onClick={() => rotate(1)} aria-label={isRoof ? 'Turn the ridge' : 'Rotate piece'} title="Rotate (R)" data-testid="build-rotate">
+              <Glyph d={ROTATE} />
+            </button>
+          ) : null}
+          <button type="button" className="build-act" onClick={() => undo()} disabled={!canUndo} aria-label="Undo last piece" data-testid="build-undo">
+            <Glyph d={UNDO} />
+          </button>
+          <span className="build-more">
+            <button type="button" className={`build-act${more ? ' is-open' : ''}`} onClick={() => setMore((v) => !v)} aria-expanded={more} aria-label="More" data-testid="build-more">
+              <span className="build-act__dots" aria-hidden="true">···</span>
+            </button>
+            {more ? (
+              <span className="build-menu build-menu--strip" role="menu" data-testid="build-menu">
+                {place ? <StoreyControl /> : null}
+                {place && repeat ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="build-menu__item"
+                    onClick={() => {
+                      setMore(false);
+                      nextSegment();
+                    }}
+                    data-testid="build-next"
+                  >
+                    Next along the run
+                  </button>
+                ) : null}
+                {place ? (
+                  <>
+                    <button type="button" role="menuitem" className="build-menu__item" onClick={() => tool('remove')} data-testid="build-tool-remove">
+                      Remove or report a piece
+                    </button>
+                    <button type="button" role="menuitem" className="build-menu__item" onClick={() => tool('clear')} data-testid="build-tool-clear">
+                      Clear a bush or rock
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="build-menu__item"
+                  onClick={() => {
+                    setMore(false);
+                    unstuck();
+                  }}
+                  data-testid="build-unstuck"
+                >
+                  Stuck? Back to the Town Square
+                </button>
+              </span>
+            ) : null}
+          </span>
+          {place ? (
+            <button type="button" className="btn btn--primary build-place" onClick={() => placeGhost()} disabled={!ghostOk && !cornerPick} data-testid="build-place">
+              <Glyph d={PLACE} size={18} /> Place
+            </button>
+          ) : null}
+          <button type="button" className="btn btn--ghost build-done" onClick={() => exitBuild()} data-testid="build-done">
+            Done
+          </button>
         </div>
       </div>
     </div>

@@ -379,3 +379,53 @@
   .build-storey__label { height: 30px; }
   .build-seg__btn { height: 24px; }
 }
+
+/* --- Landscape phones: the slim build strip (StripDock) ---------------------------------------- */
+@media (max-height: 500px) and (orientation: landscape) {
+  .build-dock--strip { gap: 6px; }
+  .build-strip { padding: 3px; border-radius: 18px; gap: 3px; }
+  .build-strip .build-sign { flex: none; min-width: 0; }
+  .build-strip .build-sign__input { height: 36px; }
+  .build-strip__row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+  .build-strip .build-act { width: 44px; height: 44px; flex: none; border-radius: 14px; }
+  .build-strip .build-act.is-open { background: var(--fill-2); color: var(--text); }
+  .build-strip .build-act--wide { width: auto; flex-direction: row; gap: 8px; padding: 0 14px 0 10px; margin-right: auto; }
+  .build-strip .build-act--wide .build-act__label { display: inline; font-size: 12.5px; }
+  .build-strip .build-place { --h: 44px; height: 44px; margin-left: 4px; padding: 0 14px; flex: none; }
+  .build-strip .build-done { --h: 44px; height: 44px; margin-left: 2px; padding: 0 14px; flex: none; }
+
+  .build-chip {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 210px;
+    height: 44px;
+    margin-right: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px 0 4px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: var(--fill);
+    color: var(--text);
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), border-color var(--dur);
+  }
+  .build-chip:active { background: var(--fill-2); }
+  .build-chip.is-on { background: rgba(235, 187, 118, 0.14); border-color: rgba(243, 207, 152, 0.45); color: var(--accent-2); }
+  .build-chip__img { flex: none; width: 36px; height: 36px; display: grid; place-items: center; }
+  .build-chip__img img { width: 36px; height: 36px; object-fit: contain; filter: drop-shadow(0 3px 4px rgba(10, 6, 3, 0.35)); }
+  .build-chip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 13px/1.1 var(--font-sans); letter-spacing: 0.01em; }
+  .build-chip__lvl { flex: none; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: rgba(235, 187, 118, 0.18); color: var(--accent-2); font: 700 11px/20px var(--font-sans); text-align: center; }
+
+  /* The palette, opened from the chip over the strip. */
+  .build-overlay { padding: 6px 8px; gap: 4px; animation: build-in-pop 200ms var(--ease-out) both; }
+  .build-overlay .build-bar { min-height: 36px; }
+  .build-overlay__close { --h: 36px; margin-left: auto; }
+
+  .build-menu--strip { display: flex; flex-direction: column; gap: 2px; min-width: 250px; max-height: calc(100dvh - 120px); overflow-y: auto; }
+  .build-menu--strip .build-menu__item { min-height: 44px; }
+  .build-menu--strip .build-storey { align-self: stretch; justify-content: space-between; margin-bottom: 2px; }
+  .build-menu--strip .build-storey__btn { width: 52px; height: 44px; }
+  .build-menu--strip .build-storey__label { flex: 1; height: 44px; }
+}

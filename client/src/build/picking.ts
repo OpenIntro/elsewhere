@@ -2,9 +2,10 @@
  * Screen → piece picking against the instanced piece meshes (BuildLayer
  * registers them with the piece id of every instance).
  */
-import { Raycaster, Vector2, type BufferAttribute, type InstancedMesh, type Object3D } from 'three';
+import { Matrix4, Raycaster, Vector2, Vector3, type BufferAttribute, type InstancedMesh, type Object3D } from 'three';
 import type { Vec2 } from '@elsewhere/shared';
 import { view3d } from '../player/picking.js';
+import { CUT_OFFSET } from './materials.js';
 
 export interface PickTarget {
   mesh: InstancedMesh;
@@ -16,12 +17,15 @@ export const pickTargets = new Set<PickTarget>();
 
 const ray = new Raycaster();
 const ndc = new Vector2();
+const _im = new Matrix4();
+const _n = new Vector3();
 
 /**
  * Nearest piece under a screen point. Pieces dissolved for the local player
- * (roofs / upper storeys / walls thinned between camera and player) are
- * looked through — you point at what you can see. `accept` narrows the hit
- * further (e.g. only walls, for wall mounts).
+ * (roofs / upper storeys / walls thinned between camera and player) and the
+ * parts of walls cut away by a built interior's cutaway are looked through —
+ * you point at what you can see. `accept` narrows the hit further (e.g. only
+ * walls, for wall mounts).
  */
 function cast(clientX: number, clientY: number, accept?: (id: string) => boolean) {
   const cam = view3d.camera;
@@ -44,6 +48,15 @@ function cast(clientX: number, clientY: number, accept?: (id: string) => boolean
     const id = t.ids[h.instanceId];
     const fade = (t.mesh.geometry.getAttribute('aFade') as BufferAttribute | undefined)?.getX(h.instanceId) ?? 0;
     if (fade > 0.5) continue;
+    // Above a cut (the stub of a camera-side wall in the room you are in): not there.
+    const cut = (t.mesh.geometry.getAttribute('aCut') as BufferAttribute | undefined)?.getX(h.instanceId) ?? 0;
+    if (cut > 0.5 && h.point.y > cut - CUT_OFFSET + 0.005) continue;
+    // The materials draw both sides (for the cut caps): a back face is never what you point at.
+    if (h.face) {
+      t.mesh.getMatrixAt(h.instanceId, _im);
+      _n.copy(h.face.normal).transformDirection(_im).transformDirection(h.object.matrixWorld);
+      if (_n.dot(ray.ray.direction) > 0) continue;
+    }
     if (id && accept && !accept(id)) continue;
     if (id) return { id, point: h.point, normalY: h.face?.normal ? h.face.normal.clone().transformDirection(h.object.matrixWorld).y : 0 };
   }

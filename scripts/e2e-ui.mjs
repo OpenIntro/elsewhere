@@ -14,6 +14,7 @@
  * Exit code 0 = pass. Set SHOTS=dir to save screenshots of each step.
  */
 import { createRequire } from 'node:module';
+import { resultFile } from './lib/report.mjs';
 
 async function loadPlaywright() {
   try {
@@ -30,12 +31,15 @@ const T = 45_000;
 const log = (...a) => console.log('[e2e]', ...a);
 const errors = [];
 const results = [];
+const resultOut = resultFile('ui', () => errors);
 const pass = (name, detail = '') => {
   results.push({ name, ok: true, detail });
+  resultOut.add(name, true, detail);
   log('PASS', name, detail);
 };
 const failStep = (name, err) => {
   results.push({ name, ok: false, detail: String(err?.message ?? err) });
+  resultOut.add(name, false, String(err?.message ?? err));
   console.error('[e2e] FAIL', name, '-', err?.message ?? err);
 };
 
@@ -527,6 +531,7 @@ const relevant = errors.filter((e) => !/WebGL|GPU stall|GL_|swiftshader/i.test(e
 if (relevant.length) {
   console.error('[e2e] console/page errors:\n  ' + relevant.join('\n  '));
   results.push({ name: 'no console errors', ok: false, detail: `${relevant.length} errors` });
+  resultOut.add('no console errors', false, `${relevant.length} errors`);
 } else pass('no console or page errors');
 
 const failed = results.filter((r) => !r.ok);

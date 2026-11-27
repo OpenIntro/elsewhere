@@ -37,6 +37,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resultFile } from './lib/report.mjs';
 
 async function loadPlaywright() {
   try {
@@ -67,8 +68,10 @@ const DATA_DIR = mkdtempSync(path.join(tmpdir(), 'elsewhere-e2e-'));
 const log = (...a) => console.log('[e2e]', ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
+const resultOut = resultFile('player', () => consoleErrors);
 function record(name, ok, detail) {
   results.push({ name, ok, detail });
+  resultOut.add(name, ok, detail);
   log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 

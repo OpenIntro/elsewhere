@@ -77,7 +77,88 @@ export const cameraRuntime = {
   freeZ: 0,
   /** Set by recenter(): the rig re-snaps focus smoothly to the player. */
   recenterAt: 0,
+  /**
+   * Phone focus shift (CSS px, + = right / down): where on screen the rig puts what it follows,
+   * relative to the viewport centre, so the player sits in the part of the screen that the build
+   * strip / palette / a peek sheet leaves uncovered. `shiftTarget*` is computed by the rig from the
+   * UI's cover rects (`[data-camera-cover]`), `shift*` eases toward it. The rig moves its look-at
+   * point (never a projection offset), so ground picking, build raycasts and runtime.view all agree.
+   */
+  shiftX: 0,
+  shiftY: 0,
+  shiftTargetX: 0,
+  shiftTargetY: 0,
+  /** The thing being used (e.g. the piano) — kept in the uncovered part with the player. */
+  coverSubject: null as { x: number; z: number } | null,
 };
+
+export interface ScreenRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * The largest axis-aligned part of a W×H viewport that the cover rects leave free: each cover cuts
+ * the free rect on whichever side (above / below / left / right of it) keeps the most area. Covers
+ * that would leave less than `minShare` of the viewport are ignored (a full-height sheet is a panel
+ * you read, not something to frame the world around).
+ */
+export function freeRectFor(width: number, height: number, covers: readonly ScreenRect[], topInset = 0, minShare = 0.18): ScreenRect {
+  let f: ScreenRect = { left: 0, top: Math.min(topInset, height / 3), right: width, bottom: height };
+  for (const c of covers) {
+    const l = Math.max(c.left, f.left);
+    const r = Math.min(c.right, f.right);
+    const t = Math.max(c.top, f.top);
+    const b = Math.min(c.bottom, f.bottom);
+    if (r <= l || b <= t) continue; // outside what is still free
+    const cuts: ScreenRect[] = [
+      { ...f, bottom: t },
+      { ...f, top: b },
+      { ...f, right: l },
+      { ...f, left: r },
+    ];
+    let best: ScreenRect | null = null;
+    let bestA = 0;
+    for (const k of cuts) {
+      const a = Math.max(0, k.right - k.left) * Math.max(0, k.bottom - k.top);
+      if (a > bestA) {
+        bestA = a;
+        best = k;
+      }
+    }
+    if (best && bestA >= minShare * width * height) f = best;
+  }
+  return f;
+}
+
+/**
+ * Focus-shift target in CSS px (+ = right / down from the viewport centre): the centre of the free
+ * rect. Zero when nothing covers the view.
+ */
+export function shiftForFree(width: number, height: number, free: ScreenRect, topInset = 0): { x: number; y: number } {
+  const full = free.left <= 0.5 && free.right >= width - 0.5 && free.bottom >= height - 0.5 && free.top <= Math.min(topInset, height / 3) + 0.5;
+  if (full) return { x: 0, y: 0 };
+  return { x: (free.left + free.right) / 2 - width / 2, y: (free.top + free.bottom) / 2 - height / 2 };
+}
+
+/**
+ * Camera look-at point that puts the ground point `p` at screen offset (sx, sy) CSS px from the
+ * viewport centre, for an orthographic camera at `yaw` / ELEVATION with `zoom` px per metre.
+ * (Screen right on the ground = (cos yaw, −sin yaw); screen up = away from the camera =
+ * −(sin yaw, cos yaw), foreshortened by sin(ELEVATION).)
+ */
+export function lookAtForShift(px: number, pz: number, sx: number, sy: number, yaw: number, zoom: number, out: { x: number; z: number } = { x: 0, z: 0 }): { x: number; z: number } {
+  const s = Math.sin(yaw);
+  const c = Math.cos(yaw);
+  const r = sx / zoom; // metres along screen right
+  const d = sy / (zoom * Math.sin(ELEVATION)); // metres toward the camera (screen down)
+  // p = F + right·r + toward·d, toward-camera on the ground = (sin yaw, cos yaw)
+  out.x = px - c * r - s * d;
+  out.z = pz + s * r - c * d;
+  return out;
+}
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 function persistZoom(z: number): void {

@@ -65,7 +65,59 @@ export interface BuildUiState {
   editing: string | null;
   /** Cleared bushes / rocks (ids), mirrored from the server. */
   cleared: ReadonlySet<string>;
+  /** Landscape phone strip: the palette is open over the strip (see dockReducer). */
+  paletteOpen: boolean;
   set(p: Partial<BuildUiState>): void;
+}
+
+/**
+ * Build dock layout. Desktop and portrait phones: the full dock. Landscape phones
+ * (`STRIP_QUERY`): a slim strip (chosen-piece chip, Rotate, Undo, ···, Place, Done)
+ * with the palette opened over it from the chip.
+ */
+export const STRIP_QUERY = '(max-height: 500px) and (orientation: landscape)';
+export type DockLayout = 'closed' | 'dock' | 'strip' | 'strip-palette';
+export interface DockState {
+  open: boolean;
+  palette: boolean;
+  kind: PieceKind;
+}
+export type DockEvent =
+  | { type: 'enter' }
+  | { type: 'chip' }
+  | { type: 'pick'; kind: PieceKind }
+  | { type: 'collapse' }
+  | { type: 'orient' }
+  | { type: 'done' };
+
+/** Pure dock state machine (the strip's palette overlay; the chosen piece survives everything but a new pick). */
+export function dockReducer(s: DockState, e: DockEvent): DockState {
+  switch (e.type) {
+    case 'enter':
+      return { ...s, open: true, palette: false };
+    case 'chip':
+      return s.open ? { ...s, palette: !s.palette } : s;
+    case 'pick':
+      return { ...s, kind: e.kind, palette: false };
+    case 'collapse':
+    case 'orient':
+      return { ...s, palette: false };
+    case 'done':
+      return { ...s, open: false, palette: false };
+  }
+}
+
+export function dockLayout(s: DockState, landscapePhone: boolean): DockLayout {
+  if (!s.open) return 'closed';
+  if (!landscapePhone) return 'dock';
+  return s.palette ? 'strip-palette' : 'strip';
+}
+
+/** Apply a dock event to the store (BuildUi). */
+export function dockEvent(e: DockEvent): void {
+  const st = useBuildStore.getState();
+  const next = dockReducer({ open: st.mode !== 'off', palette: st.paletteOpen, kind: st.kind }, e);
+  if (next.palette !== st.paletteOpen) st.set({ paletteOpen: next.palette });
 }
 
 export const useBuildStore = create<BuildUiState>()((set) => ({
@@ -90,6 +142,7 @@ export const useBuildStore = create<BuildUiState>()((set) => ({
   roofPitch: 1,
   editing: null,
   cleared: new Set<string>(),
+  paletteOpen: false,
   set: (p) => set(p),
 }));
 

@@ -23,13 +23,14 @@
  * Env: ACCEPT_PORT, ACCEPT_DATA_DIR, ACCEPT_SHOTS (screenshot dir, default
  * docs/screenshots/acceptance; "0" disables), ACCEPT_VERBOSE=1 (server output).
  */
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer } from './lib/server.mjs';
+import { resultFile } from './lib/report.mjs';
 
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
 
@@ -55,8 +56,10 @@ const T = 60_000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log('[accept]', ...a);
 const results = [];
+const resultOut = resultFile('acceptance', () => pageErrors);
 function record(name, ok, detail = '') {
   results.push({ name, ok, detail });
+  resultOut.add(name, ok, detail);
   console.log(`[accept] ${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 async function check(name, fn) {
@@ -76,33 +79,13 @@ function assert(cond, msg) {
 // Server process (production build)
 // ---------------------------------------------------------------------------
 let server = null;
-let serverExit = null;
+const serverHandle = createServer({ port: PORT, env: SERVER_ENV, dataDir: DATA_DIR, label: 'accept', verbose: !!process.env.ACCEPT_VERBOSE });
 async function startServer() {
-  assert(existsSync(path.join(ROOT, 'server/dist/index.js')) && existsSync(path.join(ROOT, 'client/dist/index.html')), 'production build missing: run `npm run build` first');
-  server = spawn(process.execPath, [path.join(ROOT, 'server/dist/index.js')], { cwd: ROOT, env: { ...process.env, ...SERVER_ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
-  serverExit = new Promise((r) => server.once('exit', r));
-  const out = (d) => process.env.ACCEPT_VERBOSE && process.stdout.write(`[server] ${d}`);
-  server.stdout.on('data', out);
-  server.stderr.on('data', (d) => process.stderr.write(`[server] ${d}`));
-  const t0 = Date.now();
-  while (Date.now() - t0 < 30_000) {
-    try {
-      if ((await fetch(`${BASE}/api/health`)).ok) return;
-    } catch {
-      /* not yet */
-    }
-    await sleep(200);
-  }
-  throw new Error('server did not become healthy');
+  await serverHandle.start();
+  server = serverHandle.proc;
 }
 async function stopServer() {
-  if (!server || server.exitCode !== null) return;
-  server.kill('SIGTERM');
-  const done = await Promise.race([serverExit.then(() => true), sleep(15_000).then(() => false)]);
-  if (!done) {
-    server.kill('SIGKILL');
-    await serverExit;
-  }
+  await serverHandle.stop();
 }
 
 // ---------------------------------------------------------------------------

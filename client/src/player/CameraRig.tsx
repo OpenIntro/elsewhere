@@ -10,11 +10,12 @@
  */
 import { OrthographicCamera } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { OrthographicCamera as ThreeOrtho } from 'three';
 import { WORLD_BOUNDS, clamp, groundHeight } from '@elsewhere/shared';
+import { registerDebugSection } from '../net/index.js';
 import { runtime } from '../state/runtime.js';
-import { ELEVATION, ROTATE_MS, cameraRuntime, easeInOut, runtimeFocus, useCameraStore, viewportScaleFor } from './camera.js';
+import { ELEVATION, ROTATE_MS, cameraRuntime, easeInOut, freeRectFor, lookAtForShift, runtimeFocus, shiftForFree, useCameraStore, viewportScaleFor, type ScreenRect } from './camera.js';
 
 /** Distance from focus to camera (orthographic: only affects clipping). */
 const DISTANCE = 70;
@@ -22,11 +23,59 @@ const DISTANCE = 70;
 export const ISO_OFFSET = { x: 30, y: 30, z: 30 } as const;
 /** Free camera may wander at most this far from the player. */
 const FREE_MAX_DISTANCE = 45;
+/** How often the UI's cover rects are re-read (ms, wall clock). */
+const COVER_POLL_MS = 120;
+/** Focus-shift easing rate (1/s): ~90% of the way in 0.4 s. */
+const SHIFT_RATE = 6;
+/** Phone layouts (same breakpoints as ui.css): the only place the focus shift applies. */
+const PHONE_QUERY = '(max-width: 720px), (max-height: 500px) and (orientation: landscape)';
+/** Top bar height kept out of the free rect (phones). */
+const TOP_INSET = 56;
+const lookOut = { x: 0, z: 0 };
+const lastCover: { free: ScreenRect | null; covers: number } = { free: null, covers: 0 };
+
+/** Read the UI's cover rects and set the shift target (zero on desktop layouts or with nothing covering). */
+function updateShiftTarget(width: number, height: number): void {
+  let tx = 0;
+  let ty = 0;
+  lastCover.free = null;
+  lastCover.covers = 0;
+  if (typeof document !== 'undefined' && typeof window !== 'undefined' && window.matchMedia?.(PHONE_QUERY).matches) {
+    const rects: ScreenRect[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>('[data-camera-cover]')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      rects.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+    }
+    lastCover.covers = rects.length;
+    if (rects.length) {
+      const free = freeRectFor(width, height, rects, TOP_INSET);
+      lastCover.free = free;
+      const s = shiftForFree(width, height, free, TOP_INSET);
+      tx = s.x;
+      ty = s.y;
+    }
+  }
+  cameraRuntime.shiftTargetX = tx;
+  cameraRuntime.shiftTargetY = ty;
+}
 
 export function CameraRig() {
   const cam = useRef<ThreeOrtho>(null);
   const size = useThree((s) => s.size);
   const focus = useRef({ x: 0, y: 0, z: 0, lx: 0, lz: 0, init: false });
+  const covers = useRef({ at: 0, last: 0, mix: 0, sx: 0, sz: 0 });
+
+  useEffect(() => {
+    const r1 = (n: number) => Math.round(n * 10) / 10;
+    registerDebugSection('cameraShift', () => ({
+      shift: { x: r1(cameraRuntime.shiftX), y: r1(cameraRuntime.shiftY) },
+      target: { x: r1(cameraRuntime.shiftTargetX), y: r1(cameraRuntime.shiftTargetY) },
+      free: lastCover.free ? { left: Math.round(lastCover.free.left), top: Math.round(lastCover.free.top), right: Math.round(lastCover.free.right), bottom: Math.round(lastCover.free.bottom) } : null,
+      covers: lastCover.covers,
+      subject: cameraRuntime.coverSubject,
+    }));
+  }, []);
 
   // runtime.view must be valid before the first frame and immediately after a resize
   // (shadow / culling consumers may run before this rig's useFrame in a frame).
@@ -113,10 +162,41 @@ export function CameraRig() {
     const gy = lp.ready && !cs.free ? lp.y : groundHeight(f.x, f.z);
     f.y += (gy - f.y) * (1 - Math.exp(-dt * 4));
 
+    // Phone focus shift: frame what we follow in the part of the screen the UI leaves free. Eased on
+    // wall-clock time (not the capped frame dt) so it settles in ~0.5 s even at a few frames a second.
+    if (now - covers.current.at > COVER_POLL_MS) {
+      covers.current.at = now;
+      updateShiftTarget(size.width, size.height);
+    }
+    const realDt = covers.current.last ? Math.min(0.5, (now - covers.current.last) / 1000) : 0;
+    covers.current.last = now;
+    const sk = 1 - Math.exp(-realDt * SHIFT_RATE);
+    cameraRuntime.shiftX += (cameraRuntime.shiftTargetX - cameraRuntime.shiftX) * sk;
+    cameraRuntime.shiftY += (cameraRuntime.shiftTargetY - cameraRuntime.shiftY) * sk;
+    if (Math.abs(cameraRuntime.shiftX - cameraRuntime.shiftTargetX) < 0.25) cameraRuntime.shiftX = cameraRuntime.shiftTargetX;
+    if (Math.abs(cameraRuntime.shiftY - cameraRuntime.shiftTargetY) < 0.25) cameraRuntime.shiftY = cameraRuntime.shiftTargetY;
+
     const yaw = cameraRuntime.yaw;
+    // What is framed: the followed point, or the midpoint with the thing being used (piano, …).
+    const subj = cameraRuntime.coverSubject;
+    const sm = covers.current;
+    const useSubj = !!subj && lp.ready && !cs.free && Math.hypot(subj.x - f.x, subj.z - f.z) < 6;
+    if (useSubj) {
+      sm.sx = subj.x;
+      sm.sz = subj.z;
+    }
+    sm.mix += ((useSubj ? 1 : 0) - sm.mix) * sk;
+    if (sm.mix < 0.002) sm.mix = 0;
+    const px = f.x + (sm.sx - f.x) * 0.5 * sm.mix;
+    const pz = f.z + (sm.sz - f.z) * 0.5 * sm.mix;
+    const sx = cameraRuntime.shiftX;
+    const sy = cameraRuntime.shiftY;
+    const look = sx || sy || sm.mix ? lookAtForShift(px, pz, sx, sy, yaw, zoom, lookOut) : null;
+    const lx = look ? look.x : f.x;
+    const lz = look ? look.z : f.z;
     const hd = Math.cos(ELEVATION) * DISTANCE;
-    c.position.set(f.x + Math.sin(yaw) * hd, f.y + Math.sin(ELEVATION) * DISTANCE, f.z + Math.cos(yaw) * hd);
-    c.lookAt(f.x, f.y, f.z);
+    c.position.set(lx + Math.sin(yaw) * hd, f.y + Math.sin(ELEVATION) * DISTANCE, lz + Math.cos(yaw) * hd);
+    c.lookAt(lx, f.y, lz);
     if (Math.abs(c.zoom - zoom) > 1e-4) {
       c.zoom = zoom;
       c.updateProjectionMatrix();
@@ -125,9 +205,10 @@ export function CameraRig() {
     runtimeFocus.x = f.x;
     runtimeFocus.z = f.z;
     const v = runtime.view;
-    v.focusX = f.x;
+    // runtime.view is what is actually on screen (shadow frustum, culling): the shifted look-at.
+    v.focusX = lx;
     v.focusY = f.y;
-    v.focusZ = f.z;
+    v.focusZ = lz;
     v.yaw = yaw;
     v.zoom = zoom;
     v.halfWidth = halfW;

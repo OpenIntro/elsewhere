@@ -6,7 +6,7 @@
  *   npm run build && npm run e2e:build2
  *
  * Spawns its own production server (`node server/dist/index.js`, PORT
- * $BUILD2_PORT or 2634, fresh DATA_DIR in the OS temp dir unless
+ * $BUILD2_PORT or 2635, fresh DATA_DIR in the OS temp dir unless
  * $BUILD2_DATA_DIR). Client A: desktop 1440x900 (mouse + keyboard). Client
  * B: Pixel 7 emulation (touch; keyboard for walking). Client C: a late
  * desktop joiner. Low graphics (headless WebGL is software-rendered).
@@ -33,13 +33,14 @@
  * Every UI action is a real input in a real page. Check 11's forged clears
  * come from a protocol client holding B's own session token.
  */
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer } from './lib/server.mjs';
+import { resultFile } from './lib/report.mjs';
 import { Client } from '@colyseus/sdk';
 import { CONFIG, PIECES, ROOM_NAME, TREES, clearableNature, defaultCollisionWorld, natureItem, pieceColliders } from '@elsewhere/shared';
 import { BUSH_WALL, HOUSE, twoStoreyHouse } from './lib/plans2.mjs';
@@ -48,7 +49,7 @@ import { aimGhost, assert, buildState, choosePiece, hopToward, keyboardRoute, op
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PORT = Number(process.env.BUILD2_PORT ?? 2634);
+const PORT = Number(process.env.BUILD2_PORT ?? 2635);
 const BASE = `http://localhost:${PORT}`;
 const DATA_DIR = process.env.BUILD2_DATA_DIR ?? mkdtempSync(path.join(tmpdir(), 'elsewhere-build2-'));
 const SHOTS = process.env.BUILD2_SHOTS ? path.resolve(ROOT, process.env.BUILD2_SHOTS) : null;
@@ -56,8 +57,10 @@ const NAME = 'Fern Cottage';
 
 const log = (...a) => console.log('[build2]', ...a);
 const results = [];
+const resultOut = resultFile('build2', () => pageErrors);
 function record(name, ok, detail = '') {
   results.push({ name, ok, detail });
+  resultOut.add(name, ok, detail);
   console.log(`[build2] ${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 async function check(name, fn) {
@@ -76,34 +79,14 @@ async function check(name, fn) {
 
 // --- server ------------------------------------------------------------------
 let server = null;
-let serverExit = null;
 const SECRET = randomBytes(32).toString('hex');
+const serverHandle = createServer({ port: PORT, env: { SESSION_SECRET: SECRET }, dataDir: DATA_DIR, label: 'build2', verbose: !!process.env.BUILD2_VERBOSE });
 async function startServer() {
-  assert(existsSync(path.join(ROOT, 'server/dist/index.js')) && existsSync(path.join(ROOT, 'client/dist/index.html')), 'production build missing: run `npm run build` first');
-  const env = { ...process.env, NODE_ENV: 'production', PORT: String(PORT), DATA_DIR, SESSION_SECRET: SECRET };
-  server = spawn(process.execPath, [path.join(ROOT, 'server/dist/index.js')], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  serverExit = new Promise((r) => server.once('exit', r));
-  server.stdout.on('data', (d) => process.env.BUILD2_VERBOSE && process.stdout.write(`[server] ${d}`));
-  server.stderr.on('data', (d) => process.stderr.write(`[server] ${d}`));
-  const t0 = Date.now();
-  while (Date.now() - t0 < 30_000) {
-    try {
-      if ((await fetch(`${BASE}/api/health`)).ok) return;
-    } catch {
-      /* not yet */
-    }
-    await sleep(200);
-  }
-  throw new Error('server did not become healthy');
+  await serverHandle.start();
+  server = serverHandle.proc;
 }
 async function stopServer() {
-  if (!server || server.exitCode !== null) return;
-  server.kill('SIGTERM');
-  const done = await Promise.race([serverExit.then(() => true), sleep(15_000).then(() => false)]);
-  if (!done) {
-    server.kill('SIGKILL');
-    await serverExit;
-  }
+  await serverHandle.stop();
 }
 
 // --- helpers -----------------------------------------------------------------

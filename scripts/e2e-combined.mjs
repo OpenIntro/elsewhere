@@ -54,7 +54,6 @@
  * The forged messages in check 1 come from a protocol client holding A's own
  * session token — exactly what a modified client could send.
  */
-import { spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
@@ -85,6 +84,8 @@ import {
   zoneContains,
 } from '@elsewhere/shared';
 import { keyboardRoute, route } from './lib/browser.mjs';
+import { createServer } from './lib/server.mjs';
+import { resultFile } from './lib/report.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright');
@@ -101,8 +102,10 @@ const T = 90_000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log('[combined]', ...a);
 const results = [];
+const resultOut = resultFile('combined', () => pageErrors);
 function record(name, ok, detail = '') {
   results.push({ name, ok, detail });
+  resultOut.add(name, ok, detail);
   console.log(`[combined] ${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 let a = null;
@@ -130,38 +133,7 @@ function assert(cond, msg) {
 // Server
 // ---------------------------------------------------------------------------
 function makeServer(port, env) {
-  const s = { proc: null, exit: null };
-  s.start = async () => {
-    assert(existsSync(path.join(ROOT, 'server/dist/index.js')) && existsSync(path.join(ROOT, 'client/dist/index.html')), 'production build missing: run `npm run build` first');
-    // Something else on the port would answer the health check and the requests (a misleading failure).
-    const taken = await fetch(`http://localhost:${port}/api/health`).then(() => true, () => false);
-    assert(!taken, `port ${port} is already in use by another server`);
-    s.proc = spawn(process.execPath, [path.join(ROOT, 'server/dist/index.js')], { cwd: ROOT, env: { ...process.env, ...env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
-    s.exit = new Promise((r) => s.proc.once('exit', r));
-    s.proc.stdout.on('data', (d) => process.env.COMB_VERBOSE && process.stdout.write(`[server:${port}] ${d}`));
-    s.proc.stderr.on('data', (d) => process.stderr.write(`[server:${port}] ${d}`));
-    const t0 = Date.now();
-    while (Date.now() - t0 < 30_000) {
-      if (s.proc.exitCode !== null) throw new Error(`server on ${port} exited with ${s.proc.exitCode}`);
-      try {
-        if ((await fetch(`http://localhost:${port}/api/health`)).ok) return;
-      } catch {
-        /* not yet */
-      }
-      await sleep(200);
-    }
-    throw new Error(`server on ${port} did not become healthy`);
-  };
-  s.stop = async () => {
-    if (!s.proc || s.proc.exitCode !== null) return;
-    s.proc.kill('SIGTERM');
-    const done = await Promise.race([s.exit.then(() => true), sleep(15_000).then(() => false)]);
-    if (!done) {
-      s.proc.kill('SIGKILL');
-      await s.exit;
-    }
-  };
-  return s;
+  return createServer({ port, env, label: 'combined', verbose: !!process.env.COMB_VERBOSE, logPrefix: `[server:${port}] ` });
 }
 const server = makeServer(PORT, SERVER_ENV);
 

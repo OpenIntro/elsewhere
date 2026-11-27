@@ -6,6 +6,11 @@
  *    and halos follow the world clock (env.glow);
  *  - upper storeys and roofs near and above the local player fade out
  *    (dithered, per instance) so a roof never hides you;
+ *  - built interiors: inside a room of built pieces (shared `trackEnclosure`,
+ *    with doorway hysteresis) everything above your storey goes completely,
+ *    the room's camera-facing walls drop to 0.95 m stubs (per-instance hard
+ *    cut `aCut`, eased) and the mounts on them go too; far walls and the
+ *    furniture stay whole. Per viewer, no extra draw calls;
  *  - sign boards get their text drawn on a small canvas texture;
  *  - the build ghost (green = valid / red = refused) and the selected piece
  *    highlight of the remove tool.
@@ -31,12 +36,13 @@ import {
   type BufferGeometry,
   type Material,
 } from 'three';
-import { CONFIG, PIECES, footprintOf, groundHeight, type PieceKind, type PieceRecord } from '@elsewhere/shared';
+import { CONFIG, NO_ENCLOSURE, PIECES, footprintOf, groundHeight, trackEnclosure, type EnclosureTrack, type PieceKind, type PieceRecord } from '@elsewhere/shared';
 import { registerDebugSection } from '../net/index.js';
 import { runtime } from '../state/runtime.js';
 import { makeBillboards } from '../world/billboard.js';
 import { env } from '../world/env.js';
-import { GHOST_BAD, GHOST_BAD_EMISSIVE, GHOST_OK, GHOST_OK_EMISSIVE, ghostMaterial, lampGlassMaterial, pieceDepthMaterial, pieceGlassMaterial, pieceMaterial } from './materials.js';
+import { CUT_STUB, planCutaway } from './builtCutaway.js';
+import { CUT_OFFSET, GHOST_BAD, GHOST_BAD_EMISSIVE, GHOST_OK, GHOST_OK_EMISSIVE, ghostMaterial, lampGlassMaterial, pieceDepthMaterial, pieceGlassMaterial, pieceMaterial } from './materials.js';
 import { SIGN_FACE, templateFor, templateTriangles, type Bucket } from './meshes.js';
 import { CLOCK_FACE, GLOW_AT, TEXT_FACES } from './meshes2.js';
 import { natureItem, rotateOffset, worldTimeAt } from '@elsewhere/shared';
@@ -51,6 +57,18 @@ const _r = new Matrix4();
 const WARM = new Color('#ffc77e');
 const LAMP_OFF = new Color('#8a8070');
 const _c = new Color();
+const ZERO = new Matrix4().makeScale(0, 0, 0);
+
+/** The built-interior cutaway as the local player sees it this tick. */
+interface CutawayState {
+  cut: Set<string>;
+  hidden: Set<string>;
+  /** The room's own wall pieces (outline + partitions): never dithered while you are in it. */
+  room: Set<string>;
+  storey: number;
+  toggles: number;
+  hiddenKey: string;
+}
 
 interface GroupEntry {
   key: string;
@@ -61,6 +79,10 @@ interface GroupEntry {
   capacity: number;
   /** Fade state per instance (upper pieces only). */
   fade: Float32Array;
+  /** Cut amount per instance (0 = whole, 1 = cut down to its stub). */
+  cut: Float32Array;
+  /** Instance hidden by the built-interior cutaway (its glow bits / halo / text go too). */
+  hid: Uint8Array;
   upper: boolean;
 }
 
@@ -165,6 +187,19 @@ function nameTexture(text: string, bg: string, ink: string, aspect: number, font
   return tex;
 }
 
+/**
+ * `aCut` value of a piece at cut amount `c` (0 = whole → no cut): the clip
+ * height sweeps from just over the piece's top down to its stub (walls:
+ * CUT_STUB above the base; wall mounts: below their base, i.e. gone).
+ */
+function cutHeight(p: PieceRecord, c: number, cs: Pick<CutawayState, 'hidden'>): number {
+  if (c < 0.002) return 0;
+  const d = PIECES[p.kind];
+  const top = (d.mount ? d.mount.y1 : d.h) + 0.05;
+  const stub = d.mount || cs.hidden.has(p.id) ? -0.05 : CUT_STUB;
+  return CUT_OFFSET + p.y + top + (stub - top) * Math.min(1, c);
+}
+
 export function BuildLayer() {
   const root = useRef<Group>(null);
   const gl = useThree((s) => s.gl);
@@ -172,6 +207,8 @@ export function BuildLayer() {
   const signs = useRef(new Map<string, { holder: Group; mat: MeshStandardMaterial; text: string }>());
   const seen = useRef(-1);
   const lastFade = useRef(0);
+  const track = useRef<EnclosureTrack>(NO_ENCLOSURE);
+  const cutaway = useRef<CutawayState>({ cut: new Set(), hidden: new Set(), room: new Set(), storey: 0, toggles: 0, hiddenKey: '' });
 
   const halos = useMemo(() => {
     const m = makeBillboards(256, 'glow', true);
@@ -233,6 +270,22 @@ export function BuildLayer() {
       const info = gl.info.render;
       return { groups: groups.current.size, drawCalls, triangles: Math.round(triangles), instances, signs: signs.current.size, halos: halos.count, frame: { calls: info.calls, triangles: info.triangles }, programs: gl.info.programs?.length ?? 0 };
     });
+    // Read-only: the built-interior cutaway for the local player (tests).
+    registerDebugSection('builtCutaway', () => {
+      const t = track.current;
+      const e = t.active ? t.enclosure : null;
+      const cs = cutaway.current;
+      const cut: Record<string, number> = {};
+      const fade: Record<string, number> = {};
+      for (const g of groups.current.values()) {
+        g.list.forEach((p, i) => {
+          if (g.cut[i]! > 0.001) cut[p.id] = Math.round(g.cut[i]! * 1000) / 1000;
+          if (g.fade[i]! > 0.001) fade[p.id] = Math.round(g.fade[i]! * 1000) / 1000;
+        });
+      }
+      const settled = [...cs.cut].every((id) => (cut[id] ?? 0) >= 0.999) && [...cs.hidden].every((id) => (cut[id] ?? 0) >= 0.999 || (fade[id] ?? 0) >= 0.999);
+      return { active: !!e, kind: e?.kind ?? null, rect: e?.rect ?? null, storey: e ? e.storey : null, cutIds: [...cs.cut], hiddenIds: [...cs.hidden], toggles: cs.toggles, settled, cut, fade };
+    });
   }, [gl, halos]);
 
   function ensureGroup(key: string, sample: PieceRecord, need: number): GroupEntry {
@@ -253,7 +306,10 @@ export function BuildLayer() {
     const fade = new Float32Array(capacity);
     for (const [bucket, geo] of template) {
       const cloned: BufferGeometry = geo.clone();
-      if (bucket !== 'glow') cloned.setAttribute('aFade', new InstancedBufferAttribute(new Float32Array(capacity), 1));
+      if (bucket !== 'glow') {
+        cloned.setAttribute('aFade', new InstancedBufferAttribute(new Float32Array(capacity), 1));
+        cloned.setAttribute('aCut', new InstancedBufferAttribute(new Float32Array(capacity), 1));
+      }
       const mesh = new InstancedMesh(cloned, MAT[bucket], capacity);
       mesh.count = 0;
       mesh.castShadow = bucket === 'solid';
@@ -268,7 +324,7 @@ export function BuildLayer() {
         pickTargets.add(t);
       }
     }
-    g = { key, kind: sample.kind, meshes, target, list: [], capacity, fade, upper: false };
+    g = { key, kind: sample.kind, meshes, target, list: [], capacity, fade, cut: new Float32Array(capacity), hid: new Uint8Array(capacity), upper: false };
     groups.current.set(key, g);
     return g;
   }
@@ -292,10 +348,20 @@ export function BuildLayer() {
       for (const t of g.target) t.ids = [];
     }
     for (const [key, list] of byKey) {
+      // Keep each piece's fade / cut through the rebuild (placing a lamp must not flash the room's walls back up).
+      const old = groups.current.get(key);
+      const kept = new Map<string, [number, number]>();
+      if (old) old.list.forEach((p, i) => (old.fade[i]! > 0 || old.cut[i]! > 0) && kept.set(p.id, [old.fade[i]!, old.cut[i]!]));
       const g = ensureGroup(key, list[0]!, list.length);
       g.list = list;
       g.upper = list.some((p) => fades(p) || screens(p));
       g.fade.fill(0);
+      g.cut.fill(0);
+      g.hid.fill(0);
+      list.forEach((p, i) => {
+        const k = kept.get(p.id);
+        if (k) [g.fade[i], g.cut[i]] = k;
+      });
       for (const [bucket, mesh] of g.meshes) {
         list.forEach((p, i) => {
           _m.makeRotationY((p.rot % 4) * (Math.PI / 2));
@@ -307,7 +373,14 @@ export function BuildLayer() {
         const fa = mesh.geometry.getAttribute('aFade') as InstancedBufferAttribute | undefined;
         if (fa) {
           (fa.array as Float32Array).fill(0);
+          (fa.array as Float32Array).set(g.fade.subarray(0, list.length));
           fa.needsUpdate = true;
+        }
+        const ca = mesh.geometry.getAttribute('aCut') as InstancedBufferAttribute | undefined;
+        if (ca) {
+          (ca.array as Float32Array).fill(0);
+          list.forEach((p, i) => ((ca.array as Float32Array)[i] = cutHeight(p, g.cut[i]!, cutaway.current)));
+          ca.needsUpdate = true;
         }
         mesh.computeBoundingSphere();
         void bucket;
@@ -355,6 +428,7 @@ export function BuildLayer() {
         holder.add(back);
       }
       holder.name = `sign:${id}`;
+      holder.visible = !cutaway.current.hidden.has(id);
       root.current?.add(holder);
       signs.current.set(id, { holder, mat, text: p.text! });
     }
@@ -379,6 +453,7 @@ export function BuildLayer() {
       const group = new Group();
       group.position.set(p.x, p.y, p.z);
       group.rotation.y = (p.rot % 4) * (Math.PI / 2);
+      group.visible = !cutaway.current.hidden.has(p.id);
       const hour = new Mesh(handGeo.h, handMat);
       const minute = new Mesh(handGeo.m, handMat);
       for (const m of [hour, minute]) {
@@ -409,9 +484,10 @@ export function BuildLayer() {
     const lamps = [...pieces.index.all()].filter((p) => PIECES[p.kind].light);
     lampList.current = lamps;
     const n = Math.min(lamps.length, 256);
+    const hidden = cutaway.current.hidden;
     for (let i = 0; i < n; i++) {
       const p = lamps[i]!;
-      const size = glowAt(p, _g);
+      const size = hidden.has(p.id) ? 0 : glowAt(p, _g);
       halos.setMatrixAt(i, _m.makeScale(size, size, size).setPosition(_g.x, _g.y, _g.z));
     }
     halos.count = n;
@@ -424,6 +500,20 @@ export function BuildLayer() {
     // Horizontal direction from the focus towards the camera (camera.ts: camera sits at +(sin yaw, cos yaw)).
     const cx = Math.sin(runtime.view.yaw);
     const cz = Math.cos(runtime.view.yaw);
+    // Built interior: the room of built pieces the local player stands in (doorway hysteresis in the tracker).
+    const cs = cutaway.current;
+    const was = track.current.active;
+    track.current = lp.ready ? trackEnclosure(pieces.index, { x: lp.x, z: lp.z, y: lp.y }, track.current) : NO_ENCLOSURE;
+    if (track.current.active !== was) cs.toggles++;
+    const enc = track.current.active ? track.current.enclosure : null;
+    const plan = enc ? planCutaway(pieces.index, enc, runtime.view.yaw, { x: lp.x, z: lp.z }) : null;
+    cs.cut = new Set(plan?.cut);
+    cs.hidden = new Set(plan?.hidden);
+    cs.room = new Set(enc ? [...enc.walls, ...enc.inner].map((w) => w.id) : []);
+    cs.storey = enc?.storey ?? 0;
+    const hiddenKey = plan ? plan.hidden.join(',') : '';
+    const hiddenChanged = hiddenKey !== cs.hiddenKey;
+    cs.hiddenKey = hiddenKey;
     // "Inside": the footprints of roofs / upper floors right over the player (their building dissolves).
     const cover: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
     if (lp.ready) {
@@ -436,18 +526,29 @@ export function BuildLayer() {
     for (const g of groups.current.values()) {
       if (!g.upper || !g.list.length) continue;
       let changed = false;
+      let cutChanged = false;
+      let hidChanged = false;
       g.list.forEach((p, i) => {
         let target = 0;
-        if (lp.ready) {
+        let cutTarget = 0;
+        const hide = cs.hidden.has(p.id);
+        if (lp.ready && (hide || cs.cut.has(p.id))) {
+          // The room you are in: mounts on a cut wall are cut away with it, everything above your storey goes.
+          if (hide && PIECES[p.kind].mount && p.level === cs.storey) cutTarget = 1;
+          else if (hide) target = 1;
+          else cutTarget = 1;
+        } else if (lp.ready && cs.room.has(p.id)) {
+          // The room's own far walls stay whole (no veil over the room).
+        } else if (lp.ready) {
           const f = footprintOf(p);
           if (fades(p)) {
-            // Roofs and upper storeys of the building you are in step aside completely; between the
-            // camera and a player standing close behind them they thin out (like the walls below).
+            // Roofs and upper storeys of the building you are in step aside (a faint silhouette stays);
+            // between the camera and a player standing close behind them they thin out (like the walls below).
             const qx = Math.max(f.minX, Math.min(f.maxX, lp.x));
             const qz = Math.max(f.minZ, Math.min(f.maxZ, lp.z));
             const along = ((f.minX + f.maxX) / 2 - lp.x) * cx + ((f.minZ + f.maxZ) / 2 - lp.z) * cz;
             const over = p.y > lp.y + 1.2;
-            if (over && (Math.hypot(qx - lp.x, qz - lp.z) < 0.5 || cover.some((c) => f.minX < c.maxX + 0.6 && f.maxX > c.minX - 0.6 && f.minZ < c.maxZ + 0.6 && f.maxZ > c.minZ - 0.6))) target = 1;
+            if (over && (Math.hypot(qx - lp.x, qz - lp.z) < 0.5 || cover.some((c) => f.minX < c.maxX + 0.6 && f.maxX > c.minX - 0.6 && f.minZ < c.maxZ + 0.6 && f.maxZ > c.minZ - 0.6))) target = 0.99;
             else if (over && along > 0.15 && Math.hypot(qx - lp.x, qz - lp.z) < 3.2) target = 0.85;
           } else if (screens(p)) {
             // Tall ground pieces between the camera and the player thin out (like the interiors' cutaway).
@@ -463,14 +564,55 @@ export function BuildLayer() {
           g.fade[i] = next;
           changed = true;
         }
+        const cc = g.cut[i]!;
+        const nc = Math.abs(cutTarget - cc) < 0.005 ? cutTarget : cc + (cutTarget - cc) * k;
+        if (nc !== cc) {
+          g.cut[i] = nc;
+          cutChanged = true;
+        }
+        const h = hide ? 1 : 0;
+        if (g.hid[i] !== h) {
+          g.hid[i] = h;
+          hidChanged = true;
+        }
       });
-      if (!changed) continue;
-      for (const mesh of g.meshes.values()) {
-        const fa = mesh.geometry.getAttribute('aFade') as InstancedBufferAttribute | undefined;
-        if (!fa) continue;
-        (fa.array as Float32Array).set(g.fade.subarray(0, g.list.length));
-        fa.needsUpdate = true;
+      if (!changed && !cutChanged && !hidChanged) continue;
+      for (const [bucket, mesh] of g.meshes) {
+        if (bucket === 'glow') {
+          // Lamp glass / fire has no fade: hidden lamps (upstairs) lose it outright.
+          if (!hidChanged) continue;
+          g.list.forEach((p, i) => {
+            if (g.hid[i]) mesh.setMatrixAt(i, ZERO);
+            else {
+              _m.makeRotationY((p.rot % 4) * (Math.PI / 2));
+              _m.setPosition(p.x, p.y, p.z);
+              mesh.setMatrixAt(i, _m);
+            }
+          });
+          mesh.instanceMatrix.needsUpdate = true;
+          continue;
+        }
+        if (changed) {
+          const fa = mesh.geometry.getAttribute('aFade') as InstancedBufferAttribute | undefined;
+          if (fa) {
+            (fa.array as Float32Array).set(g.fade.subarray(0, g.list.length));
+            fa.needsUpdate = true;
+          }
+        }
+        if (cutChanged) {
+          const ca = mesh.geometry.getAttribute('aCut') as InstancedBufferAttribute | undefined;
+          if (ca) {
+            const arr = ca.array as Float32Array;
+            g.list.forEach((p, i) => (arr[i] = cutHeight(p, g.cut[i]!, cs)));
+            ca.needsUpdate = true;
+          }
+        }
       }
+    }
+    if (hiddenChanged) {
+      for (const [id, sg] of signs.current) sg.holder.visible = !cs.hidden.has(id);
+      for (const [id, c] of clocks.current) c.group.visible = !cs.hidden.has(id);
+      syncHalos();
     }
   }
 
@@ -571,7 +713,7 @@ export function BuildLayer() {
     const lamps = lampList.current;
     if (lamps.length && on > 0) {
       const f = env.focus;
-      const near = [...lamps].sort((a, b) => (a.x - f.x) ** 2 + (a.z - f.z) ** 2 - ((b.x - f.x) ** 2 + (b.z - f.z) ** 2)).slice(0, lights.length);
+      const near = lamps.filter((p) => !cutaway.current.hidden.has(p.id)).sort((a, b) => (a.x - f.x) ** 2 + (a.z - f.z) ** 2 - ((b.x - f.x) ** 2 + (b.z - f.z) ** 2)).slice(0, lights.length);
       lights.forEach((l, i) => {
         const p = near[i];
         l.intensity = p && env.quality.pointLights > 0 ? on * 5 : 0;

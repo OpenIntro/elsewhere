@@ -41,6 +41,12 @@ import { Empty, Sheet } from '../ui/primitives.js';
 import { boardEntries, insideCount, leftTime, pollData, projectData, relTime, useActivity, visibleEntries, worldNow } from './model.js';
 import './activities.css';
 
+/** Where a station / keeper stands (the camera keeps it on screen while its sheet peeks on a phone). */
+function subjectOf(id: string): { x: number; z: number } | null {
+  const p = getInteractable(id)?.position;
+  return p ? { x: p.x, z: p.z } : null;
+}
+
 // ---------------------------------------------------------------------------
 // Results from the server for this panel
 // ---------------------------------------------------------------------------
@@ -109,7 +115,7 @@ function KeeperPanel({ def, message, onClose }: { def: KeeperDef; message?: stri
   const stations = useMemo(() => [def.interactableId, ...(def.id === 'keeper_shopkeeper' ? ['station_store_shelf'] : def.id === 'keeper_tinkerer' ? ['station_workshop_project'] : [])], [def]);
   const { last, data } = useResults(stations);
   return (
-    <Sheet title={def.name} eyebrow={`${def.role} · keeper`} icon="smile" onClose={onClose} testId="panel-keeper" className="sheet--keeper">
+    <Sheet title={def.name} eyebrow={`${def.role} · keeper`} icon="smile" onClose={onClose} testId="panel-keeper" className="sheet--keeper" peek subject={subjectOf(def.interactableId)}>
       <div className="keeper">
         <div className="keeper__badge" title="Keepers are characters of the island, not players.">
           <span aria-hidden="true">❦</span> Keeper — a character of the island, not a player
@@ -220,7 +226,7 @@ function PianoPanel({ onClose }: { onClose(): void }) {
   const notes = Array.from({ length: count }, (_, i) => first + i).filter((n) => n < PIANO_NOTES);
   const whites = notes.filter((n) => WHITE.includes(n % 12));
   return (
-    <Sheet title="Upright piano" eyebrow="Café · everyone in the café hears you" icon="volume" size="wide" onClose={onClose} testId="panel-piano" className="sheet--piano">
+    <Sheet title="Upright piano" eyebrow="Café · everyone in the café hears you" icon="volume" size="wide" onClose={onClose} testId="panel-piano" className="sheet--piano" peek subject={subjectOf('station_cafe_piano')}>
       <input
         ref={trap}
         className="piano__trap"
@@ -336,7 +342,7 @@ function ShelfPanel({ onClose }: { onClose(): void }) {
   const open = useGameStore((s) => !!s.keepers.keeper_shopkeeper?.present);
   const { last, data } = useResults(['station_store_shelf']);
   return (
-    <Sheet title="Curiosity table" eyebrow="General Store" icon="bag" onClose={onClose} testId="panel-shelf">
+    <Sheet title="Curiosity table" eyebrow="General Store" icon="bag" onClose={onClose} testId="panel-shelf" peek subject={subjectOf('station_store_shelf')}>
       <ResultLine r={last} />
       <ShelfContent open={open} data={data} />
     </Sheet>
@@ -377,7 +383,7 @@ function BoardPanel({ station, onClose }: { station: StationDef; onClose(): void
   const title = notices ? 'Notice board' : boardId === 'book_boathouse' ? 'Tide log' : 'Guest book';
   const eyebrow = notices ? 'Town Hall · written by residents' : boardId === 'book_boathouse' ? 'Boathouse · notes from the water' : 'Visitors to this home';
   return (
-    <Sheet title={title} eyebrow={eyebrow} icon={notices ? 'pin' : 'scroll'} size="reading" tone="paper" onClose={onClose} testId={notices ? 'panel-notices' : 'panel-guestbook'}>
+    <Sheet title={title} eyebrow={eyebrow} icon={notices ? 'pin' : 'scroll'} size="reading" tone="paper" onClose={onClose} testId={notices ? 'panel-notices' : 'panel-guestbook'} peek subject={subjectOf(station.id)}>
       <div className="notes">
         <ResultLine r={last} />
         {entries.length ? (
@@ -454,7 +460,7 @@ function PollPanel({ onClose }: { onClose(): void }) {
   const voted = typeof data.voted === 'number' && data.voted >= 0 ? data.voted : null;
   const lastTotal = p.last ? p.last.tallies.reduce((a, b) => a + b, 0) : 0;
   return (
-    <Sheet title="Town poll" eyebrow="Town Hall · one vote each" icon="flag" onClose={onClose} testId="panel-poll">
+    <Sheet title="Town poll" eyebrow="Town Hall · one vote each" icon="flag" onClose={onClose} testId="panel-poll" peek subject={subjectOf('station_hall_poll')}>
       <ResultLine r={last} />
       <section className="section">
         <p className="poll__q">{p.question}</p>

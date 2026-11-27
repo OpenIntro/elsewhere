@@ -24,7 +24,9 @@
     "e2e:build": "node scripts/e2e-build.mjs",
     "e2e:build2": "node scripts/e2e-build2.mjs",
     "e2e:activities": "node scripts/e2e-activities.mjs",
-    "e2e:combined": "node scripts/e2e-combined.mjs"
+    "e2e:combined": "node scripts/e2e-combined.mjs",
+    "e2e:doors": "node scripts/e2e-doors.mjs",
+    "e2e:all": "node scripts/e2e-all.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
