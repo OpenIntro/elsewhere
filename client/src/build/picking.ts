@@ -16,6 +16,8 @@ export interface PickTarget {
 export const pickTargets = new Set<PickTarget>();
 
 const ray = new Raycaster();
+/** Selection picks a thinned piece (as a fallback) only while it is still drawn as a veil. */
+export const FALLBACK_MAX_FADE = 0.95;
 const ndc = new Vector2();
 const _im = new Matrix4();
 const _n = new Vector3();
@@ -27,7 +29,7 @@ const _n = new Vector3();
  * you point at what you can see. `accept` narrows the hit further (e.g. only
  * walls, for wall mounts).
  */
-function cast(clientX: number, clientY: number, accept?: (id: string) => boolean) {
+function cast(clientX: number, clientY: number, accept?: (id: string) => boolean, fadedFallback = false) {
   const cam = view3d.camera;
   const el = view3d.canvas;
   if (!cam || !el || !pickTargets.size) return null;
@@ -42,12 +44,20 @@ function cast(clientX: number, clientY: number, accept?: (id: string) => boolean
     byMesh.set(t.mesh, t);
   }
   const hits = ray.intersectObjects(objects, false);
+  let faded: { id: string; point: Vector3; normalY: number } | null = null;
   for (const h of hits) {
     const t = byMesh.get(h.object);
     if (!t || h.instanceId === undefined) continue;
     const id = t.ids[h.instanceId];
     const fade = (t.mesh.geometry.getAttribute('aFade') as BufferAttribute | undefined)?.getX(h.instanceId) ?? 0;
-    if (fade > 0.5) continue;
+    if (fade > 0.5) {
+      // Thinned / dissolved for the local player: looked through. Selecting (remove / report) falls back to the
+      // nearest thinned piece still shown as a veil (walls 0.8, roofs in front 0.85; not the ~gone 0.99 roof
+      // over your head) when nothing solid is behind it, so a wall thinned because you stand within 2.6 m of
+      // it can still be picked (it used to be unselectable from there).
+      if (fadedFallback && !faded && id && fade < FALLBACK_MAX_FADE && (!accept || accept(id))) faded = { id, point: h.point, normalY: h.face?.normal ? h.face.normal.clone().transformDirection(h.object.matrixWorld).y : 0 };
+      continue;
+    }
     // Above a cut (the stub of a camera-side wall in the room you are in): not there.
     const cut = (t.mesh.geometry.getAttribute('aCut') as BufferAttribute | undefined)?.getX(h.instanceId) ?? 0;
     if (cut > 0.5 && h.point.y > cut - CUT_OFFSET + 0.005) continue;
@@ -60,7 +70,7 @@ function cast(clientX: number, clientY: number, accept?: (id: string) => boolean
     if (id && accept && !accept(id)) continue;
     if (id) return { id, point: h.point, normalY: h.face?.normal ? h.face.normal.clone().transformDirection(h.object.matrixWorld).y : 0 };
   }
-  return null;
+  return faded;
 }
 
 /** Every piece a screen ray passes through, nearest first, with the hit height — ignoring fades and cuts (debug / tests). */
@@ -91,9 +101,12 @@ export function pickPieceHit(clientX: number, clientY: number, accept?: (id: str
   return h ? { id: h.id, point: { x: h.point.x, y: h.point.y, z: h.point.z }, normalY: h.normalY } : null;
 }
 
-/** Piece id under a screen point (nearest to the camera), or null. */
+/**
+ * Piece id under a screen point for selecting (remove / report): the nearest visible piece, else — when the
+ * ray meets no solid piece — the nearest one thinned or dissolved for the local player. Null if none.
+ */
 export function pickPiece(clientX: number, clientY: number): string | null {
-  return cast(clientX, clientY)?.id ?? null;
+  return cast(clientX, clientY, undefined, true)?.id ?? null;
 }
 
 /** Camera ray through a screen point (origin + unit direction), or null. */
