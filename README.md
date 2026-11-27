@@ -345,20 +345,33 @@ in `client/src/build/`.
   500, …), the first roof that closes walls with a doorway, and a name sign on a finished house
   (walls, doorway, roof): "Ivy named their house “Fern Cottage”" — only real events. Walking up to a
   named house shows "<name> · built by <player>".
-- **Rendering:** one instanced mesh per piece kind + style + material (40-50 draw calls for 2,000
-  pieces), shadows like the world; roofs and upper storeys over or next to you dissolve (dithered,
+- **Rendering:** one instanced mesh per piece kind + style + material (~110 draw calls for 2,000
+  mixed pieces of ~40 kinds), shadows like the world; roofs and upper storeys over or next to you dissolve (dithered,
   their shadow too), and tall walls between the camera and you thin out.
 
 Measured with `scripts/build-scale.mts` (production build, one machine, headless Chromium with
-**software** WebGL — frame times say nothing about real GPUs): 2,000 pieces seeded through the real
-server path in 5.5 s (validation 0.14 ms average, 2 ms max per placement); a joining browser got
-them as a 4-chunk snapshot of 74 KB on the websocket (90 KB as JSON; 9 KB for an empty world)
-applied in 9 ms; idle websocket traffic stayed ~100-150 B/s with or without pieces (pieces are not
-in the Colyseus state); the build layer drew 47 calls / 0.58 M triangles (whole frame 133 calls /
-1.0 M triangles vs 83 / 0.42 M empty; frame time 407 ms vs 288 ms in software rendering); with 30
-protocol clients walking, the server's event-loop delay p99 was 12.9 ms with 2,000 pieces vs 14.4 ms
-with none (timer resolution ~10 ms); `resolveMovement` next to pieces ~70 µs per 1.6 m move; a
-restart loaded all 2,000 pieces and was healthy in 0.65 s.
+**software** WebGL — frame times say nothing about real GPUs). Round 2 mix: huts on a grid (half of
+them two storeys) each under one house roof (gable or hip, both pitches) with a table, a table lamp
+on it, a chair, a picture, a name board, a lamp, a crate, a fence and a planter, then yards of floor
+tiles carrying sofas, beds, bookshelves, stoves, fireplaces, rugs, barrels…, then pillars and lamps;
+all clearable plants cleared first. 2,000 pieces seeded through the real server path in 5.2 s
+(validation 0.19 ms average, 2.6 ms max per placement); a joining browser got them as a 4-chunk
+snapshot of 75 KB on the websocket (93 KB as JSON; 9 KB for an empty world) applied in 16 ms; idle
+websocket traffic stayed ~30-60 B/s with or without pieces (pieces are not in the Colyseus state);
+the build layer drew 113 calls / 0.70 M triangles in 89 instanced groups (whole frame 240 calls /
+1.16 M triangles vs 83 / 0.41 M empty; frame time 347 ms vs 247 ms in software rendering; 25 sign
+text meshes, 256 night halos); with 30 protocol clients walking, the server's event-loop delay p99
+was 12.9 ms with 2,000 pieces vs 12.8 ms with none (timer resolution ~10 ms); `resolveMovement`
+next to pieces ~87 µs per 1.6 m move; a restart loaded all 2,000 pieces and was healthy in 0.62 s.
+(Round 1, walls/floors/roof tiles only: 47 calls / 0.58 M triangles for the build layer.)
+
+Triangles per round-2 piece (one instance, from the client's templates): house roof 4x6 m gable
+3,232 / hip 854, chimney 308, name board 96, hanging sign 116, plaque 24, bed 720, sofa 804,
+armchair 588, stool 124, desk 120, dining table 84, bookshelf 528, dresser 324, kitchen counter 84,
+stove 304, sink 92, fireplace 264, bathtub 296, chest 156, barrel 288, floor lamp 96, table lamp 72,
+tall plant 652, small plant 176, wall shelf 148, picture 96, wall clock 272, mirror 24, curtains 120,
+round rug 288, shop counter 136, record player 136. House roofs are instanced per style + size + shape
+(roofs of the same dimensions share one instanced mesh), the rest per kind + style.
 
 ## Rendering cost (measured)
 

@@ -67,6 +67,10 @@ async function check(name, fn) {
     record(name, true, `${detail ?? ''} (${((Date.now() - t0) / 1000).toFixed(1)}s)`.trim());
   } catch (err) {
     record(name, false, String(err?.message ?? err));
+    // Leave build mode on every client so a failure does not leave later checks tapping a ghost.
+    for (const page of [a, b]) {
+      if (await page.locator('[data-testid=build-done]').isVisible().catch(() => false)) await press(page, '[data-testid=build-done]').catch(() => undefined);
+    }
   }
 }
 
@@ -503,9 +507,10 @@ try {
     await a.click('[data-testid=build-clear]');
     await waitSnap(b, (s) => s.build.cleared.includes(ROCK) && s.build.disabledColliders.includes(`col_${ROCK}`), 'B: rock cleared + collider off', 20_000);
     await a.click('[data-testid=build-done]');
+    // A steps back out of B's way (from B's camera A would stand right in front of the spot).
+    await hopToward(a, { x: -27.6, z: 0.1 }, 1.0, 120_000);
     // B walks onto the rock's spot (impossible before: it was a collider).
-    await hopToward(b, { x: rock.position.x + 1.2, z: rock.position.z + 1.2 }, 1.0, 300_000);
-    await hopToward(b, rock.position, 0.3, 120_000);
+    await hopToward(b, rock.position, 0.3, 300_000);
     const sa = await waitSnap(a, (s) => posOf(s, idB) && Math.hypot(posOf(s, idB).x - rock.position.x, posOf(s, idB).z - rock.position.z) < 0.35, "A's room state has B on the rock's spot", 20_000);
     const q = posOf(sa, idB);
     return `rock ${ROCK} (r ${rock.radius.toFixed(2)}) cleared; B at server (${q.x.toFixed(2)}, ${q.z.toFixed(2)}), ${Math.hypot(q.x - rock.position.x, q.z - rock.position.z).toFixed(2)} m from its centre`;

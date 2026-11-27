@@ -231,11 +231,11 @@
   .build-tile__img, .build-tile__img img { width: 48px; height: 48px; }
   .build-bar { flex-wrap: wrap; row-gap: 6px; }
   .build-actions { margin-left: 0; width: 100%; gap: 0; order: 3; }
-  .build-act { width: 46px; flex: none; }
-  .build-act--quiet { width: 30px; }
-  .build-place { margin-left: 0; padding: 0 14px; }
-  .build-done { margin-left: 6px; padding: 0 13px; }
-  .build-more { margin-right: auto; }
+  .build-act { width: 42px; flex: none; }
+  .build-act--quiet { width: 28px; }
+  /* Place takes what is left of the row (Done always fits on a 360-390 px phone). */
+  .build-place { margin: 0 6px 0 2px; padding: 0 10px; flex: 1 1 auto; min-width: 0; }
+  .build-done { margin-left: auto; padding: 0 13px; flex: none; }
   .build-sign { flex-basis: 100%; order: 2; }
   .build-swatches { order: 1; }
   .build-status { font-size: 12.5px; }

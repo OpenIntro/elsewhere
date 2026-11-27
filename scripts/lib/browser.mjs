@@ -54,9 +54,15 @@ export async function tapOrClick(page, x, y) {
 export async function hopToward(page, target, near = 1.5, timeout = 150_000) {
   const vp = page.viewportSize();
   const t0 = Date.now();
+  let last = null;
   while (Date.now() - t0 < timeout) {
     const s = await snap(page);
     if (Math.hypot(s.local.x - target.x, s.local.z - target.z) < near) return s;
+    // Someone walked under the last tap and their profile opened: close it, as a player would.
+    if (last && s.ui?.panel === 'profile' && (await page.locator('[data-testid=sheet-close]').isVisible().catch(() => false))) {
+      await press(page, '[data-testid=sheet-close]');
+      await waitSnap(page, (q) => q.ui?.panel !== 'profile', 'profile closed', 10_000);
+    }
     const me = await query(page, 'worldToScreen', s.local.x, s.local.z);
     const tp = await query(page, 'worldToScreen', target.x, target.z);
     let x = tp.x;
@@ -70,11 +76,23 @@ export async function hopToward(page, target, near = 1.5, timeout = 150_000) {
       y = me.y + (tp.y - me.y) * k;
     }
     if (!(await onCanvas(page, x, y))) y -= 40;
+    // A tap on a person or a thing would open / use it instead of walking: tap beside it, like a player would.
+    const kind = page.__touch ? 'touch' : 'mouse';
+    for (const [dx, dy] of [[0, 0], [0, 24], [24, 0], [-24, 0], [0, -24], [0, 40], [40, 0], [-40, 0], [0, -40]]) {
+      const g = await query(page, 'groundFromScreen', x + dx, y + dy);
+      if (g && (await query(page, 'isWalkable', g.x, g.z)) && !(await query(page, 'pick', x + dx, y + dy, kind)) && (await onCanvas(page, x + dx, y + dy))) {
+        x += dx;
+        y += dy;
+        break;
+      }
+    }
+    last = { tap: [Math.round(x), Math.round(y)], ground: await query(page, 'groundFromScreen', x, y), pick: await query(page, 'pick', x, y, kind) };
     await tapOrClick(page, x, y);
     await sleep(300);
     await waitSnap(page, (q) => !q.motion?.path && q.local.speed < 0.05, 'hop finished', 40_000);
   }
-  throw new Error(`could not hop to (${target.x.toFixed(1)}, ${target.z.toFixed(1)})`);
+  const s = await snap(page);
+  throw new Error(`could not hop to (${target.x.toFixed(1)}, ${target.z.toFixed(1)}); at ${JSON.stringify(s?.local)} ${s?.connection} motion ${JSON.stringify(s?.motion)} zoom ${s?.view?.zoom?.toFixed(1)} build ${s?.build?.mode} panel ${JSON.stringify(s?.ui?.panel ?? null)}; last ${JSON.stringify(last)}`);
 }
 
 /** A* on a 0.25 m grid over the shared collision (+ optional extra blockers), string-pulled. */

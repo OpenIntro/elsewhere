@@ -79,7 +79,7 @@ function chimneyPiece(B: GeoBuilder, c: C): void {
 /** Where a text piece's lettering goes (local frame). `back` = also on the reverse. */
 export const TEXT_FACES: Partial<Record<PieceKind, { width: number; height: number; y: number; z: number; back?: boolean; font: number }>> = {
   name_board: { width: 1.6, height: 0.38, y: 2.33, z: WALL_HALF + 0.085, font: 64 },
-  name_hanging: { width: 0.72, height: 0.34, y: 1.96, z: WALL_HALF + 0.56, back: true, font: 56 },
+  name_hanging: { width: 0.72, height: 0.34, y: 1.96, z: WALL_HALF + 0.597, back: true, font: 56 },
   name_plaque: { width: 0.52, height: 0.22, y: 1.62, z: WALL_HALF + 0.055, font: 52 },
 };
 
@@ -500,8 +500,9 @@ export const GLOW_AT: Partial<Record<PieceKind, { y: number; z: number; size: nu
   table_lamp: { y: 0.27, z: 0, size: 0.55 },
   fireplace: { y: 0.3, z: 0.2, size: 1.0 },
   stove: { y: 0.42, z: 0.36, size: 0.6 },
-  name_board: { y: 2.34, z: WALL_HALF + 0.35, size: 0.7 },
-  name_hanging: { y: 1.96, z: WALL_HALF + 0.75, size: 0.6 },
-  name_plaque: { y: 1.62, z: WALL_HALF + 0.3, size: 0.45 },
+  // Signs are lit from just above the board (a halo on the lettering would wash it out).
+  name_board: { y: 2.74, z: WALL_HALF + 0.26, size: 0.5 },
+  name_hanging: { y: 2.42, z: WALL_HALF + 0.62, size: 0.42 },
+  name_plaque: { y: 1.94, z: WALL_HALF + 0.18, size: 0.32 },
 };
 void CONFIG;

@@ -213,12 +213,14 @@ function Prompt() {
   const playerPrompt = useUiStore((s) => s.playerPrompt);
   const panel = useUiStore((s) => s.panel);
   const typing = useUiStore((s) => s.textInputFocused);
+  // The build dock sits where the prompt would: building owns the bottom of the screen.
+  const building = useBuildStore((s) => s.mode !== 'off');
   const touch = useIsTouch();
   // On touch the player system's thumb action button carries the prompt; don't duplicate it.
   const touchControls = useTouchControlsVisible();
   const liveLabel = useGameStore((s) => (prompt ? liveStationLabel(s, prompt.interactableId, prompt.label) : ''));
   const p = prompt ? { label: liveLabel || prompt.label, name: prompt.name } : playerPrompt ? { label: playerPrompt.label, name: playerPrompt.name } : null;
-  if (!p || touchControls || (panel && READING_PANELS.has(panel.kind))) return null;
+  if (!p || building || touchControls || (panel && READING_PANELS.has(panel.kind))) return null;
   return (
     <button
       type="button"

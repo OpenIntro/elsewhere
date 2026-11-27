@@ -52,7 +52,7 @@ export function twoStoreyHouse(c = HOUSE, name = 'Fern Cottage') {
       { kind: 'table_lamp', x: x0 + 2.5, z: z1 - 1, rot: 0, level: 0, variant: 'ochre' },
       // Mounts on the far walls' inner faces (the ones the camera looks at).
       { kind: 'wall_shelf', x: x0, z: z1 - 1, rot: 1, level: 0, variant: 'oak' },
-      { kind: 'picture', x: x0 + 3, z: z0, rot: 0, level: 0, variant: 'meadow' },
+      { kind: 'picture', x: x0 + 1, z: z0, rot: 0, level: 0, variant: 'meadow' },
     ],
   };
 }
