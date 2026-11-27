@@ -31,6 +31,11 @@ const url = (() => {
   return u.toString();
 })();
 const TIMEOUT = 20_000;
+// Joining waits for the page to boot: building the world and compiling its shaders takes ~7 s of
+// main-thread time per page under headless software rendering, ~13-20 s with two pages booting at
+// once on 4 cores (the join promise resolves only after that). 20 s was too tight (it timed out at
+// "connecting" under load); the other browser suites allow 120 s for the same step.
+const JOIN_TIMEOUT = 90_000;
 
 const log = (...a) => console.log('[smoke]', ...a);
 const fail = (msg) => {
@@ -70,8 +75,8 @@ try {
   await pageA.goto(url);
   await pageB.goto(url);
 
-  const a0 = await waitFor(pageA, (s) => s.connection === 'connected' && s.players.length === 2, 'A to see 2 players');
-  const b0 = await waitFor(pageB, (s) => s.connection === 'connected' && s.players.length === 2, 'B to see 2 players');
+  const a0 = await waitFor(pageA, (s) => s.connection === 'connected' && s.players.length === 2, 'A to see 2 players', JOIN_TIMEOUT);
+  const b0 = await waitFor(pageB, (s) => s.connection === 'connected' && s.players.length === 2, 'B to see 2 players', JOIN_TIMEOUT);
   log(`A (${a0.sessionId}) sees ${a0.players.length} players; B (${b0.sessionId}) sees ${b0.players.length} players`);
   if (a0.sessionId === b0.sessionId) throw new Error('both clients share a session id');
   const ids = new Set([...a0.players.map((p) => p.id), ...b0.players.map((p) => p.id)]);
