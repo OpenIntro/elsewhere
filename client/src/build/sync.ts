@@ -31,6 +31,7 @@ import { toasts } from '../ui/toasts.js';
 import { afterPlaced, reaim, roofToolProbes } from './actions.js';
 import { natureVisible, resetNatureHidden, setNatureHidden } from '../world/natureMask.js';
 import { markDirty, pieces, useBuildStore } from './store.js';
+import { applyHomeChanged, applyHomeResult, applyHomes, registerHomesDebug, resetHomes } from './homes.js';
 
 /** The world changed: re-check the ghost where it is (it may now be blocked, or stackable). */
 let reaimTimer: ReturnType<typeof setTimeout> | null = null;
@@ -151,7 +152,10 @@ export function installBuildSync(): () => void {
   installed = true;
   const offs = [
     net.onLifecycle((e) => {
-      if (e === 'joined') useBuildStore.getState().set({ synced: false, pending: 0 });
+      if (e === 'joined') {
+        useBuildStore.getState().set({ synced: false, pending: 0 });
+        resetHomes();
+      }
       // Same session after an automatic reconnection: deltas sent while we were away are lost, so ask again.
       if (e === 'resumed') {
         useBuildStore.getState().set({ pending: 0 });
@@ -222,6 +226,10 @@ export function installBuildSync(): () => void {
       const st = useBuildStore.getState();
       st.set({ version: st.version + 1 });
     }),
+    // Homes: the list follows every build snapshot; changes go to every room of the world.
+    net.on(S2C.homes, ({ homes }) => applyHomes(homes)),
+    net.on(S2C.homeChanged, (c) => applyHomeChanged(c)),
+    net.on(S2C.homeResult, (r) => applyHomeResult(r)),
     net.on(S2C.buildResult, (r) => {
       const st = useBuildStore.getState();
       const pending = Math.max(0, st.pending - 1);
@@ -287,6 +295,7 @@ export function installBuildSync(): () => void {
     };
   });
   registerDebugQuery('natureVisible', (id: string) => natureVisible(id));
+  registerHomesDebug();
 
   return () => {
     for (const off of offs) off();

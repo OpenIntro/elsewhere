@@ -24,6 +24,7 @@ import {
   DoubleSide,
   Group,
   InstancedBufferAttribute,
+  Frustum,
   InstancedMesh,
   Matrix4,
   Mesh,
@@ -33,10 +34,13 @@ import {
   PointLight,
   RingGeometry,
   SRGBColorSpace,
+  Sphere,
   type BufferGeometry,
+  type Camera,
   type Material,
 } from 'three';
 import { CONFIG, NO_ENCLOSURE, PIECES, footprintOf, groundHeight, trackEnclosure, type EnclosureTrack, type PieceKind, type PieceRecord } from '@elsewhere/shared';
+import { installFrameSection, meterFrame } from '../game/perf.js';
 import { registerDebugQuery, registerDebugSection } from '../net/index.js';
 import { runtime } from '../state/runtime.js';
 import { makeBillboards } from '../world/billboard.js';
@@ -58,6 +62,41 @@ const WARM = new Color('#ffc77e');
 const LAMP_OFF = new Color('#8a8070');
 const _c = new Color();
 const ZERO = new Matrix4().makeScale(0, 0, 0);
+const _frustum = new Frustum();
+const _vp = new Matrix4();
+const _sph = new Sphere();
+
+/**
+ * What the main camera can see of the build layer (debug / perf measurements): draw calls and
+ * triangles of the instanced meshes whose bounding sphere meets the camera frustum (what three.js
+ * culls by), and the pieces whose own bounding sphere is in view (independent of how they are batched).
+ */
+function visibleBuild(meshes: Iterable<{ mesh: InstancedMesh; solid: boolean }>, camera: Camera): { drawCalls: number; triangles: number; pieces: number } {
+  camera.updateMatrixWorld();
+  _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  _frustum.setFromProjectionMatrix(_vp);
+  let drawCalls = 0;
+  let triangles = 0;
+  let pieces = 0;
+  for (const { mesh, solid } of meshes) {
+    if (mesh.count === 0 || !mesh.visible) continue;
+    if (!mesh.boundingSphere) mesh.computeBoundingSphere();
+    mesh.updateWorldMatrix(true, false);
+    _sph.copy(mesh.boundingSphere!).applyMatrix4(mesh.matrixWorld);
+    if (!_frustum.intersectsSphere(_sph)) continue;
+    const geo = mesh.geometry;
+    drawCalls++;
+    triangles += ((geo.index ? geo.index.count : geo.attributes.position!.count) / 3) * mesh.count;
+    if (!solid) continue;
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, _r);
+      _sph.copy(geo.boundingSphere!).applyMatrix4(_r).applyMatrix4(mesh.matrixWorld);
+      if (_frustum.intersectsSphere(_sph)) pieces++;
+    }
+  }
+  return { drawCalls, triangles: Math.round(triangles), pieces };
+}
 
 /** The built-interior cutaway as the local player sees it this tick. */
 interface CutawayState {
@@ -86,8 +125,104 @@ interface GroupEntry {
   upper: boolean;
 }
 
-function groupKey(p: PieceRecord): string {
+/**
+ * Side of the square spatial cells the instanced groups are split by (m). Each cell's group has its own
+ * bounding sphere, so three.js's frustum culling (main camera and shadow camera) skips the cells out of
+ * view. Chosen from the measurements in docs/perf/ (README "Rendering cost").
+ */
+export const BUILD_CHUNK_M = 24;
+/**
+ * Only a group whose instances add up to at least this many triangles is split by cell: splitting a light
+ * group saves little and costs a draw call per cell in view (and in the shadow pass).
+ */
+export const BUILD_SPLIT_MIN_TRIS = 8000;
+
+/** The spatial cell of a piece: from its centre only, so a piece is in exactly one cell (a 12 m roof too). */
+export function chunkOf(x: number, z: number, size = BUILD_CHUNK_M): string {
+  return `${Math.floor(x / size)},${Math.floor(z / size)}`;
+}
+
+type KeyPiece = Pick<PieceRecord, 'kind' | 'variant' | 'level' | 'params' | 'x' | 'z'>;
+/** Kind + style + upper-floor flag + roof params: pieces that share one template. */
+export function baseKey(p: KeyPiece): string {
   return `${p.kind}|${p.variant}|${p.kind === 'floor' && p.level > 0 ? 'u' : ''}|${p.params ?? ''}`;
+}
+/** Instanced group of a piece: its template, plus its spatial cell when the group is split ('*' when not). */
+export function groupKey(p: KeyPiece, size = BUILD_CHUNK_M, split = true): string {
+  return `${baseKey(p)}|${split ? chunkOf(p.x, p.z, size) : '*'}`;
+}
+
+/** Triangles of one instance of a piece's template. */
+function pieceTriangles(p: PieceRecord): number {
+  return templateTriangles(templateFor(p.kind, p.variant, p.kind === 'floor' && p.level > 0, p.params));
+}
+
+/** What a group needs for regrouping: its kind and, per instance, the piece and its fade / cut. */
+export interface GroupSlots {
+  kind: PieceKind;
+  list: readonly PieceRecord[];
+  fade: ArrayLike<number>;
+  cut: ArrayLike<number>;
+}
+export interface RegroupPlan {
+  /** Groups to (re)fill: their pieces in instance order and each instance's fade / cut, carried over. */
+  fill: Map<string, { list: PieceRecord[]; fade: Float32Array; cut: Float32Array }>;
+  /** Groups of rebuilt kinds that have no pieces any more. */
+  emptied: string[];
+}
+export interface RegroupOptions {
+  size?: number;
+  minTris?: number;
+  /** Triangles per instance (default: the piece's template). */
+  trisOf?: (p: PieceRecord) => number;
+}
+
+/**
+ * Pure part of a rebuild: which group every piece of a rebuilt kind (`dirty`; all kinds when null)
+ * goes to, in which instance slot, and the fade / cut it keeps from its old slot (placing a lamp must
+ * not flash the room's walls back up). A template's pieces are split by spatial cell once they add up
+ * to `minTris` triangles; a piece's group depends only on the current pieces, never on history.
+ */
+export function planRegroup(groups: ReadonlyMap<string, GroupSlots>, all: Iterable<PieceRecord>, dirty: ReadonlySet<PieceKind> | null | undefined, opts: RegroupOptions = {}): RegroupPlan {
+  const { size = BUILD_CHUNK_M, minTris = BUILD_SPLIT_MIN_TRIS, trisOf = pieceTriangles } = opts;
+  const byBase = new Map<string, PieceRecord[]>();
+  for (const p of all) {
+    if (dirty && !dirty.has(p.kind)) continue;
+    const k = baseKey(p);
+    let l = byBase.get(k);
+    if (!l) byBase.set(k, (l = []));
+    l.push(p);
+  }
+  const byKey = new Map<string, PieceRecord[]>();
+  for (const list of byBase.values()) {
+    const split = trisOf(list[0]!) * list.length >= minTris;
+    for (const p of list) {
+      const k = groupKey(p, size, split);
+      let l = byKey.get(k);
+      if (!l) byKey.set(k, (l = []));
+      l.push(p);
+    }
+  }
+  const emptied: string[] = [];
+  for (const [key, g] of groups) if (!(dirty && !dirty.has(g.kind)) && !byKey.has(key) && g.list.length) emptied.push(key);
+  // Old fade / cut by piece id, from every old group of a rebuilt kind (a piece changes group when its
+  // template's group splits or joins).
+  const kept = new Map<string, [number, number]>();
+  for (const g of groups.values()) {
+    if (dirty && !dirty.has(g.kind)) continue;
+    g.list.forEach((p, i) => (g.fade[i]! > 0 || g.cut[i]! > 0) && kept.set(p.id, [g.fade[i]!, g.cut[i]!]));
+  }
+  const fill: RegroupPlan['fill'] = new Map();
+  for (const [key, list] of byKey) {
+    const fade = new Float32Array(list.length);
+    const cut = new Float32Array(list.length);
+    list.forEach((p, i) => {
+      const k = kept.get(p.id);
+      if (k) [fade[i], cut[i]] = k;
+    });
+    fill.set(key, { list, fade, cut });
+  }
+  return { fill, emptied };
 }
 
 /** Pieces that may hide the player (they fade): anything above the ground, and every roof. */
@@ -203,6 +338,7 @@ function cutHeight(p: PieceRecord, c: number, cs: Pick<CutawayState, 'hidden'>):
 export function BuildLayer() {
   const root = useRef<Group>(null);
   const gl = useThree((s) => s.gl);
+  const camera = useThree((s) => s.camera);
   const groups = useRef(new Map<string, GroupEntry>());
   const signs = useRef(new Map<string, { holder: Group; mat: MeshStandardMaterial; text: string }>());
   const seen = useRef(-1);
@@ -268,7 +404,11 @@ export function BuildLayer() {
         }
       }
       const info = gl.info.render;
-      return { groups: groups.current.size, drawCalls, triangles: Math.round(triangles), instances, signs: signs.current.size, halos: halos.count, frame: { calls: info.calls, triangles: info.triangles }, programs: gl.info.programs?.length ?? 0 };
+      const all = (function* () {
+        for (const g of groups.current.values()) for (const [bucket, mesh] of g.meshes) yield { mesh, solid: bucket === 'solid' };
+      })();
+      const visible = visibleBuild(all, camera);
+      return { groups: groups.current.size, chunkSize: BUILD_CHUNK_M, drawCalls, triangles: Math.round(triangles), instances, visible, signs: signs.current.size, halos: halos.count, frame: { calls: info.calls, triangles: info.triangles }, programs: gl.info.programs?.length ?? 0 };
     });
     // Read-only: the built-interior cutaway for the local player (tests).
     registerDebugSection('builtCutaway', () => {
@@ -289,7 +429,7 @@ export function BuildLayer() {
     // What build picking sees under a screen point, and everything the ray passes through (tests: picking through a cut).
     registerDebugQuery('pickPiece', (x: number, y: number) => pickPieceHit(x, y));
     registerDebugQuery('rayPieces', (x: number, y: number) => rayPieces(x, y));
-  }, [gl, halos]);
+  }, [gl, camera, halos]);
 
   function ensureGroup(key: string, sample: PieceRecord, need: number): GroupEntry {
     let g = groups.current.get(key);
@@ -335,36 +475,23 @@ export function BuildLayer() {
   function rebuild(): void {
     const dirty = pieces.dirtyKinds;
     pieces.dirtyKinds = new Set();
-    const byKey = new Map<string, PieceRecord[]>();
-    for (const p of pieces.index.all()) {
-      if (dirty && !dirty.has(p.kind)) continue;
-      const k = groupKey(p);
-      let l = byKey.get(k);
-      if (!l) byKey.set(k, (l = []));
-      l.push(p);
-    }
+    const plan = planRegroup(groups.current, pieces.index.all(), dirty);
     // Groups of rebuilt kinds that no longer have pieces.
-    for (const g of groups.current.values()) {
-      if ((dirty && !dirty.has(g.kind)) || byKey.has(g.key)) continue;
+    for (const key of plan.emptied) {
+      const g = groups.current.get(key)!;
       g.list = [];
       for (const m of g.meshes.values()) m.count = 0;
       for (const t of g.target) t.ids = [];
     }
-    for (const [key, list] of byKey) {
-      // Keep each piece's fade / cut through the rebuild (placing a lamp must not flash the room's walls back up).
-      const old = groups.current.get(key);
-      const kept = new Map<string, [number, number]>();
-      if (old) old.list.forEach((p, i) => (old.fade[i]! > 0 || old.cut[i]! > 0) && kept.set(p.id, [old.fade[i]!, old.cut[i]!]));
+    for (const [key, { list, fade, cut }] of plan.fill) {
       const g = ensureGroup(key, list[0]!, list.length);
       g.list = list;
       g.upper = list.some((p) => fades(p) || screens(p));
       g.fade.fill(0);
+      g.fade.set(fade);
       g.cut.fill(0);
+      g.cut.set(cut);
       g.hid.fill(0);
-      list.forEach((p, i) => {
-        const k = kept.get(p.id);
-        if (k) [g.fade[i], g.cut[i]] = k;
-      });
       for (const [bucket, mesh] of g.meshes) {
         list.forEach((p, i) => {
           _m.makeRotationY((p.rot % 4) * (Math.PI / 2));
@@ -385,6 +512,7 @@ export function BuildLayer() {
           list.forEach((p, i) => ((ca.array as Float32Array)[i] = cutHeight(p, g.cut[i]!, cutaway.current)));
           ca.needsUpdate = true;
         }
+        // Per group = per spatial cell: the sphere frustum culling tests (recomputed on every change).
         mesh.computeBoundingSphere();
         void bucket;
       }
@@ -680,7 +808,13 @@ export function BuildLayer() {
   }
 
   const thumbsTried = useRef(false);
+  const meterOn = useRef(false);
   useFrame((_, dt) => {
+    // Frame meter: this frame's interval and the renderer's counts of the frame just drawn.
+    if (!meterOn.current) {
+      meterOn.current = true;
+      installFrameSection();
+    } else meterFrame(dt * 1000, gl.info.render);
     if (!thumbsTried.current && useBuildStore.getState().mode !== 'off') {
       thumbsTried.current = true;
       try {

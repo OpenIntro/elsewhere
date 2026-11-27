@@ -7,9 +7,9 @@
  * the wall's centre line, the face at +Z = WALL_HALF) and a tight triangle
  * budget: small parts are plain boxes, spheres are low-segment.
  */
-import { Color } from 'three';
-import { CONFIG, PIECES, ROOF_OVERHANG, WALL_HALF, parseRoofParams, roofRise, type PieceKind } from '@elsewhere/shared';
-import { gableEnds, pavilionRoof, roof } from '../world/arch/kit.js';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, Matrix4, Quaternion, Vector3 } from 'three';
+import { CONFIG, PIECES, ROOF_OVERHANG, WALL_HALF, parseRoofParams, roofRise, type PieceKind, type RoofParams } from '@elsewhere/shared';
+import { gableEnds, roof } from '../world/arch/kit.js';
 import { GeoBuilder, T, box, cone, cyl, rbox, sphere as sphereHi, type AddOpts, type ColorLike } from '../world/geom.js';
 
 type C = Readonly<Record<string, string>>;
@@ -51,7 +51,7 @@ export function houseRoof(B: GeoBuilder, c: C, params: string | undefined): void
   // Wall plate / fascia band over the wall tops so the eaves meet the walls cleanly.
   slab(B, r.w + 0.3, -0.02, 0.12, r.d + 0.3, shade(c.trim!, 0.92), 0, 0, 0.03, FLAT);
   if (r.style === 'hip') {
-    pavilionRoof(B, r.w, r.d, rise, color, r.overhang);
+    hipRoof(B, r, color);
     return;
   }
   // Ridge along local Z, like the town's gable roofs; closed gable ends in plaster at both ends.
@@ -62,6 +62,236 @@ export function houseRoof(B: GeoBuilder, c: C, params: string | undefined): void
     put(B, cyl(0.16, 0.16, 0.06, 12), shade(c.trim!, 0.9), 0, rise * 0.45, s * (r.d / 2 + 0.06), 0, Math.PI / 2, 0, FLAT);
     B.add('glass', cyl(0.11, 0.11, 0.07, 12), new Color(0.7, 0.5, 0.3), T(0, rise * 0.45, s * (r.d / 2 + 0.07), 0, Math.PI / 2, 0), { ao: false, jitter: 0 });
   }
+}
+
+// --- Hip roof (player houses only; the town's kit `pavilionRoof` is left as it is) ---------
+//
+// The roof surface is lofted from rings: every point at run distance s from
+// the nearest eave sits at the same height, so the four facets meet exactly
+// along the hips and the ridge (they share the ring corners). The slope is
+// slightly convex like the gable's (`roof` curve 0.1). Same footprint, eave
+// datum and ridge height as the earlier hip: eaves W x D = (w, d) + 2 x
+// overhang at y = HIP_EAVE_Y, ridge at HIP_EAVE_Y + roofRise along the longer
+// side. Tiles, caps and the fascia sit on that surface.
+
+/** Height of the eave line above the piece base (the earlier hip's datum). */
+export const HIP_EAVE_Y = 0.05;
+const HIP_CURVE = 0.1;
+const HIP_BANDS = 6;
+/** Hip cap radius (the earlier hip's, so its eave corners reach as far out). */
+const HIP_CAP_R = 0.11;
+/** Tile size along a course and its course pitch on the slope (as the gable's scallops). */
+const TILE_SEG = 0.36;
+const COURSE_PITCH = 0.58;
+
+export interface HipFrame {
+  /** Half extents of the eave rectangle (local X / Z). */
+  hw: number;
+  hd: number;
+  rise: number;
+  /** Horizontal run from any eave to the ridge (= the shorter half extent). */
+  run: number;
+  /** Ridge half-length along X (ridge along X) or Z. */
+  rl: number;
+  rd: number;
+}
+export function hipFrame(r: RoofParams): HipFrame {
+  const hw = r.w / 2 + r.overhang;
+  const hd = r.d / 2 + r.overhang;
+  const run = Math.min(hw, hd);
+  return { hw, hd, rise: roofRise(r), run, rl: hw - run, rd: hd - run };
+}
+/** Height above the eave datum at fraction u of the run (0 eave, 1 ridge) and its slope dy/ds. */
+function hipProfile(f: HipFrame, u: number): { y: number; slope: number } {
+  return { y: HIP_EAVE_Y + f.rise * u + 2 * u * (1 - u) * HIP_CURVE, slope: (f.rise + 2 * HIP_CURVE * (1 - 2 * u)) / f.run };
+}
+/** The four facets: outward normal (nx, nz), rotation about Y from the +Z facet, eave distance, half-length at the eave. */
+function hipFacets(f: HipFrame): { nx: number; nz: number; ry: number; eave: number; half: number }[] {
+  return [
+    { nx: 0, nz: 1, ry: 0, eave: f.hd, half: f.hw },
+    { nx: 1, nz: 0, ry: Math.PI / 2, eave: f.hw, half: f.hd },
+    { nx: 0, nz: -1, ry: Math.PI, eave: f.hd, half: f.hw },
+    { nx: -1, nz: 0, ry: -Math.PI / 2, eave: f.hw, half: f.hd },
+  ];
+}
+/** A point on a facet: run distance s in from its eave, v along it (+v = the facet's local +X). */
+function facetPoint(fc: { nx: number; nz: number; eave: number }, s: number, v: number, y: number): [number, number, number] {
+  // Local +X of the facet is the +Z facet's +X turned by ry: (cos ry, -sin ry) = (nz, -nx).
+  return [fc.nx * (fc.eave - s) + fc.nz * v, y, fc.nz * (fc.eave - s) - fc.nx * v];
+}
+
+/** The roof's facets as one non-indexed geometry (position, normal, uv). Exported for tests. */
+export function hipSurface(r: RoofParams): BufferGeometry {
+  const f = hipFrame(r);
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  for (const fc of hipFacets(f)) {
+    for (let k = 0; k < HIP_BANDS; k++) {
+      const u0 = k / HIP_BANDS;
+      const u1 = (k + 1) / HIP_BANDS;
+      const s0 = f.run * u0;
+      const s1 = f.run * u1;
+      const p0 = hipProfile(f, u0);
+      const p1 = hipProfile(f, u1);
+      const l0 = fc.half - s0;
+      const l1 = Math.max(0, fc.half - s1);
+      const a = facetPoint(fc, s0, -l0, p0.y);
+      const b = facetPoint(fc, s0, l0, p0.y);
+      const c = facetPoint(fc, s1, l1, p1.y);
+      const d = facetPoint(fc, s1, -l1, p1.y);
+      // Smooth along the slope within a facet, sharp across the hips.
+      const n = (sl: number) => {
+        const k2 = 1 / Math.hypot(1, sl);
+        return [fc.nx * sl * k2, k2, fc.nz * sl * k2];
+      };
+      const n0 = n(p0.slope);
+      const n1 = n(p1.slope);
+      pos.push(...a, ...b, ...c);
+      nrm.push(...n0, ...n0, ...n1);
+      if (l1 > 1e-6) {
+        pos.push(...a, ...c, ...d);
+        nrm.push(...n0, ...n1, ...n1);
+      }
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(nrm), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array((pos.length / 3) * 2), 2));
+  return g;
+}
+
+/** Tiles of the same-size gable (its scallop loop in kit `roof`, as houseRoof calls it). */
+function gableTileCount(r: RoofParams): number {
+  const n = Math.max(5, Math.round(r.w * 1.35));
+  const len = r.d + r.overhang * 1.4;
+  const count = Math.max(2, Math.round(len / 0.36));
+  const seg = len / count;
+  let tiles = 0;
+  for (let i = 0; i < n; i++)
+    for (let k = 0; k < count; k++) {
+      const z = -len / 2 + (k + 0.5) * seg + ((i % 2) - 0.5) * seg * 0.5;
+      if (Math.abs(z) <= len / 2 - seg * 0.45) tiles++;
+    }
+  return tiles * 2;
+}
+
+interface HipTile {
+  facet: number;
+  /** Run fraction of the course, the tile centre along it and its length. */
+  u: number;
+  v: number;
+  len: number;
+  dark: boolean;
+}
+/**
+ * Scalloped courses on every facet, staggered like the gable's, cut where
+ * they meet a hip (the hip cap covers the cut). Coarsened if needed so the
+ * hip never has more tile triangles than the same-size gable.
+ */
+export function hipTiles(r: RoofParams): HipTile[] {
+  const f = hipFrame(r);
+  const slopeLen = Math.hypot(f.run, f.rise);
+  const budget = Math.floor((gableTileCount(r) * 12) / HIP_TILE_TRIS);
+  let scale = 1;
+  let out: HipTile[] = [];
+  for (let attempt = 0; attempt < 8; attempt++) {
+    out = [];
+    const n = Math.max(4, Math.round(slopeLen / (COURSE_PITCH * scale)));
+    const facets = hipFacets(f);
+    facets.forEach((fc, fi) => {
+      for (let i = 0; i < n; i++) {
+        const u = (i + 0.35) / n;
+        const half = fc.half - f.run * u - 0.05;
+        if (half < 0.06) continue;
+        const count = Math.max(1, Math.round((half * 2) / (TILE_SEG * scale)));
+        const seg = (half * 2) / count;
+        const off = ((i % 2) - 0.5) * seg * 0.5;
+        for (let k = -1; k <= count; k++) {
+          const c = -half + (k + 0.5) * seg + off;
+          const lo = Math.max(-half, c - seg * 0.46);
+          const hi = Math.min(half, c + seg * 0.46);
+          if (hi - lo < 0.1) continue;
+          out.push({ facet: fi, u, v: (lo + hi) / 2, len: hi - lo, dark: (k + i + fi) % 4 === 0 });
+        }
+      }
+    });
+    if (out.length <= budget) break;
+    scale *= Math.sqrt(out.length / budget) * 1.02;
+  }
+  return out;
+}
+
+/** One tile: a box (1 x 0.085 x 0.2; x along the course, z down the slope) without its hidden underside. */
+let tileGeo: BufferGeometry | null = null;
+const HIP_TILE_TRIS = 10;
+function hipTileGeometry(): BufferGeometry {
+  if (tileGeo) return tileGeo;
+  const box3 = new BoxGeometry(1, 0.085, 0.2).toNonIndexed();
+  // BoxGeometry faces in order +x, -x, +y, -y, +z, -z (6 vertices each once non-indexed): drop -y.
+  const keep = [0, 1, 2, 4, 5];
+  const g = new BufferGeometry();
+  for (const name of ['position', 'normal', 'uv'] as const) {
+    const src = box3.getAttribute(name);
+    const size = src.itemSize;
+    const arr = new Float32Array(keep.length * 6 * size);
+    keep.forEach((face, j) => arr.set((src.array as Float32Array).subarray(face * 6 * size, (face + 1) * 6 * size), j * 6 * size));
+    g.setAttribute(name, new BufferAttribute(arr, size));
+  }
+  box3.dispose();
+  return (tileGeo = g);
+}
+
+function hipRoof(B: GeoBuilder, r: RoofParams, color: ColorLike): void {
+  const f = hipFrame(r);
+  // Same colouring as the gable roof of the same variant (kit `roof`).
+  const col = mixc(color, '#8a8078', 0.24);
+  const dark = shade(col, 0.84);
+  const cap = shade(col, 0.82);
+  const NO_AO: AddOpts = { ao: false };
+  B.add('solid', hipSurface(r), col, undefined, { ao: false, grad: 0.12 });
+  // Fascia: the earlier hip's eave band, top flush with the eave line so the first course laps over it.
+  B.add('solid', rbox(f.hw * 2 + 0.1, 0.17, f.hd * 2 + 0.1, 0.07), shade(col, 0.72), T(0, HIP_EAVE_Y - 0.085, 0), NO_AO);
+  // Tile courses.
+  const facets = hipFacets(f);
+  const tile = hipTileGeometry();
+  for (const t of hipTiles(r)) {
+    const fc = facets[t.facet]!;
+    const p = hipProfile(f, t.u);
+    const ang = Math.atan(p.slope);
+    const [x, y, z] = facetPoint(fc, f.run * t.u, t.v, p.y);
+    // Lift the tile off the surface along its normal, as the gable's scallops sit on its slab.
+    const lift = 0.035;
+    const nx = fc.nx * Math.sin(ang) * lift;
+    const nz = fc.nz * Math.sin(ang) * lift;
+    B.add('solid', tile, t.dark ? dark : col, T(x + nx, y + Math.cos(ang) * lift, z + nz, fc.ry, ang, 0, t.len * 0.999, 1, 1), { ao: false, jitter: 0.07 });
+  }
+  // Hip caps: a rounded cap in short pieces following each (gently curved) hip, then the ridge.
+  const up = 0.05;
+  const corner = (sx: number, sz: number, u: number): Vector3 => {
+    const s = f.run * u;
+    return new Vector3(sx * Math.max(0, f.hw - s), hipProfile(f, u).y + up, sz * Math.max(0, f.hd - s));
+  };
+  const Y = new Vector3(0, 1, 0);
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
+    for (let k = 0; k < HIP_BANDS; k++) {
+      const a = corner(sx, sz, k / HIP_BANDS);
+      const b = corner(sx, sz, (k + 1) / HIP_BANDS);
+      const dir = b.clone().sub(a);
+      const len = dir.length();
+      const q = new Quaternion().setFromUnitVectors(Y, dir.normalize());
+      // Pieces overlap a little so the cap reads as one (never past the eave corner); the eave end is closed.
+      const lo = k > 0 ? 0.03 : 0;
+      const mid = a.clone().add(b).multiplyScalar(0.5).addScaledVector(dir, (0.03 - lo) / 2);
+      B.add('solid', cyl(HIP_CAP_R, HIP_CAP_R, len + 0.03 + lo, 6, k > 0), cap, new Matrix4().compose(mid, q, new Vector3(1, 1, 1)), NO_AO);
+    }
+  }
+  const top = HIP_EAVE_Y + f.rise;
+  const ridge = Math.max(f.rl, f.rd);
+  if (ridge > 0.01) B.add('solid', cyl(0.12, 0.12, ridge * 2 + 0.04, 10, true), cap, T(0, top + 0.06, 0, f.rl > f.rd ? 0 : Math.PI / 2, 0, Math.PI / 2), NO_AO);
+  // A small finial at each ridge end (one at the peak of a square roof).
+  const ends: [number, number][] = ridge > 0.01 ? [[f.rl, f.rd], [-f.rl, -f.rd]] : [[0, 0]];
+  for (const [ex, ez] of ends) B.add('solid', sphereHi(0.14, 8, 6), shade(cap, 0.95), T(ex, top + 0.08, ez), NO_AO);
 }
 
 function chimneyPiece(B: GeoBuilder, c: C): void {

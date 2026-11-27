@@ -32,6 +32,8 @@ export type WorldEventKind =
   | 'structure_roofed'
   /** A finished player-built house (walls, doorway, roof) got a name on a facade sign. */
   | 'building_named'
+  /** A resident made a house they built their home (Brief H; no location is recorded). */
+  | 'home_made'
   // --- Building activities (server/src/activities) — always real players' actions ---
   /** Someone played the café piano (throttled per player). */
   | 'piano_played'

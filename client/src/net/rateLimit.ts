@@ -33,6 +33,9 @@ const ACTION_FOR: Record<C2SType, string | null> = {
   [C2S.buildEditText]: 'build',
   [C2S.activity]: 'activity',
   [C2S.pianoNote]: 'piano',
+  [C2S.homeSet]: 'home',
+  [C2S.homeClear]: 'home',
+  [C2S.homePin]: 'home',
 };
 
 interface Bucket {

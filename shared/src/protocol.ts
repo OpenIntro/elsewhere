@@ -12,7 +12,8 @@
  * from users are sanitized/length-limited by the server before rebroadcast.
  */
 import type { Appearance } from './appearance.js';
-import type { BuildRefusal, PieceKind } from './building.js';
+import type { BuildRefusal, PieceKind, Rect } from './building.js';
+import type { HomeRefusal } from './homes.js';
 import type { GazetteIssue, WorldEvent, WorldEventKind } from './memory.js';
 import type { DiscoveryId, ItemId } from './world/items.js';
 import type { LocationId } from './world/locations.js';
@@ -215,6 +216,12 @@ export const C2S = {
   activity: 'activity',
   /** One piano note (café piano; heard by everyone in or near the café). */
   pianoNote: 'piano_note',
+  /** Homes: make the house this piece of yours belongs to your home (a second one moves it). */
+  homeSet: 'home_set',
+  /** Homes: stop calling your house home. */
+  homeClear: 'home_clear',
+  /** Homes: show / hide your home on the island map (off by default). */
+  homePin: 'home_pin',
 } as const;
 export type C2SType = (typeof C2S)[keyof typeof C2S];
 
@@ -363,6 +370,9 @@ export interface C2SPayloads {
   [C2S.buildEditText]: BuildEditTextPayload;
   [C2S.activity]: ActivityPayload;
   [C2S.pianoNote]: PianoNotePayload;
+  [C2S.homeSet]: HomeSetPayload;
+  [C2S.homeClear]: Record<string, never>;
+  [C2S.homePin]: HomePinPayload;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +415,12 @@ export const S2C = {
   pianoNote: 'piano_note',
   /** One-shot activity effects for people nearby (tool sounds, cups, kettle whistle…). */
   activityEvent: 'activity_event',
+  /** Homes: every home of the world (after the build snapshot and after C2S.buildSync). */
+  homes: 'homes',
+  /** Homes: one home was made, moved, renamed, pinned / unpinned, or cleared (everyone in the world). */
+  homeChanged: 'home_changed',
+  /** Homes: outcome of the requester's homeSet / homeClear / homePin. */
+  homeResult: 'home_result',
 } as const;
 export type S2CType = (typeof S2C)[keyof typeof S2C];
 
@@ -727,6 +743,46 @@ export interface S2CPayloads {
   [S2C.activityResult]: ActivityResultPayload;
   [S2C.pianoNote]: PianoNoteEvent;
   [S2C.activityEvent]: ActivityEvent;
+  [S2C.homes]: HomesPayload;
+  [S2C.homeChanged]: HomeChangedPayload;
+  [S2C.homeResult]: HomeResultPayload;
+}
+
+// ---------------------------------------------------------------------------
+// Homes (server/src/homes; the rule is shared/src/homes.ts)
+// ---------------------------------------------------------------------------
+
+export interface HomeSetPayload {
+  /** Any of your pieces of the house (wall, doorway, roof, floor…). */
+  pieceId: string;
+}
+export interface HomePinPayload {
+  on: boolean;
+}
+/** A home as one recipient sees it (`pinned` is filtered per recipient by the server). */
+export interface HomeWire {
+  profileId: string;
+  ownerName: string;
+  doorPieceId: string;
+  /** The facade name sign's text ('' without one). */
+  name: string;
+  /** The room's bounding rectangle (wall centre lines). */
+  rect: Rect;
+  /** Shown on this recipient's map. */
+  pinned: boolean;
+}
+export interface HomesPayload {
+  homes: HomeWire[];
+}
+export type HomeChangedPayload = { home: HomeWire } | { profileId: string; cleared: true };
+export interface HomeResultPayload {
+  action: 'set' | 'clear' | 'pin';
+  ok: boolean;
+  reason?: HomeRefusal;
+  /** Short human-readable outcome or reason. */
+  text?: string;
+  /** set: the door piece of the home now. */
+  doorPieceId?: string;
 }
 
 // ---------------------------------------------------------------------------

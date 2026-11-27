@@ -11,6 +11,7 @@ import { runtime } from '../../state/runtime.js';
 import { useUiPrefs } from '../localState.js';
 import { Icon } from '../icons.js';
 import { Sheet, Toggle } from '../primitives.js';
+import { useHomesStore } from '../../build/homes.js';
 
 const UNKNOWN = LOCATIONS.find((l) => l.id === 'the_unknown')!;
 const deg = (r: number) => (r * 180) / Math.PI;
@@ -75,6 +76,9 @@ export function MapPanel({ onClose }: { onClose(): void }) {
     return known ? n : null;
   };
   const myLocation = useGameStore((s) => (s.sessionId ? s.players[s.sessionId]?.location : ''));
+  // Homes their owners chose to show (the server already left out anyone you are in a block relation with). Never online status.
+  const homes = useHomesStore((s) => s.homes);
+  const pins = useMemo(() => Object.values(homes).filter((h) => h.pinned).sort((a, b) => (a.profileId < b.profileId ? -1 : 1)), [homes]);
   const { me, others } = useLivePositions(showOthers);
   const [selected, setSelected] = useState<Location | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -153,6 +157,23 @@ export function MapPanel({ onClose }: { onClose(): void }) {
               />
             ))}
             <circle cx={FOUNTAIN.position.x} cy={FOUNTAIN.position.z} r={FOUNTAIN.basinRadius} className="map__fountain" />
+            {pins.map((h) => {
+              const cx = (h.rect.minX + h.rect.maxX) / 2;
+              const cz = (h.rect.minZ + h.rect.maxZ) / 2;
+              const label = h.name ? `${h.name} · ${h.ownerName}` : `${h.ownerName}’s home`;
+              return (
+                <g key={h.profileId} transform={`translate(${cx} ${cz})`} data-testid={`map-home-${h.profileId}`} data-label={label}>
+                  <rect x={-(h.rect.maxX - h.rect.minX) / 2} y={-(h.rect.maxZ - h.rect.minZ) / 2} width={h.rect.maxX - h.rect.minX} height={h.rect.maxZ - h.rect.minZ} rx={0.5} fill="#c98b5a" stroke="rgba(40, 28, 18, 0.55)" strokeWidth={0.4} />
+                  <g transform={counter}>
+                    <path d="M0 -2.2 L-1.6 -0.8 V1.2 H1.6 V-0.8 Z" fill="#f4ecdc" stroke="rgba(40, 28, 18, 0.7)" strokeWidth={0.35} strokeLinejoin="round" />
+                    <text y={-3.6} textAnchor="middle" className="map__label" style={{ fontSize: '3px', fontWeight: 500 }}>
+                      {label}
+                    </text>
+                  </g>
+                  <title>{label}</title>
+                </g>
+              );
+            })}
             {/* The Unknown: fog, no detail. */}
             <circle cx={UNKNOWN.center.x} cy={UNKNOWN.center.z} r={UNKNOWN.radius + 9} fill="url(#map-fog)" filter="url(#map-soft)" className="map__fog" />
             <circle cx={UNKNOWN.center.x} cy={UNKNOWN.center.z} r={UNKNOWN.radius - 2} className="map__unknown-ring" />

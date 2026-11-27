@@ -149,6 +149,12 @@ export const TEMPLATES = {
     headlines: ['A House Called {title}', 'Say Hello to {title}', 'New Name on the Lane'],
     bodies: ['{Time}, {name} hung a name board on their house near {place}: it is called “{title}”.', 'There is a new name on the island: {name} named their house “{title}” near {place} {time}.'],
   },
+  home_made: {
+    id: 'home_made',
+    section: 'town_news',
+    headlines: ['A New Home', 'Moving In', 'Home at Last'],
+    bodies: ['{name} made {title} their home.'],
+  },
   structure_roofed: {
     id: 'structure_roofed',
     section: 'town_news',

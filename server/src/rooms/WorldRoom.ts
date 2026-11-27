@@ -381,6 +381,10 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.on(C2S.buildSync, 'buildSync', (sid) => s.building.sendSnapshot(this.ctx, sid));
     this.on(C2S.buildClear, null, (sid, m) => s.building.clear(this.ctx, sid, m));
     this.on(C2S.buildEditText, null, (sid, m) => s.building.editText(this.ctx, sid, m));
+    // Homes (server/src/homes) rate-limit per profile inside the service.
+    this.on(C2S.homeSet, null, (sid, m) => s.homes.set(this.ctx, sid, m));
+    this.on(C2S.homeClear, null, (sid) => s.homes.clear(this.ctx, sid));
+    this.on(C2S.homePin, null, (sid, m) => s.homes.pin(this.ctx, sid, m));
   }
 
   private handleMove(sid: string, m: C2SPayloads['move']): void {

@@ -10,6 +10,7 @@ import { createChat, type ChatService } from './chat/index.js';
 import { createCollective, type CollectiveService } from './collective/index.js';
 import { ENV } from './env.js';
 import { createGazette, type GazetteService } from './gazette/index.js';
+import { createHomes, linkModeration, type HomesService } from './homes/index.js';
 import { createInteractions, type InteractionService } from './interactions/index.js';
 import { createMemory, type MemoryService } from './memory/index.js';
 import { createModeration, type ModerationService } from './moderation/index.js';
@@ -27,6 +28,7 @@ export interface ServerServices {
   gazette: GazetteService;
   building: BuildingService;
   activities: ActivityService;
+  homes: HomesService;
   /** Services with room lifecycle hooks, in call order. */
   hooks: RoomHooks[];
 }
@@ -60,6 +62,10 @@ export async function initServices(opts: InitOptions = {}): Promise<ServerServic
   gazette.start();
   const building = createBuilding({ persistence, memory, moderation, worldId: collective.worldId, options: ENV.building });
   await building.load();
+  // Homes: after building (the rule reads its pieces; it hears every piece change and snapshot).
+  const homes = createHomes({ persistence, memory, moderation, building, worldId: collective.worldId });
+  await homes.load();
+  linkModeration(moderation, homes);
   activities = createActivities({
     persistence,
     memory,
@@ -68,7 +74,7 @@ export async function initServices(opts: InitOptions = {}): Promise<ServerServic
     clock: () => ({ epochMs: collective.facts().clockEpochMs, dayLengthMs: ENV.dayLengthMs }),
     tunables: ENV.activities,
   });
-  current = { persistence, auth, moderation, chat, memory, collective, interactions, gazette, building, activities, hooks: [moderation, chat, collective, interactions, building, activities] };
+  current = { persistence, auth, moderation, chat, memory, collective, interactions, gazette, building, activities, homes, hooks: [moderation, chat, collective, interactions, building, homes, activities] };
   return current;
 }
 

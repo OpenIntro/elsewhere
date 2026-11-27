@@ -99,6 +99,8 @@ export const CONFIG = {
     activity: { capacity: 6, refillPerSecond: 1.5 },
     /** Café piano notes (a quick run of notes is fine; a flood is not). */
     piano: { capacity: 16, refillPerSecond: 8 },
+    /** Homes: make / stop / pin (server keys it per PROFILE). */
+    home: { capacity: 4, refillPerSecond: 0.25 },
   } satisfies Record<string, RateLimitRule>,
 
   clock: {

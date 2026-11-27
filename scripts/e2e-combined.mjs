@@ -38,8 +38,9 @@
  *     leaves: the drink is still in hand (sippable) or cleanly gone, nothing stuck
  *  6. server restart with built pieces, a pinned notice, workshop progress and
  *     a lit hearth: both clients reload and everything is back; the fresh DB
- *     holds exactly migrations 1-5. (6b, only with $COMB_LEGACY_DATA_DIR: a DB
- *     made by an older server boots, migrates to 1-5 and resumes its profile.)
+ *     holds exactly the server's migrations (the id list is read from
+ *     server/dist/persistence/migrations.js). (6b, only with $COMB_LEGACY_DATA_DIR:
+ *     a DB made by an older server boots, migrates to that list and resumes its profile.)
  *  7. mobile 390×844 and 844×390: bottom nav, Build button, build dock, chat
  *     preview, joystick, drink chip and the keeper panel do not block each
  *     other's controls (hit-tested); screenshots to $COMB_SHOTS
@@ -136,6 +137,13 @@ function makeServer(port, env) {
   return createServer({ port, env, label: 'combined', verbose: !!process.env.COMB_VERBOSE, logPrefix: `[server:${port}] ` });
 }
 const server = makeServer(PORT, SERVER_ENV);
+
+/** The migration ids the server under test applies (its own list, not a copy). */
+const EXPECTED_MIGRATIONS = JSON.stringify((await import(pathToFileURL(path.join(ROOT, 'server/dist/persistence/migrations.js')).href)).MIGRATIONS.map((m) => m.id));
+const MIGRATION_RANGE = (() => {
+  const ids = JSON.parse(EXPECTED_MIGRATIONS);
+  return `${ids[0]}-${ids[ids.length - 1]}`;
+})();
 
 /** Migration ids recorded in a (stopped) server's PGlite database. */
 async function migrationsIn(dataDir) {
@@ -1081,7 +1089,7 @@ try {
     return notes.join('; ');
   });
 
-  await check('6. server restart with built pieces, a pinned notice, workshop progress and a lit hearth: both reload and everything is back; fresh DB has migrations 1-5', async () => {
+  await check(`6. server restart with built pieces, a pinned notice, workshop progress and a lit hearth: both reload and everything is back; fresh DB has migrations ${MIGRATION_RANGE}`, async () => {
     // A pins a notice at the Town Hall, then lights House 1's hearth; B does a piece of work at the Workshop.
     const workB = async () => {
       await useThing(b, 'station_workshop_anvil', { panel: 'panel-project', approach: interiorAnchor('workshop', 'anvil').position, timeout: 90_000 });
@@ -1108,7 +1116,7 @@ try {
     restarting = true;
     await server.stop();
     const migs = await migrationsIn(DATA_DIR);
-    assert(JSON.stringify(migs.map((m) => m.id)) === '[1,2,3,4,5]', `schema_migrations: ${JSON.stringify(migs)}`);
+    assert(JSON.stringify(migs.map((m) => m.id)) === EXPECTED_MIGRATIONS, `schema_migrations: ${JSON.stringify(migs)}, expected ${EXPECTED_MIGRATIONS}`);
     await server.start();
     await a.reload();
     await b.reload();
@@ -1126,7 +1134,7 @@ try {
   });
 
   if (process.env.COMB_LEGACY_DATA_DIR) {
-    await check('6b. a DB created by an older server migrates cleanly to 1-5 and its profile resumes', async () => {
+    await check(`6b. a DB created by an older server migrates cleanly to ${MIGRATION_RANGE} and its profile resumes`, async () => {
       const legacy = mkdtempSync(path.join(tmpdir(), 'elsewhere-legacy-'));
       cpSync(process.env.COMB_LEGACY_DATA_DIR, legacy, { recursive: true });
       const before = await migrationsIn(legacy);
@@ -1153,7 +1161,7 @@ try {
         await old.stop();
       }
       const after = await migrationsIn(legacy);
-      assert(JSON.stringify(after.map((m) => m.id)) === '[1,2,3,4,5]', `after: ${JSON.stringify(after)}`);
+      assert(JSON.stringify(after.map((m) => m.id)) === EXPECTED_MIGRATIONS, `after: ${JSON.stringify(after)}, expected ${EXPECTED_MIGRATIONS}`);
       return `before ${JSON.stringify(before.map((m) => m.id))} → after ${JSON.stringify(after.map((m) => m.id))}; ${resumed}`;
     });
   } else log('6b skipped (not run): set COMB_LEGACY_DATA_DIR to a data dir made by an older server');

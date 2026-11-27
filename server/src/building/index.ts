@@ -125,8 +125,20 @@ export interface BuildStats {
   snapshotBytes: number;
 }
 
+/** What changed in one place / remove / edit / admin removal (homes re-check their rooms from it). */
+export interface PieceChange {
+  added: readonly PieceRecord[];
+  removed: readonly PieceRecord[];
+  /** Pieces whose text changed (sign edits). */
+  updated: readonly PieceRecord[];
+}
+
 export interface BuildingService extends RoomHooks {
   readonly index: PieceIndex<PieceRecord>;
+  /** Called after every committed change (after its broadcast). Returns an unsubscribe. */
+  onChange(fn: (change: PieceChange) => void): () => void;
+  /** Called right after the snapshot went to one client (join, or C2S.buildSync). Returns an unsubscribe. */
+  onSnapshotSent(fn: (ctx: RoomContext, sessionId: string) => void): () => void;
   load(): Promise<void>;
   place(ctx: RoomContext, sessionId: string, payload: BuildPlacePayload): Promise<void>;
   remove(ctx: RoomContext, sessionId: string, payload: BuildRemovePayload): Promise<void>;
@@ -212,6 +224,18 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
     }
   };
   const clearedSet = () => new Set(cleared.keys()) as ReadonlySet<string>;
+  const changeListeners = new Set<(c: PieceChange) => void>();
+  const snapshotListeners = new Set<(ctx: RoomContext, sid: string) => void>();
+  const changed = (c: Partial<PieceChange>) => {
+    const change: PieceChange = { added: c.added ?? [], removed: c.removed ?? [], updated: c.updated ?? [] };
+    for (const fn of changeListeners) {
+      try {
+        fn(change);
+      } catch (err) {
+        console.error('[building] change listener failed', err);
+      }
+    }
+  };
   // Built seats resolve as interactables ("bp:<pieceId>") everywhere the seat flow looks them up.
   registerInteractableResolver((id) => {
     const pid = pieceIdOfInteract(id);
@@ -390,6 +414,22 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
 
     sendSnapshot(ctx, sid) {
       for (const chunk of service.snapshotChunks()) ctx.send(sid, S2C.buildSnapshot, chunk);
+      for (const fn of snapshotListeners) {
+        try {
+          fn(ctx, sid);
+        } catch (err) {
+          console.error('[building] snapshot listener failed', err);
+        }
+      }
+    },
+
+    onChange(fn) {
+      changeListeners.add(fn);
+      return () => void changeListeners.delete(fn);
+    },
+    onSnapshotSent(fn) {
+      snapshotListeners.add(fn);
+      return () => void snapshotListeners.delete(fn);
     },
 
     snapshotChunks() {
@@ -478,6 +518,7 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
       const view = toView(piece);
       broadcastAll((c) => c.broadcast(S2C.buildPlaced, { piece: view, by: c === ctx ? sid : '' }));
       result(ctx, sid, reqId, 'place', null, { pieceId: piece.id });
+      changed({ added: [piece] });
       void recordMemory(ctx, piece).catch((err) => console.error('[building] memory failed', err));
     },
 
@@ -503,6 +544,7 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
       }
       broadcastAll((c) => c.broadcast(S2C.buildRemoved, { ids: [p.id], by: 'owner' }));
       result(ctx, sid, reqId, 'remove', null, { pieceId: p.id });
+      changed({ removed: [p] });
     },
 
     unstuck(ctx, sid) {
@@ -582,6 +624,7 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
       const view = toView(p);
       broadcastAll((c) => c.broadcast(S2C.buildUpdated, { piece: view }));
       result(ctx, sid, reqId, 'edit', null, { pieceId: p.id });
+      changed({ updated: [p] });
     },
 
     interact(ctx, sid, target) {
@@ -658,8 +701,10 @@ export function createBuilding(deps: BuildingDeps): BuildingService {
       const all = cascadeRemoval(index, known);
       for (const id of all) for (const s of seatedOn(id)) standUp(s.ctx, s.sid);
       await repo.remove(all);
+      const gone = all.map((id) => index.get(id)).filter((p): p is PieceRecord => !!p);
       for (const id of all) removeLive(id);
       broadcastAll((c) => c.broadcast(S2C.buildRemoved, { ids: all, by: 'admin' }));
+      changed({ removed: gone });
       return all;
     },
 

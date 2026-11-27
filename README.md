@@ -194,7 +194,7 @@ The server is a single process on a single port.
 | `npm run build && npm run e2e:activities` | building activities: own production server (port `ACT_PORT`, default 2633, fresh temp data dir, **lowered** `WORKSHOP_STAGE_CONTRIBUTIONS=2,2 WORKSHOP_STAGE_DISTINCT=2,2`), a desktop and a phone browser through the real UI; 12 named checks — same keeper state on both, hearth, guest book, notice board, town poll (real tally 2), barista drink seen in hand by the other, piano notes received + played by the other's audio graph, the town project finished by both (stage advance + lanterns outside), online count stays 2 with keepers on duty, everything still there after a server restart, zero console errors. Screenshots with `ACT_SHOTS=<dir>` |
 | `npm run build && npm run e2e:interiors` | walk-in interiors: own production server (port `INT_PORT`, default 2631), a desktop and a phone browser; 9 named checks — click-to-move into the Café through its door, keyboard walking in and out, cutaway open inside / closed outside, name tags + speech bubble + interaction prompt indoors, an indoor chair seen seated by the other client, walls hold, zero console errors |
 | `npm run build && npm run e2e:build` | player building: own production server (port `BUILD_PORT`, default 2634, fresh temp data dir), a desktop and a phone (Pixel 7, touch) browser through the real build UI; 11 named checks — palette, a hut built by A (floor, walls, doorway, window, roof, lamp, sign with text) seen identically by B, a protected spot and a spot on another player refused with a visible reason, B cannot remove A's piece and forged remove/place messages are refused by the server, B blocked by A's wall but walking in through A's doorway (server positions), B builds by touch, A removes a piece and B sees it go, everything still there after a server restart, a late joiner receives every piece, zero console errors. Screenshots with `BUILD_SHOTS=<dir>` |
-| `npm run build && npm run e2e:combined` | cross-feature checks (interiors × building × activities): own production server (port `COMB_PORT`, default 2636, fresh temp data dir, `DAY_LENGTH_MINUTES=480` so the keepers stay on duty for the whole run), a desktop and a phone browser; named checks — build mode refuses interiors, door aprons, keeper routes and stations with a visible reason (UI and forged messages; plus a rulebook sweep), a wall line by the Café door does not seal it (click-to-move in and out; no door of any building can be sealed by legal pieces), inside the Café the keeper's KEEPER tag + a player's tag and speech bubble + online count 2, build mode toggled indoors then E on the barista, a drink held through build mode, a server restart with pieces / notice / workshop progress / lit hearth and migrations 1-5 on the fresh DB, phone layouts 390x844 + 844x390 hit-tested (screenshots to `docs/screenshots/combined/`, `COMB_SHOTS=0` disables), HTML in a sign and a notice shown as text, zero console errors. `COMB_LEGACY_DATA_DIR=<dir>` adds a check that a DB made by an older server migrates to 1-5 (with `qa-token.txt`, `qa-profile.txt` and `qa-secret.txt` in that dir it also checks that the saved guest resumes its profile) |
+| `npm run build && npm run e2e:combined` | cross-feature checks (interiors × building × activities): own production server (port `COMB_PORT`, default 2636, fresh temp data dir, `DAY_LENGTH_MINUTES=480` so the keepers stay on duty for the whole run), a desktop and a phone browser; named checks — build mode refuses interiors, door aprons, keeper routes and stations with a visible reason (UI and forged messages; plus a rulebook sweep), a wall line by the Café door does not seal it (click-to-move in and out; no door of any building can be sealed by legal pieces), inside the Café the keeper's KEEPER tag + a player's tag and speech bubble + online count 2, build mode toggled indoors then E on the barista, a drink held through build mode, a server restart with pieces / notice / workshop progress / lit hearth and exactly the server's migrations on the fresh DB (1-6; the id list is read from `server/dist/persistence/migrations.js`), phone layouts 390x844 + 844x390 hit-tested (screenshots to `docs/screenshots/combined/`, `COMB_SHOTS=0` disables), HTML in a sign and a notice shown as text, zero console errors. `COMB_LEGACY_DATA_DIR=<dir>` adds a check that a DB made by an older server migrates to that list (with `qa-token.txt`, `qa-profile.txt` and `qa-secret.txt` in that dir it also checks that the saved guest resumes its profile) |
 | `npm run build && npm run e2e:build2` | building round 2: own production server (port `BUILD2_PORT`, default 2635), a desktop and a phone (touch) browser through the real UI; 16 named checks — the "Clear bush" offer and clearing, a two-storey house built with stacking, the run and the storey control (stacking checked at all four camera rotations), one gable roof from the roof tool, a name board over the door, furnishing incl. a table lamp on the table, identical pieces on both, the name prompt on approach, sitting on a built chair seen by the other, tree / protected plant not clearable (UI + forged), a cleared rock walked through (server positions), a hut + roof + stacked wall by touch, restart persistence (pieces and cleared plants), late joiner, zero console errors. Screenshots with `BUILD2_SHOTS=<dir>` |
 | `npm run build && npm run e2e:roofs` | roofs attach: walls staged through the real server path, then the production server restarts with its DEFAULT settings (port `ROOFS_PORT`, default 2674, fresh temp data dir); a desktop (mouse) and a phone (touch) browser; 13 named checks — 10 ordinary houses roofed in one click / one tap + Place (one and two storeys aimed at the ground floor, doors + windows in every side from inside, an odd 3 m side with its gap with the storey control locked on the wrong storey, a wall left out, an open porch from inside by touch, 2x2 and 2x3, a 6x4 with a neighbour's west wall and a garden wall at a corner, a 2x2 next to House 1 with shortened eaves) at all four camera rotations, the other client sees each roof; the exact reason shown for two sides only, half walls, someone else's walls and too far (nothing placed); zero console errors. Screenshots with `ROOFS_SHOTS=<dir>` |
 | `npm run build && npm run e2e:built-interiors` | built interiors: own production server (port `BINT_PORT`, default 2641, fresh temp data dir), a desktop and a phone (touch) browser; a 4 x 4 hut (doorway, window wall, house roof, bed, rug, table + lamp, a picture on a far wall and one on a camera-facing wall) and a two-storey hut built and furnished through the real UI; 11 named checks — walking in opens the room (camera-side walls cut, roof gone) while the other player outside sees it whole, the cut follows four camera rotations, the camera-side picture hides with its wall while the far picture and the furniture stay, doorway hysteresis (≤ 1 toggle in 3 s on the threshold), everything back within 1 s of walking out, the phone player gets it by tap-to-move, the upper storey of the two-storey hut hidden from its ground floor, a table lamp placed on a table seen through a cut wall, draw calls inside = outside = before the feature (`BINT_BASELINE_DRAWCALLS`, 19), zero console errors. Screenshots with `BINT_SHOTS=<dir>` |
@@ -204,6 +204,7 @@ The server is a single process on a single port.
 | `node scripts/interior-screenshots.mjs [devUrl]` | every interior day/night on desktop and phone + exteriors at night + the four camera rotations → `docs/screenshots/interiors/` (dev client; uses `?inside=`) |
 | `npm run build && npm run e2e:phone` | phone layout: own production server (port `PHONE_PORT`, default 2642, fresh temp data dir), desktop A + Pixel 7 B rotated to 915x412 (touch); 11 named checks — collapsed landscape build strip coverage (≤ 20% area / ≤ 25% height), a hut built only through the strip (storey control, roof tool, signpost words) seen identically by A, ghost within 0.5 m of a tap with the camera focus shifted (solved independently from the published camera), tap-to-move with the piano peeking, Report from the strip (server list), no overlapping controls at 915x412 / 844x390 / 390x844, portrait piano peek ≤ 40% height with B and the piano uncovered within 1 s, notes heard by A, handle peek ↔ full and the camera easing back, notice board going full on typing, desktop dock / piano rects identical to `docs/screenshots/phone/before.json`, zero console errors. `PHONE_MODE=before` measures an older build; screenshots to `docs/screenshots/phone/` |
 | `npm run build && npm run e2e:camera` | turning the view: own production server (port `CAMERA_PORT`, default 2644), desktop + Pixel 7; 9 named checks — desktop turn buttons with key tooltips; a full circle by button, by `]` and by right / middle drag, each step followed by W going screen-up and click-to-move arriving (server positions); touch button + two-finger twist turn, a pinch zooms without turning; the Café cutaway open and the player on screen at all four sides (desktop + phone); in build mode `]` turns the view, R the piece, and the ghost stays under the still pointer; turning while seated; zero console errors. Screenshots to `docs/screenshots/camera/` |
+| `npm run build && npm run e2e:homes` | homes: own production server (port `HOMES_PORT`, default 2671, fresh temp data dir), desktop A + Pixel 7 touch B (+ a late desktop joiner C); 8 named checks — A builds a 4 x 4 hut with a name board through the real UI and makes it home from the selection card (both snapshots list it), B walks up by tap-to-move and reads "Fern Cottage · A’s home · 1 inside" while A stands inside and no count once A has left, B's map has no pin until A switches it on (then within 2 s), B blocks A and the pin goes, unblocks and it is back, A removes the roof and the home is cleared on both with a notice to A, re-roofed + home again + pin on survive a server restart and C sees the label and the pin, a forged `homeSet` from B on A's house and on B's bare floor tile is refused with reasons, zero console errors; plus a setup check of the Home panel without a home. Screenshots to `docs/screenshots/homes/` (`HOMES_SHOTS=0` disables) |
 | `node scripts/smoke-two-clients.mjs [url]` | two browsers join and see each other move |
 | `npx tsx --conditions=source scripts/server-integration.mjs [url] --save f.json` then restart the server and `... --verify-restart f.json` | multi-client protocol test (chat, seats, bell, fountain, portal, Gazette, persistence); see the script header for the server env it expects |
 | `node scripts/e2e-player.mjs` | movement, camera, click/tap-to-move, collision, remote smoothness, server restart reconnection, touch controls (spawns its own server on `E2E_SERVER_PORT`, default 2604, and a Vite dev client on `E2E_VITE_PORT`, default 5184; `E2E_CLIENT_DIST=client/dist` serves the production build from that server instead of Vite) |
@@ -235,6 +236,7 @@ phone and camera).
 | `e2e:phone` | `PHONE_PORT` | 2642 |
 | `e2e:doors` | `DOORS_PORT` | 2643 |
 | `e2e:camera` | `CAMERA_PORT` | 2644 |
+| `e2e:homes` | `HOMES_PORT` | 2671 |
 | `e2e-player` | `E2E_SERVER_PORT` / `E2E_VITE_PORT` | 2604 / 5184 |
 
 Harness before / after (cycle 01): six production-server suites each carried their own server
@@ -436,7 +438,7 @@ next to pieces ~87 µs per 1.6 m move; a restart loaded all 2,000 pieces and was
 (Round 1, walls/floors/roof tiles only: 47 calls / 0.58 M triangles for the build layer.)
 
 Triangles per round-2 piece (one instance, from the client's templates): house roof 4x6 m gable
-3,232 / hip 854, chimney 308, name board 96, hanging sign 116, plaque 24, bed 720, sofa 804,
+3,232 / hip 2,622 (was 854 before its tile courses; a hip never has more than the same-size gable), chimney 308, name board 96, hanging sign 116, plaque 24, bed 720, sofa 804,
 armchair 588, stool 124, desk 120, dining table 84, bookshelf 528, dresser 324, kitchen counter 84,
 stove 304, sink 92, fireplace 264, bathtub 296, chest 156, barrel 288, floor lamp 96, table lamp 72,
 tall plant 652, small plant 176, wall shelf 148, picture 96, wall clock 272, mirror 24, curtains 120,
@@ -461,6 +463,43 @@ Against the MVP (before interiors, building and activities) at the same views, s
 +24 draw calls and +1 to +14 % triangles, the most inside the Café (medium 220 → 244 calls, 0.88 →
 1.00 M triangles: the barista and the live activity dressing). Frame time in
 software rendering says nothing about real GPUs.
+
+## Homes
+
+A player who has built a house can make it their **home** (one per player). In build mode, pick
+any piece of your house with the remove tool: the card offers **Make this my home** (or, on your
+home, **This is your home** and **Stop calling this home**); a refusal shows its reason. Walking up
+to a home shows a quiet label, "Fern Cottage · Ivy’s home", and "· 2 inside" when real players
+stand in it (counted from the positions this room instance syncs, like the online count; nothing is
+shown for 0). The Home panel shows your home's name and place, **Show my home on the map** (off by
+default: others then see a quiet pin "Fern Cottage · Ivy" on the island map, never whether you are
+online) and **Stop calling this home**, or how to make one; letters, building with friends,
+decorating, shops and a currency stay "Planned" cards.
+
+- **The rule** (`shared/src/homes.ts`, `checkHouse` / `houseFor`): the room is found with the
+  built-interiors `enclosureAt` over an index of the **owner's pieces only** (a point 0.6 m inside a
+  selected wall or doorway, the centre of a roof or floor tile): it must be roofed by one of the
+  owner's roofs, with at least 4 of the owner's walls (wall / window / doorway) on its outline and at
+  least one doorway. The name is the owner's facade name sign (name board, hanging sign or plaque on
+  an outline wall, facing out). Nothing anybody else builds — a roof against an open side, a wall
+  through it, a sign on it — changes the result.
+- **Server** (`server/src/homes/`): one row per profile in table `homes` (migration 6: world,
+  profile, door piece, `show_on_map`, created_at; the room is not stored — it is recomputed from the
+  owner's pieces at load and after every change of the owner's pieces within 1 m of it, including
+  cascades and admin removals; if it no longer qualifies the home is cleared and the owner told).
+  `C2S.homeSet {pieceId}` (owner of the piece only; refused while build-banned; a second one moves the
+  home), `C2S.homeClear`, `C2S.homePin {on}`, each answered with `S2C.homeResult` and rate-limited
+  per profile (`CONFIG.rateLimits.home`). Sync is not in the room schema: `S2C.homes` after the build
+  snapshot (join and `C2S.buildSync`), `S2C.homeChanged` to every room of the world. The pin is
+  filtered per recipient on the server: never shown to anyone in a block relation with the owner
+  (either way), hidden for everyone while the owner is banned or build-banned; a block, an unblock
+  or a new / revoked sanction re-sends it at once (a sanction that runs out on its own within 30 s).
+- **Memory:** `home_made` (once per profile per door piece, no location) and a Gazette line "Ivy
+  made Fern Cottage their home".
+
+Screenshots (from `npm run e2e:homes`): `docs/screenshots/homes/` — the Home panel without a home
+(desktop, phone) and with one (desktop; "phone" is the same page at 412 x 915), the make-home card,
+the approach label (phone, desktop) and the map pin (phone, desktop).
 
 ## Moderation and admin
 
@@ -508,10 +547,11 @@ Everything visual and audible is generated in code and intended to be replaced b
 
 ## Future features
 
-Labelled "Planned" / "Not yet" in the UI (Home panel), not implemented:
+Labelled "Planned" in the UI (Home panel), not implemented:
 
-- A home of your own in the Residential District, with your own mailbox (two homes can be walked
-  into already; houses 3-5 are marked "a future home").
+- Letters to your home: a private letterbox by your door for letters addressed to you (homes
+  themselves work: see [Homes](#homes); houses 3-5 in the Residential District stay closed).
+- Building your home with friends (helpers invited by the owner).
 - Decorating the walk-in homes' interiors (player building is outdoors, on open land).
 - Buying building pieces (economy): building is free for now.
 - Shops and trading between players (the General Store's till).
@@ -598,7 +638,7 @@ These were not checked, or were checked only in a limited way:
   are the only limits on how much one person builds. Removing a piece that holds others up is
   refused (remove the top first); admins remove the whole stack. The house roof covers rectangles
   only: an L-shaped house takes two intersecting roofs (cross gable; the valley is an overlap, not a
-  mitred valley), and a hip roof's facets are plainer than the gable's tile courses. The legacy 2 m
+  mitred valley). The legacy 2 m
   roof tiles still show seams. The browser e2e and the 2,000
   piece measurement ran on one machine with headless software-rendered Chromium; real GPUs, real
   phones and Safari were not tried. Sign text is masked by the same word list as chat (not an

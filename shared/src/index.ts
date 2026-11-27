@@ -13,3 +13,4 @@ export * from './building.js';
 export * from './world/index.js';
 export * from './activities.js';
 export * from './buildEnclosure.js';
+export * from './homes.js';

@@ -14,7 +14,7 @@
  * strip is a camera cover: the rig frames the player in the world above it.
  */
 import { useEffect, useRef, useState } from 'react';
-import { CONFIG, PALETTE_ORDER, PIECE_CATEGORIES, PIECES, natureItem, type PieceKind } from '@elsewhere/shared';
+import { CONFIG, PALETTE_ORDER, PIECE_CATEGORIES, PIECES, homeLabel, natureItem, type PieceKind } from '@elsewhere/shared';
 import { runtime } from '../state/runtime.js';
 import { useGameStore } from '../state/gameStore.js';
 import { useIsTouch, useMediaQuery } from '../ui/hooks.js';
@@ -42,6 +42,7 @@ import {
   unstuck,
 } from './actions.js';
 import { STRIP_QUERY, dockEvent, pieces, useBuildStore, variantFor } from './store.js';
+import { homeActions, homeNear, houseOfPiece, insideCount, useHomesStore } from './homes.js';
 import './build.css';
 
 function Glyph({ d, size = 20 }: { d: string; size?: number }) {
@@ -276,6 +277,42 @@ function SelectionCard() {
   const [draft, setDraft] = useState('');
   if (!p) return null;
   const mine = p.ownerId === me;
+  return <SelectionCardBody key={p.id} p={p} mine={mine} draft={draft} setDraft={setDraft} editing={editing} />;
+}
+
+/** Homes on the selection card: Make this my home / This is your home + Stop calling this home, and the server's answer. */
+function HomeControls({ pieceId }: { pieceId: string }) {
+  const me = useGameStore((s) => s.profile?.profileId);
+  const mine = useHomesStore((s) => (me ? s.homes[me] : undefined));
+  const result = useHomesStore((s) => s.result);
+  const pending = useHomesStore((s) => s.pending > 0);
+  useBuildStore((s) => s.version);
+  const house = houseOfPiece(pieceId);
+  const isHome = !!mine && !!house && house.doorPieceId === mine.doorPieceId;
+  const recent = result && Date.now() - result.at < 8000 ? result : null;
+  if (!house && !isHome && !(recent && !recent.ok)) return null;
+  return (
+    <div className="build-card__text" data-testid="home-controls" data-home={isHome ? 'yes' : 'no'}>
+      {isHome ? <span className="build-card__by" data-testid="home-is-yours">This is your home</span> : null}
+      {recent && !recent.ok ? (
+        <span className="build-card__by" role="status" data-testid="home-refusal">
+          {recent.text}
+        </span>
+      ) : null}
+      {isHome ? (
+        <button type="button" className="btn btn--ghost btn--sm" disabled={pending} onClick={() => homeActions.clear()} data-testid="home-stop">
+          Stop calling this home
+        </button>
+      ) : house ? (
+        <button type="button" className="btn btn--primary btn--sm" disabled={pending} onClick={() => homeActions.set(pieceId)} data-testid="home-make">
+          Make this my home
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SelectionCardBody({ p, mine, draft, setDraft, editing }: { p: NonNullable<ReturnType<typeof pieces.index.get>>; mine: boolean; draft: string; setDraft(v: string): void; editing: string | null }) {
   const def = PIECES[p.kind];
   const variant = def.variants.find((v) => v.id === p.variant)?.name;
   const max = def.textMax ?? CONFIG.building.signMaxLength;
@@ -297,7 +334,7 @@ function SelectionCard() {
     );
   }
   return (
-    <div className="build-card" data-testid="build-selected" data-owner={mine ? 'me' : 'other'}>
+    <div className="build-card" data-testid="build-selected" data-owner={mine ? 'me' : 'other'} style={{ flexWrap: 'wrap' }}>
       <div className="build-card__text">
         <span className="build-card__title">
           {def.name}
@@ -306,6 +343,7 @@ function SelectionCard() {
         <span className="build-card__by">{mine ? 'Built by you' : `Built by ${p.ownerName || 'someone'}`}</span>
         {p.text ? <span className="build-card__quote">“{p.text}”</span> : null}
       </div>
+      {mine ? <HomeControls pieceId={p.id} /> : null}
       {mine && def.text ? (
         <button
           type="button"
@@ -621,19 +659,28 @@ function StripDock({ touch, dockRef }: { touch: boolean; dockRef: React.RefObjec
  * with a name board (nearest within a few metres, outside build mode too).
  */
 function NamePrompt() {
-  const [label, setLabel] = useState<{ name: string; by: string } | null>(null);
+  const [label, setLabel] = useState<{ name: string; by: string; home?: string } | null>(null);
   useEffect(() => {
     const t = setInterval(() => {
       const lp = runtime.localPlayer;
       if (!lp.ready) return setLabel(null);
-      let best: { name: string; by: string } | null = null;
+      // Near a home: "Fern Cottage · Ivy's home · 2 inside" (the count from this room's synced positions; none shown for 0).
+      const home = homeNear(lp.x, lp.z, 4);
+      if (home) {
+        const n = insideCount(home);
+        const text = homeLabel(home.name, home.ownerName);
+        const cut = home.name ? home.name.length : text.length;
+        const next = { name: text.slice(0, cut), by: `${text.slice(cut)}${n >= 1 ? ` · ${n} inside` : ''}`, home: home.profileId };
+        return setLabel((cur) => (cur?.name === next.name && cur?.by === next.by && cur?.home === next.home ? cur : next));
+      }
+      let best: { name: string; by: string; home?: string } | null = null;
       let bd = 6;
       for (const p of pieces.index.query({ minX: lp.x - 7, maxX: lp.x + 7, minZ: lp.z - 7, maxZ: lp.z + 7 })) {
         if (!p.text || !PIECES[p.kind].mount) continue;
         const d = Math.hypot(p.x - lp.x, p.z - lp.z);
         if (d < bd) {
           bd = d;
-          best = { name: p.text, by: p.ownerName || 'someone' };
+          best = { name: p.text, by: ` · built by ${p.ownerName || 'someone'}` };
         }
       }
       setLabel((cur) => (cur?.name === best?.name && cur?.by === best?.by ? cur : best));
@@ -642,9 +689,9 @@ function NamePrompt() {
   }, []);
   if (!label) return null;
   return (
-    <div className="build-nameprompt" data-testid="build-name-prompt" role="status">
+    <div className="build-nameprompt" data-testid="build-name-prompt" role="status" {...(label.home ? { 'data-home': label.home } : {})}>
       <span className="build-nameprompt__name">{label.name}</span>
-      <span className="build-nameprompt__by"> · built by {label.by}</span>
+      <span className="build-nameprompt__by">{label.by}</span>
     </div>
   );
 }

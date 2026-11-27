@@ -47,6 +47,7 @@ const SUITES = [
   { name: 'built-interiors', script: 'scripts/e2e-built-interiors.mjs', port: ['BINT_PORT', 2641], ifExists: true },
   { name: 'phone', script: 'scripts/e2e-phone.mjs', port: ['PHONE_PORT', 2642], shots: 'PHONE_SHOTS', ifExists: true },
   { name: 'camera', script: 'scripts/e2e-camera.mjs', port: ['CAMERA_PORT', 2644], shots: 'CAMERA_SHOTS', ifExists: true },
+  { name: 'homes', script: 'scripts/e2e-homes.mjs', port: ['HOMES_PORT', 2671], shots: 'HOMES_SHOTS', ifExists: true },
 ];
 const OPTIONAL = {
   player: { name: 'player', script: 'scripts/e2e-player.mjs', port: ['E2E_SERVER_PORT', 2604] },

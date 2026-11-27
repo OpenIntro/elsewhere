@@ -221,6 +221,23 @@ CREATE TABLE IF NOT EXISTS nature_cleared (
 CREATE INDEX IF NOT EXISTS nature_cleared_profile_idx ON nature_cleared (world_id, profile_id, cleared_at)
 `,
   },
+  {
+    // Homes (server/src/homes): one per profile per world, identified by its door piece.
+    // No room rectangle is stored: it is recomputed from the owner's pieces (it would go stale).
+    id: 6,
+    name: 'homes',
+    sql: `
+CREATE TABLE IF NOT EXISTS homes (
+  world_id      TEXT NOT NULL DEFAULT 'default',
+  profile_id    TEXT NOT NULL,
+  door_piece_id TEXT NOT NULL,
+  show_on_map   BOOLEAN NOT NULL DEFAULT false,
+  created_at    BIGINT NOT NULL,
+  PRIMARY KEY (world_id, profile_id),
+  UNIQUE (world_id, door_piece_id)
+)
+`,
+  },
 ];
 
 /** Apply pending migrations. Returns the ids applied this run. */

@@ -12,6 +12,7 @@ import { Icon } from '../icons.js';
 import { Segmented, Sheet, Slider, Spinner, Toggle } from '../primitives.js';
 import { CREDENTIAL_ERRORS, FlowError, logout, upgradeGuest, validateCredentials } from '../session.js';
 import { formatMonthYear } from '../lib/format.js';
+import { frameReadout } from '../../game/perf.js';
 
 function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
   return (
@@ -45,6 +46,24 @@ function SoundSection() {
   );
 }
 
+/** One quiet line under Graphics: frames per second · typical / slow frame · draw calls, read on this device only. */
+function PerformanceLine() {
+  const [m, setM] = useState(frameReadout);
+  useEffect(() => {
+    const t = window.setInterval(() => setM(frameReadout()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  const text = m.n ? `${Math.round(m.fps)} fps · ${Math.round(m.p50Ms)} / ${Math.round(m.p95Ms)} ms · ${m.calls} draw calls` : 'Measuring…';
+  return (
+    <div className="row-control" data-testid="perf-line">
+      <span className="row-control__label">
+        <span>Performance</span>
+        <small title="Frames per second · typical / slow frame time · draw calls in the last frame. Measured on this device; nothing is sent anywhere.">{text}</small>
+      </span>
+    </div>
+  );
+}
+
 function DisplaySection() {
   const graphics = useSettingsStore((s) => s.graphics);
   const setGraphics = useSettingsStore((s) => s.setGraphics);
@@ -69,6 +88,7 @@ function DisplaySection() {
           ]}
         />
       </div>
+      <PerformanceLine />
       <div className="row-control">
         <span className="row-control__label">
           <span>Clock</span>

@@ -30,6 +30,7 @@
     "e2e:phone": "node scripts/e2e-phone.mjs",
     "e2e:built-interiors": "node scripts/e2e-built-interiors.mjs",
     "e2e:camera": "node scripts/e2e-camera.mjs",
+    "e2e:homes": "node scripts/e2e-homes.mjs",
     "e2e:all": "node scripts/e2e-all.mjs"
   },
   "devDependencies": {
