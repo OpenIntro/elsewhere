@@ -112,12 +112,13 @@ if (opts.list) {
   process.exit(0);
 }
 
-// Default ports must not collide (they did once: build and build2 both on 2634).
+// Default ports must not collide (they did once: build and build2 both on 2634), so each suite can
+// also run standalone next to another. (Ports set in the env may repeat: this runner is sequential.)
 {
   const seen = new Map();
   for (const s of SUITES) {
     if (!s.port) continue;
-    const p = Number(process.env[s.port[0]] ?? s.port[1]);
+    const p = s.port[1];
     if (seen.has(p)) {
       console.error(`[e2e:all] ${s.name} and ${seen.get(p)} would both use port ${p}`);
       process.exit(2);

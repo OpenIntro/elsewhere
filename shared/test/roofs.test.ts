@@ -220,6 +220,29 @@ describe('roof tool: root causes', () => {
     expect(roofSpanAt(ix, ME, [{ x: -18, z: 24 }])).toBeNull();
     expect(roofSpanAt(ix, ME, [{ x: -18, z: 24 }], 2)).toEqual(spanOf({ x0: -20, z0: 22, x1: -16, z1: 26 }));
   });
+  it('a garden wall pointing at another house 1 m away does not join the two houses', () => {
+    // The e2e layout that once gave a stray green 2x7 roof: house A + its garden wall, ending 1 m short
+    // of the middle of half-built house B's north wall.
+    const ix = new PieceIndex();
+    house(ix, { x0: -25, z0: 15, x1: -19, z1: 19 });
+    put(ix, req('wall', -19, 20, 1));
+    const b: Box = { x0: -20, z0: 22, x1: -16, z1: 26 };
+    house(ix, b, 0, (s) => (s === 'n' || s === 'w' ? 'wall' : null));
+    for (const p of [{ x: -18.2, z: 22.12 }, { x: -19.87, z: 23 }, { x: -18, z: 24 }]) {
+      expect(roofSpanAt(ix, ME, [p]), `probe ${p.x},${p.z}`).toBeNull();
+      expect(roofSpanAt(ix, ME, [p], 2)).toEqual(spanOf(b));
+    }
+  });
+  it('the nearest probe (what the cursor meets first) decides the house, even if one further on is taller', () => {
+    const ix = new PieceIndex();
+    const near: Box = { x0: -22, z0: 17, x1: -18, z1: 21 };
+    const far: Box = { x0: -16, z0: 17, x1: -14, z1: 21 };
+    house(ix, near);
+    house(ix, far);
+    house(ix, far, 1);
+    expect(roofSpanAt(ix, ME, [{ x: -20, z: 19 }, { x: -15, z: 19 }])).toEqual(spanOf(near));
+    expect(roofSpanAt(ix, ME, [{ x: -10, z: 19 }, { x: -15, z: 19 }])).toEqual(spanOf(far, 2));
+  });
   it('pointing at the ground floor of a two-storey house roofs the top storey', () => {
     const ix = new PieceIndex();
     const lower = house(ix, H);

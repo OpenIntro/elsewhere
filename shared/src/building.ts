@@ -1550,7 +1550,7 @@ const ROOF_PROBE_SLACK = 0.75;
 /**
  * The roof rectangle around a point: among the rectangles whose sides lie on
  * the wall lines of one house — `ownerId`'s walls of storey `wallLevel` that
- * touch or nearly touch each other (walls, window walls, doorways, pillars; the ends of walls
+ * touch each other or end within a metre of each other (walls, window walls, doorways, pillars; the ends of walls
  * give lines too, so an open porch side still has one),
  * the ones containing `p` that the placement rule would accept (your walls
  * along at least three sides, each at least half walled — exactly
@@ -1566,8 +1566,15 @@ export function findRoofSpan<P extends PieceLike>(index: PieceIndex<P>, ownerId:
   const R = maxSpan + 1;
   const near = index.query({ minX: p.x - R, maxX: p.x + R, minZ: p.z - R, maxZ: p.z + R }).filter((q) => q.ownerId === ownerId && q.level === wallLevel && PIECES[q.kind].structural);
   if (!near.length) return null;
-  // One house = walls that touch or nearly touch (a gap of up to a metre, e.g. an odd 3 m side). Separate
-  // houses never combine into one false rectangle.
+  // One house = walls that touch, or whose ENDS are within a metre of each other (the gap at the end of
+  // an odd 3 m side). A wall merely pointing at the middle of another house's wall does not join it, so
+  // separate houses never combine into one false rectangle.
+  const ends = (q: P): Vec2[] => {
+    if (q.kind === 'pillar') return [{ x: q.x, z: q.z }];
+    const f = footprintOf(q);
+    return q.rot % 2 === 1 ? [{ x: q.x, z: f.minZ }, { x: q.x, z: f.maxZ }] : [{ x: f.minX, z: q.z }, { x: f.maxX, z: q.z }];
+  };
+  const joined = (q: P, n: P) => rectsOverlap(expand(footprintOf(q), 0.2), footprintOf(n), 0) || ends(q).some((e) => ends(n).some((o) => Math.hypot(e.x - o.x, e.z - o.z) <= 1.05));
   const groups: P[][] = [];
   const seen = new Set<string>();
   for (const q0 of near) {
@@ -1578,8 +1585,7 @@ export function findRoofSpan<P extends PieceLike>(index: PieceIndex<P>, ownerId:
     while (queue.length) {
       const q = queue.pop()!;
       g.push(q);
-      const f = expand(footprintOf(q), 1.05);
-      for (const n of near) if (!seen.has(n.id) && rectsOverlap(f, footprintOf(n), 0)) {
+      for (const n of near) if (!seen.has(n.id) && joined(q, n)) {
         seen.add(n.id);
         queue.push(n);
       }
@@ -1640,15 +1646,17 @@ export function findRoofSpan<P extends PieceLike>(index: PieceIndex<P>, ownerId:
 }
 
 /**
- * The roof for a set of probe points (where the cursor points: the wall it
- * hit, the cursor ray at each storey's wall-top height, the ground): the
- * TOP storey of your walls that forms a roof rectangle around one of them.
- * Roofs go on top — pointing at the ground floor of a two-storey house roofs
- * the house, not the first floor.
+ * The roof for a set of probe points (where the cursor points, NEAREST THE
+ * CAMERA FIRST: the wall it hit, the cursor ray at your storeys' wall-top and
+ * mid-wall heights, the ground): for the first probe that lies in a house of
+ * yours, the TOP storey of that house's walls that forms a roof rectangle
+ * around it. Roofs go on top — pointing at the ground floor of a two-storey
+ * house roofs the house, not the first floor — and a probe further along the
+ * ray (a house behind) only counts when the nearer ones find nothing.
  */
 export function roofSpanAt<P extends PieceLike>(index: PieceIndex<P>, ownerId: string, probes: readonly Vec2[], minSides = 3): RoofSpan | null {
-  for (let level = CONFIG.building.maxLevel - 1; level >= 0; level--) {
-    for (const p of probes) {
+  for (const p of probes) {
+    for (let level = CONFIG.building.maxLevel - 1; level >= 0; level--) {
       const s = findRoofSpan(index, ownerId, p, level, minSides);
       if (s) return s;
     }

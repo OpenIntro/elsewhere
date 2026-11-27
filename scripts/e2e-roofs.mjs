@@ -62,6 +62,8 @@ async function check(name, fn) {
   } catch (err) {
     results.push({ name, ok: false });
     console.log(`[roofs] FAIL ${name} — ${String(err?.message ?? err)}`);
+    const tag = name.split('.')[0];
+    for (const [label, page] of [['A', a], ['B', b]]) if (page) await shot(page, `fail-${tag}-${label}`);
     // Leave build mode so the next check starts from a known state.
     for (const page of [a, b]) if (page && (await page.locator('[data-testid=build-done]').isVisible().catch(() => false))) await press(page, '[data-testid=build-done]').catch(() => undefined);
   }
@@ -118,6 +120,18 @@ async function shot(page, name) {
 }
 
 // --- helpers ------------------------------------------------------------------------
+/** Build mode on/off through the UI: a tap on the phone, a click on the desktop. */
+async function enterBuild(page) {
+  if (!page.__touch) return openBuild(page);
+  if (!(await page.$('[data-testid=build-dock]'))) await press(page, '[data-testid=nav-build]');
+  await page.waitForSelector('[data-testid=build-dock]', { timeout: 20_000 });
+  await waitSnap(page, (s) => s.build?.synced && s.build.mode !== 'off', 'build mode on', 30_000);
+}
+async function leaveBuild(page) {
+  if (!page.__touch) return closeBuild(page);
+  if (await page.$('[data-testid=build-done]')) await press(page, '[data-testid=build-done]');
+  await waitSnap(page, (s) => s.build?.mode === 'off', 'build mode off', 15_000);
+}
 const centre = (h) => ({ x: (h.box.x0 + h.box.x1) / 2, z: (h.box.z0 + h.box.z1) / 2 });
 /** Wait until the camera stops moving (it follows the player with some lag). */
 async function settleCamera(page) {
@@ -253,14 +267,14 @@ try {
     const other = page === a ? b : a;
     const opts = plan[h.id] ?? {};
     await check(`${n++}. ${h.label}: roofed in one ${page.__touch ? 'tap + Place' : 'click'}${h.inside ? ' from inside' : ' from outside'}${opts.quarter !== undefined ? `, camera quarter ${opts.quarter}` : ''}; the other client sees it`, async () => {
-      await closeBuild(page).catch(() => undefined);
+      await leaveBuild(page).catch(() => undefined);
       const c = centre(h);
       const stand = h.inside ? c : { x: c.x + 0.6, z: h.box.z1 + 2.4 };
       await hopToward(page, stand, h.inside ? 0.7 : 1.3, 240_000);
       const me = (await snap(page)).local;
       if (h.inside) assert(me.x > h.box.x0 && me.x < h.box.x1 && me.z > h.box.z0 && me.z < h.box.z1, `not inside: ${JSON.stringify(me)}`);
       if (!page.__touch && opts.quarter !== undefined) await turnCameraTo(page, opts.quarter);
-      await openBuild(page);
+      await enterBuild(page);
       if (h.lock) {
         // The storey control locked on the wrong storey (storey 3) before choosing the roof.
         for (let i = 0; i < 3; i++) await page.keyboard.press('PageUp');
@@ -282,7 +296,7 @@ try {
       const span = { sx: h.box.x1 - h.box.x0, sz: h.box.z1 - h.box.z0 };
       assert((roof.rot % 2 === 0 ? params.w === span.sx && params.d === span.sz : params.w === span.sz && params.d === span.sx), `roof ${roof.params} rot ${roof.rot} does not span ${span.sx}x${span.sz}`);
       await waitSnap(other, (q) => q.build.pieces.some((p) => p.id === roof.id), 'the other client sees the roof', 20_000);
-      await closeBuild(page);
+      await leaveBuild(page);
       await shot(page, `roof-${h.id}`);
       return `${roof.params} at (${roof.x}, ${roof.z}) storey ${roof.level} y ${roof.y}; aimed at ${aimed.point.label}${h.lock ? `; storey lock was on storey ${(s0.build.lockLevel ?? 0) + 1}` : ''}; yaw ${(((aimed.ghost && (await snap(page)).view.yaw) * 180) / Math.PI).toFixed(0)}°`;
     });

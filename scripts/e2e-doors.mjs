@@ -60,13 +60,18 @@ const arg = (name) => {
 const STRICT = argv.includes('--strict');
 const ROUTE_TIMEOUT = Number(arg('--route-timeout') ?? 300) * 1000;
 const NO_RETURN = argv.includes('--no-return');
+/** Screen margin (fraction) a hop tap stays inside: smaller = longer hops (and longer paths). */
+const HOP_MARGIN = Number(arg('--hop-margin') ?? 0.18);
+/** Tap the door itself (walk to it and use it) as soon as it is on screen, instead of the ground. */
+const TAP_DOOR = argv.includes('--tap-door');
 
 const DOOR_ORDER = ['cafe', 'general_store', 'town_hall', 'workshop', 'house_1', 'house_2', 'boathouse'];
 const doorsWanted = arg('--doors')?.split(',').map((s) => s.trim()) ?? DOOR_ORDER;
 const DOORS = doorsWanted.map((id) => {
   const it = INTERIORS.find((i) => i.id === id);
   if (!it) throw new Error(`unknown door ${id}; known: ${DOOR_ORDER.join(', ')}`);
-  return { id, name: getBuilding(id).name, target: it.doors[0].outside, apron: it.doors[0].apron };
+  const b = getBuilding(id);
+  return { id, name: b.name, target: it.doors[0].outside, apron: it.doors[0].apron, door: { x: it.doors[0].position.x, z: it.doors[0].position.z } };
 });
 const spawnsWanted = (arg('--spawns')?.split(',').map((s) => Number(s.trim())) ?? SPAWN_POINTS.map((_, i) => i + 1)).sort((a, b) => a - b);
 for (const n of spawnsWanted) if (!(n >= 1 && n <= SPAWN_POINTS.length)) throw new Error(`--spawns takes 1-${SPAWN_POINTS.length}`);
@@ -125,6 +130,7 @@ function watch(page, label, counters) {
   page.on('websocket', (ws) => {
     ws.on('framereceived', (f) => {
       const p = f.payload;
+      counters.frames++;
       if (typeof p !== 'string' && p?.includes?.('correction')) counters.corrections++;
     });
   });
@@ -135,7 +141,7 @@ async function join(browser, label) {
   const ctx = await browser.newContext({ ...devices[PHONE] });
   await ctx.addInitScript(LOW_GFX);
   const page = await ctx.newPage();
-  const counters = { corrections: 0 };
+  const counters = { corrections: 0, frames: 0 };
   watch(page, label, counters);
   await page.goto(`${server.url}/?autojoin=1`);
   const s = await waitSnap(page, (q) => q.connection === 'connected' && q.local?.ready && q.navReady === true, `${label} joined + nav grid ready`, 180_000);
@@ -148,13 +154,20 @@ const nearestSpawn = (p) => SPAWN_POINTS.map((sp, i) => ({ n: i + 1, d: Math.hyp
  * well inside the screen, else the farthest point on the screen line towards it; nudged
  * off people / things / UI onto walkable ground, as a player would tap beside them.
  */
-async function hopPoint(page, s, target) {
+async function hopPoint(page, s, target, door = null, skip = 0) {
   const vp = page.viewportSize();
   const me = await query(page, 'worldToScreen', s.local.x, s.local.z);
   const tp = await query(page, 'worldToScreen', target.x, target.z);
   let x = tp.x;
   let y = tp.y;
-  const m = 0.18;
+  if (door) {
+    const dp = await query(page, 'worldToScreen', door.x, door.z, door.y);
+    const mm = 0.04;
+    if (dp && dp.x > vp.width * mm && dp.x < vp.width * (1 - mm) && dp.y > vp.height * mm && dp.y < vp.height * (1 - mm) && (await onCanvas(page, dp.x, dp.y))) {
+      return { x: dp.x, y: dp.y, ground: null, kind: 'door', pick: await query(page, 'pick', dp.x, dp.y, 'touch') };
+    }
+  }
+  const m = HOP_MARGIN;
   const inside = (px, py) => px > vp.width * m && px < vp.width * (1 - m) && py > vp.height * m && py < vp.height * (1 - m);
   if (!inside(x, y)) {
     let k = 1;
@@ -163,24 +176,42 @@ async function hopPoint(page, s, target) {
     y = me.y + (tp.y - me.y) * k;
   }
   if (!(await onCanvas(page, x, y))) y -= 40;
-  for (const [dx, dy] of [[0, 0], [0, 24], [24, 0], [-24, 0], [0, -24], [0, 40], [40, 0], [-40, 0], [0, -40]]) {
-    const g = await query(page, 'groundFromScreen', x + dx, y + dy);
-    if (g && (await query(page, 'isWalkable', g.x, g.z)) && !(await query(page, 'pick', x + dx, y + dy, 'touch')) && (await onCanvas(page, x + dx, y + dy))) {
-      return { x: x + dx, y: y + dy, ground: g };
-    }
+  const usable = async (px, py) => {
+    const g = await query(page, 'groundFromScreen', px, py);
+    return g && (await query(page, 'isWalkable', g.x, g.z)) && !(await query(page, 'pick', px, py, 'touch')) && (await onCanvas(page, px, py)) ? g : null;
+  };
+  for (const [dx, dy] of skip ? [] : [[0, 0], [0, 24], [24, 0], [-24, 0], [0, -24], [0, 40], [40, 0], [-40, 0], [0, -40]]) {
+    const g = await usable(x + dx, y + dy);
+    if (g) return { x: x + dx, y: y + dy, ground: g };
   }
-  return { x, y, ground: await query(page, 'groundFromScreen', x, y) };
+  // Straight on is blocked (a fountain basin, a wall, a building in the way): tap to one side
+  // of it instead, turning the hop a little further each time, as a player steers round.
+  const turns = [30, -30, 55, -55, 80, -80, 110, -110];
+  for (const deg of [...turns.slice((Math.max(1, skip) - 1) % turns.length), ...turns]) {
+    const a = (deg * Math.PI) / 180;
+    const vx = x - me.x;
+    const vy = y - me.y;
+    const rx = me.x + vx * Math.cos(a) - vy * Math.sin(a);
+    const ry = me.y + vx * Math.sin(a) + vy * Math.cos(a);
+    if (rx < 8 || ry < 8 || rx > vp.width - 8 || ry > vp.height - 8) continue;
+    const g = await usable(rx, ry);
+    if (g) return { x: rx, y: ry, ground: g, kind: `detour ${deg}°` };
+  }
+  return { x, y, ground: await query(page, 'groundFromScreen', x, y), kind: 'blocked' };
 }
 
 /** Walk to `target` by taps; returns the route record. */
-async function walk(page, counters, { label, from, target, reached }) {
+async function walk(page, counters, { label, from, target, reached, door = null }) {
   const t0 = Date.now();
   const corr0 = counters.corrections;
+  const frames0 = counters.frames;
   const samples = [];
   const taps = [];
   const stalls = [];
   const earlyStops = [];
   let retaps = 0;
+  /** Taps in a row that started no path from the same spot (then steer round instead). */
+  let noPath = 0;
   const sample = async () => {
     const s = await snap(page);
     if (s?.local) samples.push({ t: Date.now() - t0, x: +s.local.x.toFixed(3), z: +s.local.z.toFixed(3), path: !!s.motion?.path, speed: +(s.local.speed ?? 0).toFixed(2), anim: s.local.anim });
@@ -199,14 +230,14 @@ async function walk(page, counters, { label, from, target, reached }) {
       why = '60 taps without arriving';
       break;
     }
-    // A tap that hit a person opened their card: close it, as a player would.
-    if (s.ui?.panel === 'profile' && (await page.locator('[data-testid=sheet-close]').isVisible().catch(() => false))) {
+    // A tap that hit a person or a thing opened its card / panel: close it, as a player would.
+    if (s.ui?.panel && (await page.locator('[data-testid=sheet-close]').isVisible().catch(() => false))) {
       await page.locator('[data-testid=sheet-close]').tap();
       await sleep(500);
     }
-    const hp = await hopPoint(page, s, target);
+    const hp = await hopPoint(page, s, target, door, noPath);
     await page.touchscreen.tap(hp.x, hp.y);
-    const tap = { i: taps.length, t: Date.now() - t0, screen: [Math.round(hp.x), Math.round(hp.y)], ground: hp.ground && { x: +hp.ground.x.toFixed(2), z: +hp.ground.z.toFixed(2) }, from: { x: +s.local.x.toFixed(2), z: +s.local.z.toFixed(2) } };
+    const tap = { i: taps.length, t: Date.now() - t0, screen: [Math.round(hp.x), Math.round(hp.y)], kind: hp.kind ?? 'ground', pick: hp.pick, ground: hp.ground && { x: +hp.ground.x.toFixed(2), z: +hp.ground.z.toFixed(2) }, from: { x: +s.local.x.toFixed(2), z: +s.local.z.toFixed(2) } };
     taps.push(tap);
     // Follow the hop: until the path ends, the route arrives, or a stall does not clear.
     const hop0 = samples.length;
@@ -258,6 +289,7 @@ async function walk(page, counters, { label, from, target, reached }) {
       if (Date.now() - hopT0 > 60_000) break;
     }
     tap.path = goal;
+    noPath = !sawPath && Math.hypot(s.local.x - tap.from.x, s.local.z - tap.from.z) < 0.2 ? noPath + 1 : 0;
     tap.ms = Date.now() - hopT0 - 0;
     if (!ok && goal?.goal) {
       const short = Math.hypot(s.local.x - goal.goal.x, s.local.z - goal.goal.z);
@@ -280,6 +312,7 @@ async function walk(page, counters, { label, from, target, reached }) {
     straightM: +Math.hypot(target.x - start.x, target.z - start.z).toFixed(1),
     ms: Date.now() - t0,
     corrections: counters.corrections - corr0,
+    wsFrames: counters.frames - frames0,
     stalls,
     earlyStops,
     tapLog: taps,
@@ -290,7 +323,7 @@ async function walk(page, counters, { label, from, target, reached }) {
 // --- run -----------------------------------------------------------------------
 mkdirSync(SHOTS, { recursive: true });
 const server = createServer({ port: PORT, dataDir: DATA_DIR, label: 'doors', verbose: !!process.env.DOORS_VERBOSE });
-log(`data dir ${DATA_DIR}; server ${server.url}; ${DOORS.length} doors × spawns ${spawnsWanted.join(',')}${NO_RETURN ? '' : ' (out and back)'}`);
+log(`data dir ${DATA_DIR}; server ${server.url}; ${DOORS.length} doors × spawns ${spawnsWanted.join(',')}${NO_RETURN ? '' : ' (out and back)'}; hop margin ${HOP_MARGIN}${TAP_DOOR ? '; taps the door once on screen' : ''}`);
 await server.start();
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const routes = [];
@@ -306,6 +339,8 @@ const writeOut = () => {
     port: PORT,
     device: PHONE,
     thresholds: STALL,
+    hopMargin: HOP_MARGIN,
+    tapDoor: TAP_DOOR,
     ms: Date.now() - t00,
     doors: DOORS.map((d) => ({ id: d.id, name: d.name, target: d.target })),
     spawns: spawnsWanted.map((n) => ({ n, id: SPAWN_POINTS[n - 1].id, position: SPAWN_POINTS[n - 1].position })),
@@ -344,6 +379,7 @@ try {
         label,
         from: `spawn ${want}`,
         target: d.target,
+        door: TAP_DOOR ? d.door : null,
         reached: (p) => Math.hypot(p.x - d.target.x, p.z - d.target.z) < 1.0 || zoneContains(d.apron, p),
       });
       r.door = d.id;

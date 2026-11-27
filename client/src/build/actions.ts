@@ -23,6 +23,7 @@ import {
   autoLevel,
   clearableNature,
   fitRoof,
+  footprintOf,
   groundHeight,
   isWallKind,
   nextInRun,
@@ -207,12 +208,42 @@ function ownWallsNear(p: Vec2): boolean {
   return pieces.index.query({ minX: p.x - 7, maxX: p.x + 7, minZ: p.z - 7, maxZ: p.z + 7 }).some((q) => q.ownerId === me && PIECES[q.kind].structural);
 }
 
-/** Wall-top heights of your storeys near a ground point, highest first (where the cursor ray meets a roof's base). */
-function wallTopHeights(g: Vec2): number[] {
+/** Your walls / pillars near a ground point (where the cursor ray may meet a roof's base). */
+function ownStructuralNear(g: Vec2): PieceRecord[] {
   const me = myId();
-  const hs = new Set<number>();
-  for (const q of pieces.index.query({ minX: g.x - 14, maxX: g.x + 14, minZ: g.z - 14, maxZ: g.z + 14 })) if (q.ownerId === me && PIECES[q.kind].structural) hs.add(Math.round(pieceTop(q) * 20) / 20);
-  return [...hs].sort((a, b) => b - a);
+  return pieces.index.query({ minX: g.x - 14, maxX: g.x + 14, minZ: g.z - 14, maxZ: g.z + 14 }).filter((q) => q.ownerId === me && PIECES[q.kind].structural);
+}
+
+/** A probe point for the roof tool; `top`: the wall-top height it was taken at (the house it finds must have that top). */
+interface RoofProbe extends Vec2 {
+  top?: number;
+}
+
+/**
+ * Probe points for the roof tool along the cursor ray: where it hits a piece first (what the player
+ * points at), then — nearest the camera first — where it crosses the wall-top and mid-wall height of
+ * each of your storeys nearby (pointing at a wall that is cut away or faded while you stand next to
+ * it, or at the space above a house, lands on that house).
+ */
+function roofProbesFor(r: NonNullable<ReturnType<typeof screenRay>>, g: Vec2, hit: { point: { x: number; y: number; z: number } } | null): RoofProbe[] {
+  const out: (RoofProbe & { y: number })[] = [];
+  const tops = new Set<number>();
+  for (const q of ownStructuralNear(g)) tops.add(Math.round(pieceTop(q) * 20) / 20);
+  for (const top of tops)
+    for (const h of [top, top - CONFIG.building.storeyHeight * 0.55]) {
+      const at = rayAtHeight(r, h);
+      if (at) out.push({ x: at.x, z: at.z, y: h, top });
+    }
+  out.sort((a, b) => b.y - a.y);
+  return [...(hit ? [{ x: hit.point.x, z: hit.point.z }] : []), ...out.map(({ x, z, top }) => ({ x, z, top }))];
+}
+
+/** Wall-top height of the storey a roof span rests on (from a wall along its edge). */
+function spanTop(span: RoofSpan): number | null {
+  const me = myId();
+  for (const q of pieces.index.query({ minX: span.x - span.sx / 2 - 0.3, maxX: span.x + span.sx / 2 + 0.3, minZ: span.z - span.sz / 2 - 0.3, maxZ: span.z + span.sz / 2 + 0.3 }))
+    if (q.ownerId === me && q.level === span.level - 1 && PIECES[q.kind].structural) return pieceTop(q);
+  return null;
 }
 
 /** The roof ghost for a span: the widest eaves that fit, validated exactly as the server will (fitRoof → validatePlacement). */
@@ -225,13 +256,13 @@ function roofGhostFor(span: RoofSpan, anchor?: { x: number; z: number }): void {
 
 let roofAnchor: { x: number; z: number; level: number } | null = null;
 /** Extra probe points from the last screen aim (wall hit, cursor ray at wall-top heights), reused by re-aims. */
-let roofProbes: Vec2[] = [];
+let roofProbes: RoofProbe[] = [];
 /** For the debug snapshot / tests: where the roof tool last looked. */
 export function roofToolProbes(): readonly Vec2[] {
   return lastRoofProbes;
 }
 let lastRoofProbes: Vec2[] = [];
-function aimRoofAt(p: Vec2, probes: readonly Vec2[] = roofProbes): void {
+function aimRoofAt(p: Vec2, probes: readonly RoofProbe[] = roofProbes): void {
   const st = useBuildStore.getState();
   if (roofAnchor) {
     const span = roofSpanFromCorners(roofAnchor, p, roofAnchor.level);
@@ -241,11 +272,18 @@ function aimRoofAt(p: Vec2, probes: readonly Vec2[] = roofProbes): void {
   // The storey lock does not apply: a roof always goes on the top storey of the house it covers.
   const all = [...probes, p];
   lastRoofProbes = all;
-  const span = roofSpanAt(pieces.index, myId(), all);
-  if (span) return roofGhostFor(span);
-  // Half-built (two sides): show that rectangle in red with the sides still open.
-  const partial = roofSpanAt(pieces.index, myId(), all, 2);
-  if (partial) return roofGhostFor(partial);
+  // Nearest probe first: its house's roof, or — half-built (two sides) — that rectangle in red with the open sides named.
+  for (const q of all) {
+    const span = roofSpanAt(pieces.index, myId(), [q]) ?? roofSpanAt(pieces.index, myId(), [q], 2);
+    if (!span) continue;
+    // A probe taken at a wall-top height only counts for a house with that top (not one it merely passes over).
+    const top = (q as RoofProbe).top;
+    if (top !== undefined) {
+      const t = spanTop(span);
+      if (t === null || Math.abs(t - top) > 0.15) continue;
+    }
+    return roofGhostFor(span);
+  }
   st.set({
     ghost: {
       x: Math.round(p.x),
@@ -332,13 +370,9 @@ export function aimFromScreen(clientX: number, clientY: number): void {
     if (roofAnchor && r) p = rayAtHeight(r, roofAnchorHeight()) ?? g;
     if (!p) return;
     lastAim = { x: p.x, z: p.z };
-    const probes: Vec2[] = [];
-    if (hit) probes.push({ x: hit.point.x, z: hit.point.z });
     // The cursor ray at each storey's wall-top and mid-wall height: pointing at a wall (even one cut away
     // or faded while you stand next to it) or at the roof ghost above the house lands on that house.
-    if (r && !roofAnchor)
-      for (const h of wallTopHeights(p))
-        for (const at of [rayAtHeight(r, h), rayAtHeight(r, h - CONFIG.building.storeyHeight * 0.55)]) if (at) probes.push(at);
+    const probes = r && !roofAnchor ? roofProbesFor(r, p, hit) : hit ? [{ x: hit.point.x, z: hit.point.z }] : [];
     roofProbes = probes;
     aimRoofAt(p, probes);
     return;

@@ -137,6 +137,12 @@ try {
 
   // --- the furnished interior, from inside (built-interior cutaway) -------------
   const inside = async (page) => {
+    // The camera's debug queries come up a moment after the join (and again after a dev reload).
+    await waitSnap(page, (s) => s.navReady && s.local?.ready, 'nav ready', 60_000);
+    for (let i = 0; i < 60; i++) {
+      if (await page.evaluate(() => { try { return !!window.__ELSEWHERE__.query('worldToScreen', 0, 0); } catch { return false; } })) break;
+      await sleep(500);
+    }
     await hopToward(page, { x: HOUSE.x0 + 1, z: HOUSE.z1 + 1.6 }, 0.8);
     await hopToward(page, { x: HOUSE.x0 + 1.1, z: HOUSE.z + 0.3 }, 0.6);
     await waitSnap(page, (s) => s.builtCutaway?.active && s.builtCutaway.settled, 'cutaway open', 30_000);

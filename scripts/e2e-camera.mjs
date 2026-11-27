@@ -29,7 +29,7 @@
 import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { getInteractable, interiorAnchor, interiorAt } from '@elsewhere/shared';
+import { getInteractable, getInterior, interiorAnchor, interiorAt } from '@elsewhere/shared';
 import { assert, choosePiece, hopToward, openBuild, press, query, sleep, snap, waitSnap } from './lib/browser.mjs';
 import { closePanel, groundUnder, hopInto, twoFinger } from './lib/phone.mjs';
 import { ROOT, createServer } from './lib/server.mjs';
@@ -262,8 +262,8 @@ try {
     // tap-to-move still lands after the touch turns
     const me = sp.local;
     const target = { x: me.x + 1.5, z: me.z + 1.0 };
-    const d = await clickToMove(b, idB, target).catch((e) => `(${e.message})`);
-    return `button → ${r0 + 1}; twist 60° → ${r1} (zoom unchanged); pinch: zoom ${z1.toFixed(0)} → ${sp.camera.zoomTarget.toFixed(0)}, rotation unchanged; tap-to-move ${typeof d === 'number' ? `${d.toFixed(2)} m` : d}`;
+    const d = await clickToMove(b, idB, target);
+    return `button → ${r0 + 1}; twist 60° → ${r1} (zoom unchanged); pinch: zoom ${z1.toFixed(0)} → ${sp.camera.zoomTarget.toFixed(0)}, rotation unchanged; tap-to-move ${d.toFixed(2)} m`;
   });
 
   await check('6. in the Café both turn four times: the cutaway stays open and the player stays on screen at every orientation', async () => {
@@ -317,23 +317,26 @@ try {
   });
 
   await check('8. seated on a café chair, A turns the view and stays seated', async () => {
-    const chair = getInteractable('chair_cafe_in_1a');
-    await hopInto(a, { x: chair.position.x + 1.2, z: chair.position.z + 0.6 }, 1.4);
+    const chair = getInteractable('chair_cafe_in_1b');
+    const floorY = getInterior('cafe').floorY ?? 0;
+    await hopInto(a, interiorAnchor('cafe', 'table_1').position, 1.6);
     const t0 = Date.now();
-    while (Date.now() - t0 < 60_000) {
+    let lastPick = null;
+    while (Date.now() - t0 < 90_000) {
       const s = await snap(a);
-      if (serverPos(s, idA)?.seat?.startsWith('chair_cafe_in_1a')) break;
-      const p = await query(a, 'worldToScreen', chair.position.x, chair.position.z, 0.5);
-      if ((await query(a, 'pick', p.x, p.y, 'mouse'))?.id === chair.id) await a.mouse.click(p.x, p.y);
-      await sleep(2500);
+      if (serverPos(s, idA)?.seat?.startsWith(chair.id)) break;
+      const p = await query(a, 'worldToScreen', chair.position.x, chair.position.z, floorY + 0.7); // pick anchors sit 0.7 m up
+      lastPick = await query(a, 'pick', p.x, p.y, 'mouse');
+      if (lastPick?.id === chair.id) await a.mouse.click(p.x, p.y);
+      await sleep(3000);
     }
-    await waitSnap(a, (s) => serverPos(s, idA)?.seat?.startsWith('chair_cafe_in_1a'), 'A seated', 20_000);
+    await waitSnap(a, (s) => serverPos(s, idA)?.seat?.startsWith(chair.id), `A seated (pick ${JSON.stringify(lastPick)})`, 30_000);
     const r0 = (await snap(a)).camera.rotation;
     await a.click('[data-testid=cam-rotate-left]');
     await settledAt(a, r0 - 1, 'seated button');
     await a.keyboard.press('BracketLeft');
     const s = await settledAt(a, r0 - 2, 'seated [');
-    assert(serverPos(s, idA).seat.startsWith('chair_cafe_in_1a'), 'A stood up');
+    assert(serverPos(s, idA).seat.startsWith(chair.id), 'A stood up');
     await shot(a, 'desktop-seated-turned');
     return `seated on ${serverPos(s, idA).seat}, turned ${r0} → ${r0 - 2}`;
   });

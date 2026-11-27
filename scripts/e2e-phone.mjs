@@ -37,7 +37,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { CONFIG, PIECES, getInteractable, getInterior, groundHeight, interiorAnchor, isWalkable } from '@elsewhere/shared';
+import { CONFIG, PIECES, getInteractable, getInterior, groundHeight, interiorAnchor, interiorAt, isWalkable } from '@elsewhere/shared';
 import { aimGhost, assert, buildState, choosePiece, hopToward, openBuild, placeHere, press, query, rotateTo, screenOf, sleep, snap, waitSnap, zoomOut } from './lib/browser.mjs';
 import { closePanel, coverage, groundUnder, hopInto, pct, rectOf, screenOfView, touchDrag, useThing } from './lib/phone.mjs';
 import { ROOT, createServer } from './lib/server.mjs';
@@ -328,7 +328,7 @@ try {
       await menu(b, true);
       await tap(b, '[data-testid=build-storey-up]');
       await waitFor(async () => (await b.getAttribute('[data-testid=build-storey]', 'data-lock')) === '1' || `lock ${await b.getAttribute('[data-testid=build-storey]', 'data-lock')}`, 'storey 2 locked', 10_000);
-      const label = await b.textContent('[data-testid=build-storey-label]');
+      const label = await b.textContent('[data-testid=build-storey-label] .build-storey__n');
       await menu(b, false);
       const upper = await stripPlace(b, GARDEN.x, GARDEN.z, garden.y + CONFIG.building.storeyHeight, { level: 1 });
       assert(upper.level === 1 && upper.x === GARDEN.x && upper.z === GARDEN.z, `upper wall ${JSON.stringify(upper)}`);
@@ -448,13 +448,20 @@ try {
       const cafe = getInterior('cafe');
       let pt = null;
       let world = null;
-      for (const [ox, oy] of [[-120, 0], [120, 0], [-120, 30], [120, 30], [-60, -30], [60, -30], [-200, 10], [200, 10]]) {
-        const x = (free.left + free.right) / 2 + ox;
-        const y = (free.top + free.bottom) / 2 + oy;
-        const g = await query(b, 'groundFromScreen', x, y);
-        const me = s0.local;
-        if (g && isWalkable(g, 0.45) && Math.hypot(g.x - me.x, g.z - me.z) > 1 && Math.hypot(g.x - me.x, g.z - me.z) < 3.5 && (await query(b, 'pick', x, y, 'touch')) === null && (await b.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', [x, y]))) {
-          pt = { x, y };
+      // scan the uncovered part on a 30 px grid, nearest the free rect's centre first
+      const cands = [];
+      for (let x = free.left + 30; x < free.right - 30; x += 30) for (let y = free.top + 20; y < free.bottom - 10; y += 30) cands.push({ x, y });
+      const fc = { x: (free.left + free.right) / 2, y: (free.top + free.bottom) / 2 };
+      cands.sort((p, q) => Math.hypot(p.x - fc.x, p.y - fc.y) - Math.hypot(q.x - fc.x, q.y - fc.y));
+      // one page round trip for the whole grid (ground under each point, nothing pickable there, the canvas on top)
+      const probed = await b.evaluate((cands) => cands.map(({ x, y }) => ({ x, y, g: window.__ELSEWHERE__.query('groundFromScreen', x, y), pick: window.__ELSEWHERE__.query('pick', x, y, 'touch'), canvas: document.elementFromPoint(x, y)?.tagName === 'CANVAS' })), cands);
+      const me = s0.local;
+      for (const c of probed) {
+        const g = c.g;
+        const d = g ? Math.hypot(g.x - me.x, g.z - me.z) : 0;
+        // a spot on the café floor (with the cutaway open the ground outside the walls is visible too)
+        if (g && !c.pick && c.canvas && interiorAt(g)?.id === 'cafe' && isWalkable(g, 0.45) && d > 1 && d < 3.5) {
+          pt = { x: c.x, y: c.y };
           world = g;
           break;
         }
@@ -499,7 +506,7 @@ try {
             const r = sheet.getBoundingClientRect();
             const top = document.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 0;
             const s = window.__ELSEWHERE__.snapshot();
-            const me = window.__ELSEWHERE__.query('worldToScreen', s.local.x, s.local.z, s.local.y + 0.9);
+            const me = window.__ELSEWHERE__.query('worldToScreen', s.local.x, s.local.z, fy + 0.9); // the character's middle (snapshot().local has no height; B stands on the café floor)
             const pi = window.__ELSEWHERE__.query('worldToScreen', px, pz, fy + 0.9);
             const inside = (p) => p && p.x > 8 && p.x < innerWidth - 8 && p.y > top + 4 && p.y < r.top - 4;
             if (inside(me) && inside(pi)) return resolve({ ms: Math.round(performance.now() - seenAt), samples, me, pi, sheetTop: Math.round(r.top), top: Math.round(top) });
@@ -512,7 +519,11 @@ try {
       }), [piano.position.x, piano.position.z, fy]);
       await useThing(b, 'station_cafe_piano', { panel: 'panel-piano', approach: interiorAnchor('cafe', 'stage').position });
       const t = await timing;
-      await b.waitForSelector('[data-testid=panel-piano][data-view=peek]', { timeout: 5000 });
+      if (!(await b.waitForSelector('[data-testid=panel-piano][data-view=peek]', { timeout: 10_000 }).catch(() => null))) {
+        const st = await b.evaluate(() => ({ vp: [innerWidth, innerHeight], sheets: [...document.querySelectorAll('.sheet')].map((e) => ({ id: e.getAttribute('data-testid'), view: e.getAttribute('data-view'), cls: e.className })), phone: matchMedia('(max-width: 720px), (max-height: 500px) and (orientation: landscape)').matches, active: document.activeElement?.tagName }));
+        await shot(b, 'fail-6-not-peeking');
+        throw new Error(`the piano is not peeking: ${JSON.stringify(st)}; timing ${JSON.stringify(t)}`);
+      }
       await shiftSettled(b);
       await shot(b, 'portrait-piano-peek');
       const c = await coverage(b, '[data-testid=panel-piano]');

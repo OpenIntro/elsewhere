@@ -43,9 +43,9 @@ export const ROOF_HOUSES = [
   },
   { id: 'doors-windows', label: 'a doorway and a window in every side (roofed from inside)', box: box(-4, -18), build: (b) => rectWalls(b, { kindAt: (_s, i) => (i === 0 ? 'doorway' : 'wall_window') }), by: 'A', inside: true },
   { id: 'odd-gap', label: '3x4: the odd side ends in a 1 m gap (storey lock on the wrong storey)', box: { x0: 8, z0: 13, x1: 11, z1: 17 }, build: (b) => rectWalls(b, { kindAt: doorSouth }), by: 'A', lock: true },
-  { id: 'missing', label: 'one wall segment left out', box: box(17, -2), build: (b) => rectWalls(b, { kindAt: (s, i) => (s === 'n' && i === 1 ? null : doorSouth(s, i)) }), by: 'B' },
-  { id: 'porch', label: 'a porch: the south side open (roofed from inside)', box: box(-15, 17), build: (b) => rectWalls(b, { kindAt: (s) => (s === 's' ? null : 'wall') }), by: 'B', inside: true },
-  { id: 'small', label: '2x2 hut', box: { x0: 23, z0: -2, x1: 25, z1: 0 }, build: (b) => rectWalls(b), by: 'B' },
+  { id: 'missing', label: 'one wall segment left out', box: box(17, -2), build: (b) => rectWalls(b, { kindAt: (s, i) => (s === 'n' && i === 1 ? null : doorSouth(s, i)), ownerOf: () => 'B' }), by: 'B' },
+  { id: 'porch', label: 'a porch: the south side open (roofed from inside)', box: box(-15, 17), build: (b) => rectWalls(b, { kindAt: (s) => (s === 's' ? null : 'wall'), ownerOf: () => 'B' }), by: 'B', inside: true },
+  { id: 'small', label: '2x2 hut', box: { x0: 23, z0: -2, x1: 25, z1: 0 }, build: (b) => rectWalls(b, { ownerOf: () => 'B' }), by: 'B' },
   {
     id: 'mixed-owner',
     label: '6x4, its west wall is a neighbour’s; a garden wall at a corner',

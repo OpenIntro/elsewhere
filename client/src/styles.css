@@ -158,15 +158,15 @@ select {
 
 @media (max-height: 500px) and (orientation: landscape) {
   .sheet--peekable .sheet__head { padding-top: 16px; }
-  .sheet.sheet--peek { max-height: var(--sheet-peek, 64dvh); }
-  /* The piano peeks as a low keyboard along the bottom (the world stays visible above it). */
+  /* Side sheets keep their height (they already leave the left of the screen to the world; the camera
+     frames the player there). The piano peeks as a low keyboard along the bottom instead. */
   .sheet.sheet--peek.sheet--wide {
     top: auto;
     bottom: 0;
     left: calc(var(--safe-l) + 8px);
     right: calc(var(--safe-r) + 8px);
     width: auto;
-    --sheet-peek: 50dvh;
+    max-height: 50dvh;
     border-radius: 20px 20px 0 0;
     border-bottom: 0;
   }
