@@ -12,7 +12,10 @@
  * page joins while the previous one is still connected so the order holds), then for every
  * walk-in door (Café, General Store, Town Hall, Workshop, House 1, House 2, Boathouse)
  * walks spawn → door (the walkable point just outside the doorstep, `door.outside`) and back
- * to the spawn point, by hops of on-screen taps on the ground — what a player on a phone does.
+ * to the spawn point, by hops of on-screen taps on the ground — what a player on a phone does:
+ * straight towards the goal, beside people and things, to one side when the way is blocked (the
+ * fountain), and along a planned route when nothing ahead is tappable (inside a building).
+ * Each tap's kind is logged (ground / detour / along planned route / blocked / door).
  *
  * Logged per route: taps, walked path length, straight-line distance, time, server
  * corrections (correction messages received), stalls (a tap-to-move path active but
@@ -196,6 +199,27 @@ async function hopPoint(page, s, target, door = null, skip = 0) {
     if (rx < 8 || ry < 8 || rx > vp.width - 8 || ry > vp.height - 8) continue;
     const g = await usable(rx, ry);
     if (g) return { x: rx, y: ry, ground: g, kind: `detour ${deg}°` };
+  }
+  // Nothing on the way is tappable (e.g. walked into a building and the way out is through its
+  // door): tap a spot along a planned route instead (the client's own pathfinding, rebuilt here),
+  // the farthest one that is on screen and usable, as a player would tap towards the door.
+  const n = await navGrid();
+  if (n) {
+    const plan = n.findPath(n.g, s.local, target);
+    const pts = [];
+    let prev = { x: s.local.x, z: s.local.z };
+    for (const q of plan.points ?? []) {
+      const d = Math.hypot(q.x - prev.x, q.z - prev.z);
+      for (let k = 1; k <= Math.ceil(d); k++) pts.push({ x: prev.x + ((q.x - prev.x) * Math.min(k, d)) / d, z: prev.z + ((q.z - prev.z) * Math.min(k, d)) / d });
+      prev = q;
+    }
+    for (const q of pts.reverse()) {
+      if (Math.hypot(q.x - s.local.x, q.z - s.local.z) < 0.8) continue;
+      const sp = await query(page, 'worldToScreen', q.x, q.z);
+      if (!sp || sp.x < 8 || sp.y < 8 || sp.x > vp.width - 8 || sp.y > vp.height - 8) continue;
+      const g = await usable(sp.x, sp.y);
+      if (g) return { x: sp.x, y: sp.y, ground: g, kind: 'along planned route' };
+    }
   }
   return { x, y, ground: await query(page, 'groundFromScreen', x, y), kind: 'blocked' };
 }
