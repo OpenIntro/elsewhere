@@ -245,6 +245,8 @@ of the six run one after another, measured on a 4-core machine that was busy wit
 browser runs and rebuilds (load 6-9), so neither number is a quiet-machine figure: by hand with the old
 scripts 102 min 29 s (acceptance 12:27, interiors 3:26, build 13:29, build2 32:24, activities 19:39,
 combined 21:04); through `e2e:all` 125 min 50 s. Check-name lists per suite are identical before and after.
+On a quiet 4-core machine (cycle 01 QA, ten suites incl. roofs, built-interiors, phone and camera) one
+`e2e:all` pass takes 131-139 min.
 
 ## Controls
 
