@@ -50,19 +50,41 @@ export async function tapOrClick(page, x, y) {
   else await page.mouse.click(x, y);
 }
 
+/**
+ * Wait (up to `timeout`) until the camera has stopped easing: focus, zoom and yaw unchanged between two
+ * looks. A screen point chosen while it still moves can land somewhere else by the time it is tapped.
+ */
+export async function cameraSettled(page, timeout = 4_000) {
+  const t0 = Date.now();
+  let prev = null;
+  while (Date.now() - t0 < timeout) {
+    const c = (await snap(page))?.camera;
+    if (!c) return;
+    if (prev && Math.hypot(c.focus.x - prev.focus.x, c.focus.z - prev.focus.z) < 0.02 && Math.abs(c.zoom - prev.zoom) < 0.05 && Math.abs(c.yaw - prev.yaw) < 1e-3) return;
+    prev = c;
+    await sleep(150);
+  }
+}
+
 /** Click/tap-to-move in hops towards a far target (the camera follows), until within `near`. */
 export async function hopToward(page, target, near = 1.5, timeout = 150_000) {
   const vp = page.viewportSize();
   const t0 = Date.now();
   let last = null;
+  // A panel the caller left open is theirs; one that opens during the walk was opened by a hop tap.
+  const panel0 = (await snap(page))?.ui?.panel ?? null;
   while (Date.now() - t0 < timeout) {
     const s = await snap(page);
     if (Math.hypot(s.local.x - target.x, s.local.z - target.z) < near) return s;
-    // Someone walked under the last tap and their profile opened: close it, as a player would.
-    if (last && s.ui?.panel === 'profile' && (await page.locator('[data-testid=sheet-close]').isVisible().catch(() => false))) {
-      await press(page, '[data-testid=sheet-close]');
-      await waitSnap(page, (q) => q.ui?.panel !== 'profile', 'profile closed', 10_000);
+    // A hop tap landed on someone or something (a profile, a sign, a seat card…) and opened its panel:
+    // close it, as a player would — left open it covers the screen and blocks the next taps.
+    const opened = s.ui?.panel ?? null;
+    if (last && opened && opened !== panel0 && (await page.locator('[data-testid=sheet-close]').first().isVisible().catch(() => false))) {
+      await press(page, '[data-testid=sheet-close] >> nth=0');
+      await waitSnap(page, (q) => (q.ui?.panel ?? null) !== opened, `${opened} closed`, 10_000);
     }
+    // The camera eases after the player for a moment after each hop: aim once it has stopped.
+    await cameraSettled(page);
     const me = await query(page, 'worldToScreen', s.local.x, s.local.z);
     const tp = await query(page, 'worldToScreen', target.x, target.z);
     let x = tp.x;

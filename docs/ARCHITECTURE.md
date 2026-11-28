@@ -27,6 +27,9 @@ docs/     this file
 | `npm run e2e:interiors` | walk-in interiors with two real browsers (needs `npm run build`; port `INT_PORT`, default 2631) |
 | `npm run e2e:activities` | building activities with two real browsers incl. a server restart (needs `npm run build`; port `ACT_PORT`, default 2633; lowered workshop thresholds) |
 | `npm run e2e:combined` | cross-feature checks (interiors × building × activities) with two real browsers incl. a restart and the phone layouts (needs `npm run build`; port `COMB_PORT`, default 2636) |
+| `npm run e2e:roofs` | roof tool attach (incl. a hip roof) with two real browsers (needs `npm run build`; port `ROOFS_PORT`, default 2674) |
+| `npm run e2e:homes` | homes: make a house your home, approach label, map pin, block / restart / late joiner (needs `npm run build`; port `HOMES_PORT`, default 2671) |
+| `npm run perf:baseline` | build-layer rendering counts in three fixed views on the dev client with 2,000 seeded pieces; compares with `docs/perf/baseline.json` (tsx server `PERF_SERVER_PORT` 2672, Vite `PERF_VITE_PORT` 2673) |
 | `npm run e2e:all` | every production-server browser suite in sequence with one summary table and `e2e-results/summary.json` (needs `npm run build`; `--only`, `--repeat N`, `--with-player`, `--with-ui`); server spawn for all suites is `scripts/lib/server.mjs` |
 | `npm run e2e:doors` | door-walk audit: phone tap-to-move from every spawn point to every walk-in door, stalls logged to `e2e-results/doors.json` (needs `npm run build`; port `DOORS_PORT`, default 2643; diagnostic, exit 0 unless `--strict`) |
 

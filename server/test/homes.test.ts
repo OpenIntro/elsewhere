@@ -367,6 +367,26 @@ describe('homes service', { timeout: 120_000 }, () => {
     await w.close();
   });
 
+  it('a full ban hides the pin at once (the home stays the owner’s); lifting it shows it again', async () => {
+    const { w, homes } = await setup();
+    const a = await w.join('Ivy', STAND.x, STAND.z);
+    const b = await w.join('Rowan', 30, 30);
+    const h = await hut(w, a);
+    const owner = pid(w, a);
+    await homeSet(w, homes, a, h.door);
+    await homes.pin(w.ctx, a, { on: true });
+    expect(viewOf(w, b, owner)?.pinned).toBe(true);
+    const s = await w.moderation.sanction({ profileId: owner, kind: 'ban', minutes: 60, reason: 'abuse', createdBy: 'admin' });
+    expect(viewOf(w, b, owner)?.pinned).toBe(false);
+    expect(homes.get(owner)).toBeDefined();
+    // A new joiner also gets it unpinned.
+    const c = await w.join('Wren', 31, 30);
+    expect(viewOf(w, c, owner)?.pinned).toBe(false);
+    expect(await w.moderation.revokeSanction(s.id)).toBe(true);
+    expect(viewOf(w, b, owner)?.pinned).toBe(true);
+    await w.close();
+  });
+
   it('rate limit enforced (per profile, all three messages)', async () => {
     const { w, homes } = await setup({ rate: { capacity: 3, refillPerSecond: 0.01 } });
     const a = await w.join('Ivy', STAND.x, STAND.z);

@@ -371,7 +371,8 @@
   .build-storey { order: 1; }
   .build-storey__btn { width: 28px; height: 32px; }
   .build-storey__label { min-width: 58px; height: 32px; }
-  .build-nameprompt { bottom: calc(var(--safe-b) + 150px); }
+  /* Above the touch joystick (124 px tall, --ew-touch-bottom from the edge), not across it. */
+  .build-nameprompt { bottom: calc(var(--safe-b) + var(--ew-touch-bottom, 92px) + 136px); }
 }
 @media (max-height: 500px) and (orientation: landscape) {
   .build-search__input { height: 24px; width: 72px; }
