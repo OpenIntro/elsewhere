@@ -48,3 +48,4 @@ Status: proposed / approved / deferred / built / rejected / parked.
 | Home map pins (opt-in) | update | 02 | approved | D3 ruled; part of Brief H; hidden from players in a block relation with the owner. |
 | Claimable starter cottage | new feature | 02 | rejected | D1: no fair allocation for a scarce house. |
 | Adaptive quality step-down | performance | 02 | parked | Needs real-device numbers from Brief P's meter (owner-reserved check). |
+| Map: home pin labels collide with district labels | update | 02 | proposed | Cycle 02 QA: on the island map (`MapPanel.tsx`) a pinned home's label ("Fern Cottage · Ivy") is drawn under the district labels and overlaps them when the home is near one (seen: Residential District / Town Square on a phone, `docs/screenshots/homes/map-pin-phone.jpg`). Needs label placement (offset or hide-on-collision for pin and district labels), not a CSS tweak. |

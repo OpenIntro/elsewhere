@@ -491,7 +491,7 @@ layer's own calls (counted per pass by the renderer) move the check. Only counts
 | View (2,000 pieces) | pieces in view | visible build triangles before → after | build draw calls, camera + shadow pass, before → after | whole-frame calls before → change |
 |---|---|---|---|---|
 | Default spawn | 20 | 683,964 → 396,076 (−42 %) | 95 + 74 → 117 + 109 | 306 → +18.6 % |
-| Town Square (`?cam=town_square`, the busiest) | 337 | 687,354 → 519,166 (−24 %) | 98 + 82 → 155 + 133 | 448 → +24.1 % |
+| Town Square (`?cam=town_square`, the busiest) | 337 | 687,354 → 520,210 (−24 %) | 98 + 82 → 155 + 133 | 448 → +24.1 % |
 | Island corner, no pieces (`?cam=-62,-74,30`) | 0 | 560,372 → 129,228 (−77 %) | 44 + 49 → 36 + 35 | 173 → −12.7 % |
 
 Before = `docs/perf/baseline-before.json` (the cycle 1 renderer plus only the counters). Targets: corner

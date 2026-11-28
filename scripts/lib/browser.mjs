@@ -180,6 +180,15 @@ export function route(from, to, blocked = () => false) {
   return [to];
 }
 
+/** Distance from p to the segment a–b (ground plane). */
+function segmentDistance(p, a, b) {
+  const vx = b.x - a.x;
+  const vz = b.z - a.z;
+  const l2 = vx * vx + vz * vz;
+  const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / l2)) : 0;
+  return Math.hypot(a.x + vx * t - p.x, a.z + vz * t - p.z);
+}
+
 /**
  * Keyboard walking towards waypoints: every step pick the camera-relative
  * W/A/S/D combination closest to the direction of the next waypoint.
@@ -200,10 +209,11 @@ export async function keyboardWalk(page, waypoints, { reach = 0.45, timeout = 40
   };
   const t0 = Date.now();
   try {
-    for (const wp of waypoints) {
+    for (const [wi, wp] of waypoints.entries()) {
       let last = null;
       let stall = 0;
       let nudge = 0;
+      const via = wi < waypoints.length - 1;
       for (;;) {
         const s = await snap(page);
         if (Date.now() - t0 > timeout) {
@@ -213,6 +223,10 @@ export async function keyboardWalk(page, waypoints, { reach = 0.45, timeout = 40
         const dx = wp.x - s.local.x;
         const dz = wp.z - s.local.z;
         if (Math.hypot(dx, dz) < reach) break;
+        // A via point walked straight through counts as passed. At ~2 fps one key press moves the player
+        // ~4 m (the key is held for whole ~0.5 s frames), more than twice `reach`, so a step can jump
+        // over a via point and the next one back again, forever (seen at the Town Hall door).
+        if (via && last && segmentDistance(wp, last, s.local) < reach) break;
         const yaw = s.view.yaw;
         const mx = dx * Math.cos(yaw) - dz * Math.sin(yaw);
         const my = -(dx * Math.sin(yaw) + dz * Math.cos(yaw));

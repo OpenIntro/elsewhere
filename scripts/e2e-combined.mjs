@@ -1068,6 +1068,13 @@ try {
       for (const need of ['nav', 'navBuild', 'joystick', 'chatPeek']) if (!hud.rects[need]) problems.push(`${tagOf(w, h)} hud: ${need} not visible`);
       // Keeper panel (tap the barista) → order a drink → the drink chip with the nav.
       await useThing(b, barista.interactableId, { panel: 'panel-keeper', approach: interiorAnchor('cafe', 'table_3').position, timeout: 90_000 });
+      // Hit-test once the sheet has finished fading in: mid-animation (at ~2 fps it can still be near
+      // opacity 0 after the settle time) the report does not see the sheet and lists the controls under
+      // it as "blocked by panel-keeper" instead of "under the panel".
+      await waitFor(async () => (await b.evaluate(() => {
+        const el = document.querySelector('.sheet');
+        return !!el && Number(getComputedStyle(el).opacity) > 0.95;
+      })) || 'sheet still fading in', 'keeper sheet shown', 15_000);
       const panel = await capture('keeper-panel');
       if (!panel.rects.sheetClose) problems.push(`${tagOf(w, h)} keeper panel: no close button visible`);
       const held = (await snap(b)).activities.held[idB];
