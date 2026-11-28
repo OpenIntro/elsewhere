@@ -35,7 +35,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@colyseus/sdk';
-import { CONFIG, PIECES, ROOM_NAME, homeLabel } from '@elsewhere/shared';
+import { CONFIG, PIECES, PieceIndex, ROOM_NAME, defaultCollisionWorld, homeLabel, validatePlacement } from '@elsewhere/shared';
 import { assert, aimGhost, buildState, choosePiece, closeBuild, hopToward, openBuild, placeHere, press, query, rotateTo, screenOf, sleep, snap, tapOrClick, waitSnap, zoomOut, onCanvas } from './lib/browser.mjs';
 import { closePanel } from './lib/phone.mjs';
 import { createServer } from './lib/server.mjs';
@@ -101,10 +101,25 @@ const INSIDE_A = { x: -18.6, z: 1.7 };
 const OUTSIDE_B = { x: -12.5, z: 6.5 };
 /** B's spot on approach: 3 m south of the hut's front wall, beside the door. */
 const APPROACH = { x: -17.6, z: 6.0 };
+/** In front of the door, clear of the board and the doorstep (click-to-move routes in and out from here). */
+const DOORSTEP = { x: -18.8, z: 5.4 };
 /** Where A goes once it leaves (well outside the room). */
 const AWAY_A = { x: -13.5, z: 4.5 };
-/** B's own floor tile for the forged request (open meadow, nothing around it). */
-const B_FLOOR = { kind: 'floor', x: -13, z: 9, variant: PIECES.floor.variants[0].id };
+/** B's own floor tile for the forged request: the first spot near B that the shared rules accept (open meadow). */
+function floorSpotNear(p, pieces) {
+  const index = new PieceIndex();
+  for (const q of pieces) index.add(q);
+  const variant = PIECES.floor.variants[0].id;
+  const cands = [];
+  for (let dx = -5; dx <= 5; dx += 2) for (let dz = -5; dz <= 5; dz += 2) cands.push({ x: Math.round(p.x) + dx + (Math.round(p.x) % 2 === 0 ? 1 : 0), z: Math.round(p.z) + dz + (Math.round(p.z) % 2 === 0 ? 1 : 0) });
+  cands.sort((u, v) => Math.hypot(u.x - p.x, u.z - p.z) - Math.hypot(v.x - p.x, v.z - p.z));
+  for (const c of cands) {
+    if (Math.hypot(c.x - p.x, c.z - p.z) < 2) continue; // not under B's feet
+    const v = validatePlacement({ kind: 'floor', variant, x: c.x, z: c.z, rot: 0, level: 0 }, { index, builderId: 'B', builderPos: p, players: [p], collision: defaultCollisionWorld() });
+    if (v.ok) return { kind: 'floor', x: c.x, z: c.z, variant };
+  }
+  throw new Error(`no buildable floor spot near (${p.x.toFixed(1)}, ${p.z.toFixed(1)})`);
+}
 const findPiece = (pieces, p) => pieces.find((q) => q.kind === p.kind && q.x === p.x && q.z === p.z && q.level === (p.level ?? 0) && (p.rot === undefined || q.rot === p.rot));
 const homesOf = (s) => s?.homes?.homes ?? [];
 const nameOf = (s, sid) => s.players.find((p) => p.id === sid)?.name;
@@ -302,7 +317,7 @@ try {
 
   await check('2. B walks up by tap-to-move and sees "· A’s home · 1 inside" while A stands inside, and no count once A leaves', async () => {
     // A walks in through the doorway (click-to-move); server position inside the room.
-    await hopToward(a, { x: -19, z: 4.6 }, 0.8);
+    await hopToward(a, DOORSTEP, 1.0);
     await hopToward(a, INSIDE_A, 0.45, 120_000);
     const inA = (await snap(a)).players.find((p) => p.id === idA);
     assert(inA.x > HUT.x0 && inA.x < HUT.x1 && inA.z > HUT.z0 && inA.z < HUT.z1, `A (server) not inside: ${inA.x}, ${inA.z}`);
@@ -321,7 +336,7 @@ try {
     assert(homesOf(sb).find((h) => h.profileId === pidA)?.inside === 1, `B's count ${JSON.stringify(homesOf(sb))}`);
     await shot(b, 'approach-label-phone');
     // A leaves: the count goes (nothing shown for 0).
-    await hopToward(a, { x: -19, z: 4.6 }, 0.8, 120_000);
+    await hopToward(a, DOORSTEP, 1.0, 120_000);
     await hopToward(a, AWAY_A, 0.9);
     const bare = homeLabel(NAME, nameA);
     const t1 = Date.now();
@@ -474,9 +489,10 @@ try {
       ctxC = null;
       c = null;
     }
-    // B lays a floor tile by touch (its own piece, no house).
-    await hopToward(b, { x: B_FLOOR.x, z: B_FLOOR.z + 2.5 }, 1.0);
+    // B lays a floor tile by touch (its own piece, no house), on open land beside it.
     await openBuild(b);
+    const sb0 = await snap(b);
+    const B_FLOOR = floorSpotNear(sb0.local, sb0.build.pieces);
     await choosePiece(b, B_FLOOR.kind, { category: PIECES.floor.category, variant: B_FLOOR.variant });
     const floor = await placeHere(b, B_FLOOR.x, B_FLOOR.z, undefined, { level: 0 });
     await press(b, '[data-testid=build-done]');

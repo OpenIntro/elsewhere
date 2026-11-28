@@ -4,9 +4,9 @@
  * (`planRegroup`); these tests drive it the way BuildLayer's rebuild does.
  */
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, InstancedMesh, Matrix4, MeshBasicMaterial } from 'three';
+import { Box3, BoxGeometry, InstancedMesh, Matrix4, MeshBasicMaterial, Vector3 } from 'three';
 import { roofParamsString, type PieceKind, type PieceRecord } from '@elsewhere/shared';
-import { BUILD_CHUNK_M, BUILD_SPLIT_MIN_TRIS, baseKey, chunkOf, groupKey, planRegroup, type GroupSlots, type RegroupOptions } from '../src/build/BuildLayer.js';
+import { BUILD_CHUNK_M, BUILD_SPLIT_MIN_TRIS, baseKey, chunkOf, fitGroupSphere, groupKey, planRegroup, type GroupSlots, type RegroupOptions } from '../src/build/BuildLayer.js';
 
 let nextId = 0;
 function piece(kind: PieceKind, x: number, z: number, extra: Partial<PieceRecord> = {}): PieceRecord {
@@ -119,6 +119,37 @@ describe('build chunks', () => {
     const s = g.slots();
     for (const p of all) expect(s.get(p.id)).toEqual([{ key: groupKey(p), index: 0 }]);
     expect(g.map.get(groupKey(faded))!.fade[0]).toBeCloseTo(0.8, 5);
+  });
+
+  it("a group's bounding sphere holds every instance and does not depend on the instances' order", () => {
+    const pts: [number, number, number, number][] = [];
+    let rnd = 7;
+    const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 40; i++) pts.push([rand() * BUILD_CHUNK_M, rand() * 6, rand() * BUILD_CHUNK_M, i % 4]);
+    const make = (order: [number, number, number, number][]) => {
+      const mesh = new InstancedMesh(new BoxGeometry(2, 2.6, 0.2), new MeshBasicMaterial(), order.length);
+      order.forEach(([x, y, z, rot], i) => mesh.setMatrixAt(i, new Matrix4().makeRotationY(rot * (Math.PI / 2)).setPosition(x, y, z)));
+      return mesh;
+    };
+    const a = fitGroupSphere(make(pts)).clone();
+    const reversed = make([...pts].reverse());
+    const b = fitGroupSphere(reversed);
+    expect(b.center.distanceTo(a.center)).toBeLessThan(1e-9);
+    expect(Math.abs(b.radius - a.radius)).toBeLessThan(1e-9);
+    // Every corner of every instance is inside.
+    const geo = reversed.geometry;
+    geo.computeBoundingBox();
+    const m = new Matrix4();
+    const box = new Box3();
+    const c = new Vector3();
+    for (let i = 0; i < reversed.count; i++) {
+      reversed.getMatrixAt(i, m);
+      box.copy(geo.boundingBox!).applyMatrix4(m);
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) expect(c.set(x, y, z).distanceTo(b.center)).toBeLessThanOrEqual(b.radius + 1e-9);
+    }
+    // three's own (grown instance by instance) is never tighter than this one.
+    reversed.computeBoundingSphere();
+    expect(b.radius).toBeLessThanOrEqual(reversed.boundingSphere!.radius + 1e-9);
   });
 
   const tris = (p: PieceRecord) => (p.kind === 'house_roof' ? 800 : 100);

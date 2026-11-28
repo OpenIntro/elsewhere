@@ -52,6 +52,7 @@ const SUITES = [
 const OPTIONAL = {
   player: { name: 'player', script: 'scripts/e2e-player.mjs', port: ['E2E_SERVER_PORT', 2604] },
   ui: { name: 'ui', script: 'scripts/e2e-ui.mjs' },
+  perf: { name: 'perf', script: 'scripts/perf-baseline.mjs', port: ['PERF_SERVER_PORT', 2672], shots: 'PERF_OUT_DIR' },
 };
 
 // ---------------------------------------------------------------------------

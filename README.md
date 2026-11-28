@@ -280,6 +280,7 @@ On a quiet 4-core machine (cycle 01 QA, ten suites incl. roofs, built-interiors,
 | Clear tool | click / tap a bush or small rock → Clear bush / Clear rock |
 | Built seats | walk up to a built chair / bench / sofa / bed and press E (or the action button), or click it |
 | Settings → Stuck somewhere? (also in the build dock's ··· menu) | Unstuck: back to the Town Square (once every 30 s) |
+| Settings → Display → Performance | fps · typical / slow frame ms · draw calls, measured on this device only |
 | Walk through a door | enter a building: its roof and the walls between you and the camera fade away (dollhouse cutaway, any camera rotation); walk out and they come back. Clicking a spot inside a building from outside walks you in through the door |
 
 ## Building activities
@@ -410,7 +411,8 @@ in `client/src/build/`.
   (walls, doorway, roof): "Ivy named their house “Fern Cottage”" — only real events. Walking up to a
   named house shows "<name> · built by <player>".
 - **Rendering:** one instanced mesh per piece kind + style + material (~110 draw calls for 2,000
-  mixed pieces of ~40 kinds), shadows like the world; roofs and upper storeys over or next to you dissolve (dithered,
+  mixed pieces of ~40 kinds), heavy ones split by 24 m cells so pieces off screen are not drawn (see
+  "Rendering cost"), shadows like the world; roofs and upper storeys over or next to you dissolve (dithered,
   their shadow too), and tall walls between the camera and you thin out. **Built interiors open
   like the town's:** step 0.3 m into a room of built pieces (under a house roof, roof tiles or an
   upper floor — an L house with two roofs is one room — or inside walls on at least 3 sides, up to
@@ -463,6 +465,39 @@ Against the MVP (before interiors, building and activities) at the same views, s
 +24 draw calls and +1 to +14 % triangles, the most inside the Café (medium 220 → 244 calls, 0.88 →
 1.00 M triangles: the barista and the live activity dressing). Frame time in
 software rendering says nothing about real GPUs.
+
+**Frame meter.** Settings → Display shows one quiet "Performance" line under Graphics: frames per second ·
+typical / slow frame (median / 95th percentile of the last 300 frames, ms) · draw calls of the last frame
+(desktop and phone; production builds too; nothing leaves the device). `snapshot().frame` carries the same
+(`fps`, `p50Ms`, `p95Ms`, `calls`, `triangles`) next to the older 600-frame fields (`n`, `avg`, `p95`,
+`max`, `over50`). It is there for readings on real devices; numbers from this machine (software WebGL,
+1-2 fps) say nothing about them.
+
+**Build pieces off screen (chunked instancing).** Each instanced build group whose pieces add up to at
+least 8,000 triangles is split by a 24 m square cell (`BUILD_CHUNK_M`, `BUILD_SPLIT_MIN_TRIS` in
+`client/src/build/BuildLayer.tsx`); each group's bounding sphere is fitted around its instances' box
+(three.js's own grows instance by instance and depended on the order pieces arrived in), so frustum
+culling skips the cells out of view in the camera and the shadow pass. `npm run perf:baseline`
+(`scripts/perf-baseline.mjs`: dev client, `PERF_SERVER_PORT` 2672 / `PERF_VITE_PORT` 2673, the 2,000-piece
+mix seeded through the real server path in a fixed order, `?time=0.5`, medium, 1440x900, one player at the
+same spawn point, alone in the room) writes `docs/perf/baseline.json` and fails if visible build triangles
+or whole-frame calls rise more than 10% over the committed file. Whole-frame calls are compared with the
+rest of the world held at the reference: the shop keepers walk server-timed routes in and out of the view
+and the shadow box (up to ~70 calls apart in the Town Square between identical runs), so only the build
+layer's own calls (counted per pass by the renderer) move the check. Only counts are compared.
+
+| View (2,000 pieces) | pieces in view | visible build triangles before → after | build draw calls, camera + shadow pass, before → after | whole-frame calls before → change |
+|---|---|---|---|---|
+| Default spawn | 20 | 683,964 → 234,436 (−66 %) | 95 + 74 → 99 + 98 | 306 → +9 % |
+| Town Square (`?cam=town_square`, the busiest) | 337 | 687,354 → 376,578 (−45 %) | 98 + 82 → 186 + 219 | 448 → **+50 %** |
+| Island corner, no pieces (`?cam=-62,-74,30`) | 0 | 560,372 → 75,664 (−86 %) | 44 + 49 → 26 + 33 | 173 → −20 % |
+
+Before = `docs/perf/baseline-before.json` (the cycle 1 renderer plus only the counters). **The busiest
+view misses its target** (no more than +25 % whole-frame calls): splitting by cell multiplies the groups a
+wide view and the larger shadow box draw. No cell size tried meets all four targets
+(`docs/perf/chunk-sizes.json`: 24, 32, 40, 48 and 96 m, with and without the 8,000-triangle split rule,
+and a grid centred on the square); 48 m with the rule keeps the busiest view at +24 % but the default view
+rises +19 % (target +15 %). Which trade-off to keep is an open decision.
 
 ## Homes
 

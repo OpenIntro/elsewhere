@@ -18,6 +18,7 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import {
+  Box3,
   BoxGeometry,
   CanvasTexture,
   Color,
@@ -35,6 +36,7 @@ import {
   RingGeometry,
   SRGBColorSpace,
   Sphere,
+  Vector3,
   type BufferGeometry,
   type Camera,
   type Material,
@@ -62,9 +64,53 @@ const WARM = new Color('#ffc77e');
 const LAMP_OFF = new Color('#8a8070');
 const _c = new Color();
 const ZERO = new Matrix4().makeScale(0, 0, 0);
+/** Draw calls the build layer's meshes issued: counted by the renderer's per-object hooks, per pass. */
+const drawn = { main: 0, shadow: 0 };
+const drawnLast = { main: 0, shadow: 0 };
+function countMain(this: InstancedMesh): void {
+  if (this.count > 0) drawn.main++;
+}
+function countShadow(this: InstancedMesh): void {
+  if (this.count > 0) drawn.shadow++;
+}
 const _frustum = new Frustum();
 const _vp = new Matrix4();
 const _sph = new Sphere();
+
+const _gm = new Matrix4();
+const _gbox = new Box3();
+const _ibox = new Box3();
+const _isph = new Sphere();
+const _gsize = new Vector3();
+
+/**
+ * A group's bounding sphere (what three.js frustum-culls the instanced mesh by, for the camera and the
+ * shadow pass). three's own InstancedMesh.computeBoundingSphere grows a sphere instance by instance, so
+ * its size depends on the order the pieces arrived in and is often much larger than the group. This
+ * one is centred on the instances' bounding box and just reaches the farthest instance's sphere (or the
+ * box corners, if smaller): order-independent and tight. Raycasting uses it as an early-out only.
+ */
+export function fitGroupSphere(mesh: InstancedMesh): Sphere {
+  const geo = mesh.geometry;
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  if (!geo.boundingSphere) geo.computeBoundingSphere();
+  const out = mesh.boundingSphere ?? (mesh.boundingSphere = new Sphere());
+  _gbox.makeEmpty();
+  for (let i = 0; i < mesh.count; i++) {
+    mesh.getMatrixAt(i, _gm);
+    _gbox.union(_ibox.copy(geo.boundingBox!).applyMatrix4(_gm));
+  }
+  if (_gbox.isEmpty()) return out.makeEmpty();
+  _gbox.getCenter(out.center);
+  let r = 0;
+  for (let i = 0; i < mesh.count; i++) {
+    mesh.getMatrixAt(i, _gm);
+    _isph.copy(geo.boundingSphere!).applyMatrix4(_gm);
+    r = Math.max(r, out.center.distanceTo(_isph.center) + _isph.radius);
+  }
+  out.radius = Math.min(r, _gbox.getSize(_gsize).length() / 2);
+  return out;
+}
 
 /**
  * What the main camera can see of the build layer (debug / perf measurements): draw calls and
@@ -80,7 +126,7 @@ function visibleBuild(meshes: Iterable<{ mesh: InstancedMesh; solid: boolean }>,
   let pieces = 0;
   for (const { mesh, solid } of meshes) {
     if (mesh.count === 0 || !mesh.visible) continue;
-    if (!mesh.boundingSphere) mesh.computeBoundingSphere();
+    if (!mesh.boundingSphere) fitGroupSphere(mesh);
     mesh.updateWorldMatrix(true, false);
     _sph.copy(mesh.boundingSphere!).applyMatrix4(mesh.matrixWorld);
     if (!_frustum.intersectsSphere(_sph)) continue;
@@ -408,7 +454,7 @@ export function BuildLayer() {
         for (const g of groups.current.values()) for (const [bucket, mesh] of g.meshes) yield { mesh, solid: bucket === 'solid' };
       })();
       const visible = visibleBuild(all, camera);
-      return { groups: groups.current.size, chunkSize: BUILD_CHUNK_M, drawCalls, triangles: Math.round(triangles), instances, visible, signs: signs.current.size, halos: halos.count, frame: { calls: info.calls, triangles: info.triangles }, programs: gl.info.programs?.length ?? 0 };
+      return { groups: groups.current.size, chunkSize: BUILD_CHUNK_M, drawCalls, triangles: Math.round(triangles), instances, visible, passes: { ...drawnLast }, signs: signs.current.size, halos: halos.count, frame: { calls: info.calls, triangles: info.triangles }, programs: gl.info.programs?.length ?? 0 };
     });
     // Read-only: the built-interior cutaway for the local player (tests).
     registerDebugSection('builtCutaway', () => {
@@ -459,6 +505,8 @@ export function BuildLayer() {
       if (bucket === 'solid') mesh.customDepthMaterial = pieceDepthMaterial;
       mesh.receiveShadow = bucket !== 'glow';
       mesh.name = `build:${key}:${bucket}`;
+      mesh.onBeforeRender = countMain;
+      mesh.onBeforeShadow = countShadow;
       meshes.set(bucket, mesh);
       root.current?.add(mesh);
       if (bucket === 'solid') {
@@ -513,7 +561,7 @@ export function BuildLayer() {
           ca.needsUpdate = true;
         }
         // Per group = per spatial cell: the sphere frustum culling tests (recomputed on every change).
-        mesh.computeBoundingSphere();
+        fitGroupSphere(mesh);
         void bucket;
       }
       for (const t of g.target) t.ids = list.map((p) => p.id);
@@ -810,6 +858,9 @@ export function BuildLayer() {
   const thumbsTried = useRef(false);
   const meterOn = useRef(false);
   useFrame((_, dt) => {
+    // The build layer's draw calls of the frame just rendered (main + shadow pass).
+    Object.assign(drawnLast, drawn);
+    drawn.main = drawn.shadow = 0;
     // Frame meter: this frame's interval and the renderer's counts of the frame just drawn.
     if (!meterOn.current) {
       meterOn.current = true;

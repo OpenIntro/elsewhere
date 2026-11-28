@@ -1,0 +1,370 @@
+{
+  "note": "Brief P chunk-size sweep: 2,000-piece mix, dev client, ?time=0.5, medium, 1440x900, software WebGL. frameCallsRisePct = (build draw calls after - before, main + shadow pass, counted by the renderer hooks) / whole-frame calls before (the rest of the frame does not depend on this code; the keepers walking make raw whole-frame calls vary by up to ~70 between identical runs). Busiest view = town_square (337 pieces in view). No configuration meets all four targets.",
+  "before": {
+    "default": {
+      "visiblePieces": 20,
+      "visibleBuildTriangles": 683964,
+      "buildCallsMainShadow": [
+        95,
+        74
+      ],
+      "frameCalls": 306
+    },
+    "town_square": {
+      "visiblePieces": 337,
+      "visibleBuildTriangles": 687354,
+      "buildCallsMainShadow": [
+        98,
+        82
+      ],
+      "frameCalls": 448
+    },
+    "corner": {
+      "visiblePieces": 0,
+      "visibleBuildTriangles": 560372,
+      "buildCallsMainShadow": [
+        44,
+        49
+      ],
+      "frameCalls": 173
+    }
+  },
+  "rows": [
+    {
+      "chunkM": 24,
+      "splitMinTris": 0,
+      "grid": "origin",
+      "file": "after-s24",
+      "default": {
+        "visibleBuildTriangles": 100092,
+        "visibleTriDropPct": 85.4,
+        "buildCallsMainShadow": [
+          47,
+          89
+        ],
+        "frameCallsRisePct": -10.8,
+        "rawFrameCalls": 273
+      },
+      "town_square": {
+        "visibleBuildTriangles": 281802,
+        "visibleTriDropPct": 59,
+        "buildCallsMainShadow": [
+          244,
+          372
+        ],
+        "frameCallsRisePct": 97.3,
+        "rawFrameCalls": 951
+      },
+      "corner": {
+        "visibleBuildTriangles": 16020,
+        "visibleTriDropPct": 97.1,
+        "buildCallsMainShadow": [
+          5,
+          10
+        ],
+        "frameCallsRisePct": -45.1,
+        "rawFrameCalls": 95
+      },
+      "targets": {
+        "cornerTriDrop60": true,
+        "defaultTriDrop25": true,
+        "defaultCallsRise15": true,
+        "busiestCallsRise25": false
+      }
+    },
+    {
+      "chunkM": 24,
+      "splitMinTris": 8000,
+      "grid": "origin",
+      "file": "after-s24t8k",
+      "default": {
+        "visibleBuildTriangles": 234436,
+        "visibleTriDropPct": 65.7,
+        "buildCallsMainShadow": [
+          99,
+          98
+        ],
+        "frameCallsRisePct": 9.2,
+        "rawFrameCalls": 423
+      },
+      "town_square": {
+        "visibleBuildTriangles": 376578,
+        "visibleTriDropPct": 45.2,
+        "buildCallsMainShadow": [
+          186,
+          219
+        ],
+        "frameCallsRisePct": 50.2,
+        "rawFrameCalls": 673
+      },
+      "corner": {
+        "visibleBuildTriangles": 75664,
+        "visibleTriDropPct": 86.5,
+        "buildCallsMainShadow": [
+          26,
+          33
+        ],
+        "frameCallsRisePct": -19.7,
+        "rawFrameCalls": 139
+      },
+      "targets": {
+        "cornerTriDrop60": true,
+        "defaultTriDrop25": true,
+        "defaultCallsRise15": true,
+        "busiestCallsRise25": false
+      }
+    },
+    {
+      "chunkM": 32,
+      "splitMinTris": 8000,
+      "grid": "origin",
+      "file": "after-s32t8k",
+      "default": {
+        "visibleBuildTriangles": 254496,
+        "visibleTriDropPct": 62.8,
+        "buildCallsMainShadow": [
+          101,
+          97
+        ],
+        "frameCallsRisePct": 9.5,
+        "rawFrameCalls": 424
+      },
+      "town_square": {
+        "visibleBuildTriangles": 412826,
+        "visibleTriDropPct": 39.9,
+        "buildCallsMainShadow": [
+          169,
+          193
+        ],
+        "frameCallsRisePct": 40.6,
+        "rawFrameCalls": 697
+      },
+      "corner": {
+        "visibleBuildTriangles": 95720,
+        "visibleTriDropPct": 82.9,
+        "buildCallsMainShadow": [
+          26,
+          32
+        ],
+        "frameCallsRisePct": -20.2,
+        "rawFrameCalls": 143
+      },
+      "targets": {
+        "cornerTriDrop60": true,
+        "defaultTriDrop25": true,
+        "defaultCallsRise15": true,
+        "busiestCallsRise25": false
+      }
+    },
+    {
+      "chunkM": 40,
+      "splitMinTris": 8000,
+      "grid": "origin",
+      "file": "after-s40t8k",
+      "default": {
+        "visibleBuildTriangles": 338320,
+        "visibleTriDropPct": 50.5,
+        "buildCallsMainShadow": [
+          117,
+          108
+        ],
+        "frameCallsRisePct": 18.3,
+        "rawFrameCalls": 362
+      },
+      "town_square": {
+        "visibleBuildTriangles": 476394,
+        "visibleTriDropPct": 30.7,
+        "buildCallsMainShadow": [
+          164,
+          159
+        ],
+        "frameCallsRisePct": 31.9,
+        "rawFrameCalls": 591
+      },
+      "corner": {
+        "visibleBuildTriangles": 111108,
+        "visibleTriDropPct": 80.2,
+        "buildCallsMainShadow": [
+          31,
+          35
+        ],
+        "frameCallsRisePct": -15.6,
+        "rawFrameCalls": 146
+      },
+      "targets": {
+        "cornerTriDrop60": true,
+        "defaultTriDrop25": true,
+        "defaultCallsRise15": false,
+        "busiestCallsRise25": false
+      }
+    },
+    {
+      "chunkM": 48,
+      "splitMinTris": 0,
+      "grid": "origin",
+      "file": "after-s48",
+      "default": {
+        "visibleBuildTriangles": 305356,
+        "visibleTriDropPct": 55.4,
+        "buildCallsMainShadow": [
+          106,
+          125
+        ],
+        "frameCallsRisePct": 20.3,
+        "rawFrameCalls": 368
+      },
+      "town_square": {
+        "visibleBuildTriangles": 458314,
+        "visibleTriDropPct": 33.3,
+        "buildCallsMainShadow": [
+          197,
+          204
+        ],
+        "frameCallsRisePct": 49.3,
+        "rawFrameCalls": 669
+      },
+      "corner": {
+        "visibleBuildTriangles": 72392,
+        "visibleTriDropPct": 87.1,
+        "buildCallsMainShadow": [
+          19,
+          15
+        ],
+        "frameCallsRisePct": -34.1,
+        "rawFrameCalls": 114
+      },
+      "targets": {
+        "cornerTriDrop60": true,
+        "defaultTriDrop25": true,
+        "defaultCallsRise15": false,
+        "busiestCallsRise25": false
+      }
+    },
+    {
+      "chunkM": 48,
+      "splitMinTris": 8000,
+      "grid": "origin",
+      "file": "after-s48t8k",
+      "default": {
+        "visibleBuildTriangles": 396076,
+        "visibleTriDropPct": 42.1,
+        "buildCallsMainShadow": [
+          117,
+          109
+        ],
+        "frameCallsRisePct": 18.6,
+        "rawFrameCalls": 363
+      },
+      "town_square": {
+        "visibleBuildTriangles": 519166,
+        "visibleTriDropPct": 24.5,
+        "buildCallsMainShadow": [
+          155,
+          133
+        ],
+        "frameCallsRisePct": 24.1,
+        "rawFrameCalls": 556
+      },
+      "corner": {
+        "visibleBuildTriangles": 129228,
+        "visibleTriDropPct": 76.9,
+        "buildCallsMainShadow": [
+          36,
+          35
+        ],
+        "frameCallsRisePct": -12.7,
+        "rawFrameCalls": 151
+      },
+      "targets": {
+        "cornerTriDrop60": true,
+        "defaultTriDrop25": true,
+        "defaultCallsRise15": false,
+        "busiestCallsRise25": true
+      }
+    },
+    {
+      "chunkM": 48,
+      "splitMinTris": 8000,
+      "grid": "centred on 0,0",
+      "file": "after-c48t8k",
+      "default": {
+        "visibleBuildTriangles": 491260,
+        "visibleTriDropPct": 28.2,
+        "buildCallsMainShadow": [
+          123,
+          93
+        ],
+        "frameCallsRisePct": 15.4,
+        "rawFrameCalls": 442
+      },
+      "town_square": {
+        "visibleBuildTriangles": 547466,
+        "visibleTriDropPct": 20.4,
+        "buildCallsMainShadow": [
+          154,
+          162
+        ],
+        "frameCallsRisePct": 30.4,
+        "rawFrameCalls": 584
+      },
+      "corner": {
+        "visibleBuildTriangles": 181800,
+        "visibleTriDropPct": 67.6,
+        "buildCallsMainShadow": [
+          34,
+          40
+        ],
+        "frameCallsRisePct": -11,
+        "rawFrameCalls": 154
+      },
+      "targets": {
+        "cornerTriDrop60": true,
+        "defaultTriDrop25": true,
+        "defaultCallsRise15": false,
+        "busiestCallsRise25": false
+      }
+    },
+    {
+      "chunkM": 96,
+      "splitMinTris": 8000,
+      "grid": "origin",
+      "file": "after-s96t8k",
+      "default": {
+        "visibleBuildTriangles": 543124,
+        "visibleTriDropPct": 20.6,
+        "buildCallsMainShadow": [
+          123,
+          109
+        ],
+        "frameCallsRisePct": 20.6,
+        "rawFrameCalls": 458
+      },
+      "town_square": {
+        "visibleBuildTriangles": 647386,
+        "visibleTriDropPct": 5.8,
+        "buildCallsMainShadow": [
+          159,
+          129
+        ],
+        "frameCallsRisePct": 24.1,
+        "rawFrameCalls": 556
+      },
+      "corner": {
+        "visibleBuildTriangles": 191228,
+        "visibleTriDropPct": 65.9,
+        "buildCallsMainShadow": [
+          39,
+          35
+        ],
+        "frameCallsRisePct": -11,
+        "rawFrameCalls": 154
+      },
+      "targets": {
+        "cornerTriDrop60": true,
+        "defaultTriDrop25": false,
+        "defaultCallsRise15": false,
+        "busiestCallsRise25": true
+      }
+    }
+  ]
+}

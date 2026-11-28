@@ -1,0 +1,176 @@
+{
+  "measuredAt": "2026-11-27T23:49:34.457Z",
+  "setup": {
+    "client": "dev (tsx server + Vite)",
+    "viewport": "1440x900",
+    "quality": "medium",
+    "time": 0.5,
+    "renderer": "headless Chromium, software WebGL (SwiftShader)",
+    "pieces": 2000,
+    "seeding": {
+      "planned": 2000,
+      "refused": {},
+      "ms": 52979
+    }
+  },
+  "note": "Counts are what is compared; frame times on a software renderer say nothing about real devices.",
+  "busiest": "town_square",
+  "views": {
+    "default": {
+      "pieces": 2000,
+      "local": {
+        "x": 0,
+        "z": -3.2
+      },
+      "players": 1,
+      "screenProbe": [
+        [
+          562,
+          730
+        ],
+        [
+          562,
+          1921
+        ]
+      ],
+      "build": {
+        "groups": 89,
+        "meshes": null,
+        "chunkSize": null,
+        "all": {
+          "drawCalls": 113,
+          "triangles": 698640,
+          "instances": 2000
+        },
+        "visible": {
+          "drawCalls": 95,
+          "triangles": 683964,
+          "pieces": 20
+        }
+      },
+      "frame": {
+        "calls": 306,
+        "triangles": 2144810,
+        "callsRange": [
+          306,
+          306
+        ],
+        "build": {
+          "main": 95,
+          "shadow": 74
+        }
+      },
+      "meter": {
+        "n": 46,
+        "avg": 835.7130339249321,
+        "p95": 1285.199951171875,
+        "max": 4331.5,
+        "over50": 46
+      }
+    },
+    "town_square": {
+      "pieces": 2000,
+      "local": {
+        "x": 0,
+        "z": -3.2
+      },
+      "players": 1,
+      "screenProbe": [
+        [
+          768,
+          448
+        ],
+        [
+          768,
+          1027
+        ]
+      ],
+      "build": {
+        "groups": 89,
+        "meshes": null,
+        "chunkSize": null,
+        "all": {
+          "drawCalls": 113,
+          "triangles": 698640,
+          "instances": 2000
+        },
+        "visible": {
+          "drawCalls": 98,
+          "triangles": 687354,
+          "pieces": 337
+        }
+      },
+      "frame": {
+        "calls": 448,
+        "triangles": 2579752,
+        "callsRange": [
+          448,
+          448
+        ],
+        "build": {
+          "main": 98,
+          "shadow": 82
+        }
+      },
+      "meter": {
+        "n": 36,
+        "avg": 1376.124998304579,
+        "p95": 4495.5,
+        "max": 6191,
+        "over50": 36
+      }
+    },
+    "corner": {
+      "pieces": 2000,
+      "local": {
+        "x": 0,
+        "z": -3.2
+      },
+      "players": 1,
+      "screenProbe": [
+        [
+          465,
+          2210
+        ],
+        [
+          465,
+          2721
+        ]
+      ],
+      "build": {
+        "groups": 89,
+        "meshes": null,
+        "chunkSize": null,
+        "all": {
+          "drawCalls": 113,
+          "triangles": 698640,
+          "instances": 2000
+        },
+        "visible": {
+          "drawCalls": 44,
+          "triangles": 560372,
+          "pieces": 0
+        }
+      },
+      "frame": {
+        "calls": 173,
+        "triangles": 1524878,
+        "callsRange": [
+          173,
+          173
+        ],
+        "build": {
+          "main": 44,
+          "shadow": 49
+        }
+      },
+      "meter": {
+        "n": 39,
+        "avg": 791.8589759239784,
+        "p95": 3353.10009765625,
+        "max": 4792,
+        "over50": 39
+      }
+    }
+  }
+}
