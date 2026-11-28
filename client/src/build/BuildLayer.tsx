@@ -176,7 +176,7 @@ interface GroupEntry {
  * bounding sphere, so three.js's frustum culling (main camera and shadow camera) skips the cells out of
  * view. Chosen from the measurements in docs/perf/ (README "Rendering cost").
  */
-export const BUILD_CHUNK_M = 24;
+export const BUILD_CHUNK_M = 48;
 /**
  * Only a group whose instances add up to at least this many triangles is split by cell: splitting a light
  * group saves little and costs a draw call per cell in view (and in the shadow pass).
