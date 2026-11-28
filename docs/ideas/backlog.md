@@ -10,6 +10,7 @@ Status: proposed / approved / deferred / built / rejected / parked.
 | Built interiors you can read (clean cutaway for built houses) | update | 01 | built | Cycle 01 Brief A (cycle 1 combined QA pending). |
 | A phone that shows the world (compact dock, peek sheets) | update | 01 | built | Cycle 01 Brief B (cycle 1 combined QA pending). |
 | Frame budget and adaptive quality | performance | 01 | approved | Cycle 02 Brief P: production-safe frame meter, chunked build instancing, dev-client baseline. Adaptive quality still waits for real-device numbers. |
+| Per-pass culling for the build shadow pass (wide views pay one call per group per cell) | performance | 02 | proposed | From cycle 02 Brief P: the 48 m cells' extra calls are mostly in the shadow pass, whose box is larger than the view. |
 | Distance LOD for roofs / trees | performance | 01 | rejected | Orthographic camera: distance does not change on-screen size, so LOD would pop or save nothing. |
 | The Workshop makes new pieces | new feature | 01 | deferred | Cycle 02 reshaped to colour unlocks (#8); stage 2 after the outdoor projects. |
 | More Workshop projects with outdoor outcomes (no new pieces) | update | 01 | deferred | Cycle 02 #8 stage 1 split out: three outdoor projects, no unlocks; first-tier for cycle 03. |

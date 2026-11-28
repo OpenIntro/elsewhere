@@ -384,6 +384,15 @@ tester can read on a real device later.
      camera;
    - `node scripts/e2e-player.mjs`.
 
+**Orchestrator ruling (criterion 2).** No cell size met all four targets (sweep in
+`docs/perf/chunk-sizes.json`): the shadow pass's box is larger than the camera view, so wide views pay
+one call per group per cell. Kept: 48 m cells, split only groups of at least 8,000 triangles (corner
+−77 %, default −42 % visible build triangles; default calls +18.6 %, Town Square +24.1 %). The
+default-view call limit is relaxed from +15 % to +20 % for this cycle; every other target stands. The
+measurement changes are accepted: whole-frame calls compared through the build layer's own calls per
+pass (the keepers make the rest of the frame vary between identical runs), fixed world state and spawn,
+and an order-independent group bounding sphere. Per-pass culling is a backlog item.
+
 ---
 
 ### Brief N — Tap-to-move takes the gaps you can walk (skip if cycle 1 QA already fixed it)

@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-11-28T00:02:44.923Z",
+  "measuredAt": "2026-11-28T00:48:49.862Z",
   "setup": {
     "client": "dev (tsx server + Vite)",
     "viewport": "1440x900",
@@ -10,7 +10,7 @@
     "seeding": {
       "planned": 2000,
       "refused": {},
-      "ms": 52903
+      "ms": 51460
     }
   },
   "note": "Counts are what is compared; frame times on a software renderer say nothing about real devices.",
@@ -34,44 +34,44 @@
         ]
       ],
       "build": {
-        "groups": 344,
+        "groups": 204,
         "meshes": null,
-        "chunkSize": 24,
+        "chunkSize": 48,
         "all": {
-          "drawCalls": 452,
+          "drawCalls": 267,
           "triangles": 698640,
           "instances": 2000
         },
         "visible": {
-          "drawCalls": 99,
-          "triangles": 234436,
+          "drawCalls": 117,
+          "triangles": 396076,
           "pieces": 20
         }
       },
       "frame": {
-        "calls": 423,
-        "triangles": 1384338,
+        "calls": 363,
+        "triangles": 1691542,
         "callsRange": [
-          423,
-          423
+          363,
+          363
         ],
         "build": {
-          "main": 99,
-          "shadow": 98
+          "main": 117,
+          "shadow": 109
         }
       },
       "meter": {
-        "fps": 1.4120659433723022,
-        "p50Ms": 593.0999755859375,
-        "p95Ms": 741.9000244140625,
-        "calls": 423,
-        "triangles": 1384338,
-        "window": 45,
-        "n": 45,
-        "avg": 708.1822238498264,
-        "p95": 741.9000244140625,
-        "max": 5592,
-        "over50": 45
+        "fps": 1.6489058923494708,
+        "p50Ms": 525.9000244140625,
+        "p95Ms": 590.0999755859375,
+        "calls": 363,
+        "triangles": 1691542,
+        "window": 51,
+        "n": 51,
+        "avg": 606.4627488080193,
+        "p95": 590.0999755859375,
+        "max": 3488.60009765625,
+        "over50": 51
       }
     },
     "town_square": {
@@ -92,44 +92,44 @@
         ]
       ],
       "build": {
-        "groups": 344,
+        "groups": 204,
         "meshes": null,
-        "chunkSize": 24,
+        "chunkSize": 48,
         "all": {
-          "drawCalls": 452,
+          "drawCalls": 267,
           "triangles": 698640,
           "instances": 2000
         },
         "visible": {
-          "drawCalls": 186,
-          "triangles": 376578,
-          "pieces": 335
+          "drawCalls": 155,
+          "triangles": 519166,
+          "pieces": 337
         }
       },
       "frame": {
-        "calls": 673,
-        "triangles": 2100284,
+        "calls": 623,
+        "triangles": 2341064,
         "callsRange": [
-          673,
-          673
+          623,
+          623
         ],
         "build": {
-          "main": 186,
-          "shadow": 219
+          "main": 155,
+          "shadow": 133
         }
       },
       "meter": {
-        "fps": 0.8361184693614614,
-        "p50Ms": 1056.5999755859375,
-        "p95Ms": 2103.39990234375,
-        "calls": 673,
-        "triangles": 2100284,
-        "window": 36,
-        "n": 36,
-        "avg": 1196.0027635362412,
-        "p95": 2103.39990234375,
-        "max": 5784.7998046875,
-        "over50": 36
+        "fps": 0.8758180716377878,
+        "p50Ms": 964.5999755859375,
+        "p95Ms": 1116.5,
+        "calls": 623,
+        "triangles": 2341064,
+        "window": 29,
+        "n": 29,
+        "avg": 1141.7896391769934,
+        "p95": 1116.5,
+        "max": 5684.2998046875,
+        "over50": 29
       }
     },
     "corner": {
@@ -150,44 +150,44 @@
         ]
       ],
       "build": {
-        "groups": 344,
+        "groups": 204,
         "meshes": null,
-        "chunkSize": 24,
+        "chunkSize": 48,
         "all": {
-          "drawCalls": 452,
+          "drawCalls": 267,
           "triangles": 698640,
           "instances": 2000
         },
         "visible": {
-          "drawCalls": 26,
-          "triangles": 75664,
+          "drawCalls": 36,
+          "triangles": 129228,
           "pieces": 0
         }
       },
       "frame": {
-        "calls": 139,
-        "triangles": 526450,
+        "calls": 156,
+        "triangles": 630682,
         "callsRange": [
-          139,
-          139
+          156,
+          156
         ],
         "build": {
-          "main": 26,
-          "shadow": 33
+          "main": 36,
+          "shadow": 35
         }
       },
       "meter": {
-        "fps": 1.5414852228233225,
-        "p50Ms": 536.2000122070312,
-        "p95Ms": 694.2000122070312,
-        "calls": 139,
-        "triangles": 526450,
-        "window": 40,
-        "n": 40,
-        "avg": 648.7249992370605,
-        "p95": 1500.5999755859375,
-        "max": 3719.199951171875,
-        "over50": 40
+        "fps": 1.7272742033647903,
+        "p50Ms": 466.8999938964844,
+        "p95Ms": 587.7999877929688,
+        "calls": 156,
+        "triangles": 630682,
+        "window": 32,
+        "n": 32,
+        "avg": 578.946873664856,
+        "p95": 587.7999877929688,
+        "max": 3803.5,
+        "over50": 32
       }
     }
   }

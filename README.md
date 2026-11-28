@@ -411,7 +411,7 @@ in `client/src/build/`.
   (walls, doorway, roof): "Ivy named their house “Fern Cottage”" — only real events. Walking up to a
   named house shows "<name> · built by <player>".
 - **Rendering:** one instanced mesh per piece kind + style + material (~110 draw calls for 2,000
-  mixed pieces of ~40 kinds), heavy ones split by 24 m cells so pieces off screen are not drawn (see
+  mixed pieces of ~40 kinds), heavy ones split by 48 m cells so pieces off screen are not drawn (see
   "Rendering cost"), shadows like the world; roofs and upper storeys over or next to you dissolve (dithered,
   their shadow too), and tall walls between the camera and you thin out. **Built interiors open
   like the town's:** step 0.3 m into a room of built pieces (under a house roof, roof tiles or an
@@ -474,7 +474,7 @@ typical / slow frame (median / 95th percentile of the last 300 frames, ms) · dr
 1-2 fps) say nothing about them.
 
 **Build pieces off screen (chunked instancing).** Each instanced build group whose pieces add up to at
-least 8,000 triangles is split by a 24 m square cell (`BUILD_CHUNK_M`, `BUILD_SPLIT_MIN_TRIS` in
+least 8,000 triangles is split by a 48 m square cell (`BUILD_CHUNK_M`, `BUILD_SPLIT_MIN_TRIS` in
 `client/src/build/BuildLayer.tsx`); each group's bounding sphere is fitted around its instances' box
 (three.js's own grows instance by instance and depended on the order pieces arrived in), so frustum
 culling skips the cells out of view in the camera and the shadow pass. `npm run perf:baseline`
@@ -488,16 +488,17 @@ layer's own calls (counted per pass by the renderer) move the check. Only counts
 
 | View (2,000 pieces) | pieces in view | visible build triangles before → after | build draw calls, camera + shadow pass, before → after | whole-frame calls before → change |
 |---|---|---|---|---|
-| Default spawn | 20 | 683,964 → 234,436 (−66 %) | 95 + 74 → 99 + 98 | 306 → +9 % |
-| Town Square (`?cam=town_square`, the busiest) | 337 | 687,354 → 376,578 (−45 %) | 98 + 82 → 186 + 219 | 448 → **+50 %** |
-| Island corner, no pieces (`?cam=-62,-74,30`) | 0 | 560,372 → 75,664 (−86 %) | 44 + 49 → 26 + 33 | 173 → −20 % |
+| Default spawn | 20 | 683,964 → 396,076 (−42 %) | 95 + 74 → 117 + 109 | 306 → +18.6 % |
+| Town Square (`?cam=town_square`, the busiest) | 337 | 687,354 → 519,166 (−24 %) | 98 + 82 → 155 + 133 | 448 → +24.1 % |
+| Island corner, no pieces (`?cam=-62,-74,30`) | 0 | 560,372 → 129,228 (−77 %) | 44 + 49 → 36 + 35 | 173 → −12.7 % |
 
-Before = `docs/perf/baseline-before.json` (the cycle 1 renderer plus only the counters). **The busiest
-view misses its target** (no more than +25 % whole-frame calls): splitting by cell multiplies the groups a
-wide view and the larger shadow box draw. No cell size tried meets all four targets
-(`docs/perf/chunk-sizes.json`: 24, 32, 40, 48 and 96 m, with and without the 8,000-triangle split rule,
-and a grid centred on the square); 48 m with the rule keeps the busiest view at +24 % but the default view
-rises +19 % (target +15 %). Which trade-off to keep is an open decision.
+Before = `docs/perf/baseline-before.json` (the cycle 1 renderer plus only the counters). Targets: corner
+−60 % and default −25 % visible build triangles, default whole-frame calls at most +20 % and the busiest
+view at most +25 %. No cell size meets the brief's original default-view limit of +15 % together with the
+busiest-view limit (`docs/perf/chunk-sizes.json`: 24, 32, 40, 48 and 96 m, with and without the
+8,000-triangle rule, and a grid centred on the square). By the cycle 02 orchestrator's ruling, 48 m with the
+rule was kept and the default-view limit relaxed to +20 % for this cycle: the extra calls come from the
+shadow pass, whose box is larger than the view, and per-pass culling is a later item (backlog).
 
 ## Homes
 
