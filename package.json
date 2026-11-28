@@ -1,0 +1,43 @@
+{
+  "name": "elsewhere",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Elsewhere \u2014 somewhere between a game and a place.",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
+    "start": "npm run start -w server",
+    "typecheck": "npm run build -w shared && npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
+    "test": "vitest run",
+    "smoke": "node scripts/smoke-two-clients.mjs",
+    "e2e:acceptance": "node scripts/e2e-acceptance.mjs",
+    "e2e:interiors": "node scripts/e2e-interiors.mjs",
+    "e2e:build": "node scripts/e2e-build.mjs",
+    "e2e:build2": "node scripts/e2e-build2.mjs",
+    "e2e:roofs": "node scripts/e2e-roofs.mjs",
+    "e2e:activities": "node scripts/e2e-activities.mjs",
+    "e2e:combined": "node scripts/e2e-combined.mjs",
+    "e2e:doors": "node scripts/e2e-doors.mjs",
+    "e2e:phone": "node scripts/e2e-phone.mjs",
+    "e2e:built-interiors": "node scripts/e2e-built-interiors.mjs",
+    "e2e:camera": "node scripts/e2e-camera.mjs",
+    "e2e:homes": "node scripts/e2e-homes.mjs",
+    "perf:baseline": "node scripts/perf-baseline.mjs",
+    "e2e:all": "node scripts/e2e-all.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "concurrently": "^10.0.7",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}

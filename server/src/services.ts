@@ -1,0 +1,84 @@
+/**
+ * Composition root for server-side services. Rooms and HTTP routes get
+ * services from here; each service lives in its own seam directory.
+ */
+import { CONFIG } from '@elsewhere/shared';
+import { createActivities, type ActivityService } from './activities/index.js';
+import { createAuth, type AuthService } from './auth/index.js';
+import { createBuilding, type BuildingService } from './building/index.js';
+import { createChat, type ChatService } from './chat/index.js';
+import { createCollective, type CollectiveService } from './collective/index.js';
+import { ENV } from './env.js';
+import { createGazette, type GazetteService } from './gazette/index.js';
+import { createHomes, linkModeration, type HomesService } from './homes/index.js';
+import { createInteractions, type InteractionService } from './interactions/index.js';
+import { createMemory, type MemoryService } from './memory/index.js';
+import { createModeration, type ModerationService } from './moderation/index.js';
+import { createPersistence, type PersistenceService } from './persistence/index.js';
+import type { RoomHooks } from './rooms/RoomContext.js';
+
+export interface ServerServices {
+  persistence: PersistenceService;
+  auth: AuthService;
+  moderation: ModerationService;
+  chat: ChatService;
+  memory: MemoryService;
+  collective: CollectiveService;
+  interactions: InteractionService;
+  gazette: GazetteService;
+  building: BuildingService;
+  activities: ActivityService;
+  homes: HomesService;
+  /** Services with room lifecycle hooks, in call order. */
+  hooks: RoomHooks[];
+}
+
+let current: ServerServices | null = null;
+
+export interface InitOptions {
+  /** Override storage (tests): e.g. { dataDir: 'memory://' }. */
+  persistence?: PersistenceService;
+}
+
+export async function initServices(opts: InitOptions = {}): Promise<ServerServices> {
+  const persistence = opts.persistence ?? createPersistence({ databaseUrl: ENV.databaseUrl, dataDir: ENV.dataDir });
+  await persistence.init();
+  const auth = createAuth(persistence, { secret: ENV.sessionSecret, supabaseJwtSecret: ENV.supabaseJwtSecret, supabaseUrl: ENV.supabaseUrl });
+  const moderation = createModeration(persistence);
+  let activities: ActivityService | null = null;
+  // Stage / lectern: a speaker's chat carries through the whole building (activities decide who).
+  const chat = createChat(moderation, { reach: (ctx, sid) => activities?.chatReach(ctx, sid) ?? null });
+  const memory = createMemory(persistence);
+  const collective = createCollective(persistence, memory, { tunables: ENV.collective, dayLengthMs: ENV.dayLengthMs });
+  await collective.load();
+  const interactions = createInteractions({ persistence, memory, collective, moderation });
+  const gazette = createGazette(persistence, {
+    intervalMs: ENV.gazetteIntervalMs,
+    memory,
+    earlyEvents: ENV.gazetteEarlyEvents,
+    earlyDelayMs: ENV.gazetteEarlyDelayMs,
+    clock: () => ({ epochMs: collective.facts().clockEpochMs, dayLengthMs: ENV.dayLengthMs, startTimeOfDay: CONFIG.clock.startTimeOfDay }),
+  });
+  gazette.start();
+  const building = createBuilding({ persistence, memory, moderation, worldId: collective.worldId, options: ENV.building });
+  await building.load();
+  // Homes: after building (the rule reads its pieces; it hears every piece change and snapshot).
+  const homes = createHomes({ persistence, memory, moderation, building, worldId: collective.worldId });
+  await homes.load();
+  linkModeration(moderation, homes);
+  activities = createActivities({
+    persistence,
+    memory,
+    moderation,
+    worldId: collective.worldId,
+    clock: () => ({ epochMs: collective.facts().clockEpochMs, dayLengthMs: ENV.dayLengthMs }),
+    tunables: ENV.activities,
+  });
+  current = { persistence, auth, moderation, chat, memory, collective, interactions, gazette, building, activities, homes, hooks: [moderation, chat, collective, interactions, building, homes, activities] };
+  return current;
+}
+
+export function services(): ServerServices {
+  if (!current) throw new Error('initServices() has not run');
+  return current;
+}

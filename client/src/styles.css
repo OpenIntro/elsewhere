@@ -1,0 +1,173 @@
+/* Elsewhere — base + design tokens. Component styles live in ui/ui.css. */
+@font-face {
+  font-family: 'Fraunces Elsewhere';
+  src: url('./ui/fonts/fraunces-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  --font-display: 'Fraunces Elsewhere', 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, 'Bitstream Charter', Georgia, Caladea, 'Liberation Serif', serif;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  /* Warm-neutral glass. Dark glass reads over bright day scenes and night alike. */
+  --glass: rgba(33, 27, 23, 0.74);
+  --glass-strong: rgba(29, 24, 20, 0.86);
+  --glass-soft: rgba(33, 27, 23, 0.5);
+  --glass-line: rgba(255, 236, 210, 0.13);
+  --glass-hi: rgba(255, 240, 220, 0.07);
+  --fill: rgba(255, 238, 214, 0.07);
+  --fill-2: rgba(255, 238, 214, 0.12);
+  --fill-3: rgba(255, 238, 214, 0.18);
+
+  --text: #f5ede0;
+  --text-2: rgba(245, 237, 224, 0.72);
+  --text-3: rgba(245, 237, 224, 0.5);
+
+  --accent: #ebbb76;
+  --accent-2: #f3cf98;
+  --accent-ink: #2a1e12;
+  --rose: #e0a18a;
+  --sage: #b4c7a2;
+  --sky: #a9c4cf;
+  --danger: #ec9f8a;
+
+  --paper: #f4ecdc;
+  --paper-2: #e8dcc5;
+  --paper-line: rgba(58, 44, 32, 0.18);
+  --ink: #2a231e;
+  --ink-2: #5d5046;
+  --ink-3: #8a7a6b;
+
+  --r-xl: 24px;
+  --r-lg: 18px;
+  --r-md: 13px;
+  --r-sm: 9px;
+  --shadow: 0 22px 48px -22px rgba(10, 6, 3, 0.65), 0 3px 10px -3px rgba(10, 6, 3, 0.3);
+  --shadow-sm: 0 8px 20px -10px rgba(10, 6, 3, 0.55);
+  --blur: blur(20px) saturate(1.3);
+  --ease: cubic-bezier(0.22, 0.75, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur: 260ms;
+
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --gutter: 16px;
+  /* Space reserved at the bottom by the navigation (other systems may read it, e.g. the joystick). */
+  --hud-bottom: calc(var(--safe-b) + 84px);
+  --hud-top: calc(var(--safe-t) + 64px);
+  /* On-screen keyboard height (set from visualViewport). */
+  --kb: 0px;
+  /* Touch joystick / action button clear the bottom nav (player/TouchControls reads these). */
+  --ew-touch-bottom: 104px;
+}
+@media (max-width: 720px) {
+  :root { --ew-touch-bottom: 92px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  :root { --ew-touch-bottom: 18px; }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1d1916;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+  font-synthesis-weight: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: rgba(235, 187, 118, 0.35);
+}
+
+/* --------------------------------------------------------------------------
+   Peek sheets (Sheet `peek`, phones only): short, with a drag handle; the
+   camera frames the player in what they leave free. Desktop is unaffected
+   (the classes are only set on phone layouts).
+   -------------------------------------------------------------------------- */
+.sheet__handle {
+  display: none;
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  z-index: 2;
+  width: 72px;
+  height: 44px;
+  margin-left: -36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+.sheet__handle-bar {
+  display: block;
+  width: 40px;
+  height: 5px;
+  margin: 18px auto 0;
+  border-radius: 5px;
+  background: rgba(255, 238, 214, 0.34);
+  transition: background var(--dur), width var(--dur);
+}
+.sheet--paper .sheet__handle-bar { background: rgba(58, 44, 32, 0.28); }
+.sheet__handle:focus-visible { outline: none; }
+.sheet__handle:focus-visible .sheet__handle-bar { background: var(--accent); width: 48px; }
+.sheet--peekable .sheet__handle { display: block; }
+.sheet--peekable .sheet__grip { display: none; }
+.sheet--peekable { transition: transform 260ms var(--ease-out), max-height 300ms var(--ease-out); }
+
+@media (max-width: 720px) {
+  .sheet--peekable .sheet__head { padding-top: 24px; }
+  .sheet.sheet--peek { max-height: var(--sheet-peek, 44dvh); }
+  .sheet.sheet--peek.sheet--piano { --sheet-peek: 39dvh; }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .sheet--peekable .sheet__head { padding-top: 16px; }
+  /* Side sheets keep their height (they already leave the left of the screen to the world; the camera
+     frames the player there). The piano peeks as a low keyboard along the bottom instead. */
+  .sheet.sheet--peek.sheet--wide {
+    top: auto;
+    bottom: 0;
+    left: calc(var(--safe-l) + 8px);
+    right: calc(var(--safe-r) + 8px);
+    width: auto;
+    max-height: 50dvh;
+    border-radius: 20px 20px 0 0;
+    border-bottom: 0;
+  }
+}
